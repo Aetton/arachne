@@ -1,0 +1,43 @@
+<div class="surface rounded-xl p-5 mb-2" style="border-color: var(--accent);">
+  <div class="flex items-center justify-between mb-4">
+    <h3 class="font-semibold flex items-center gap-2">
+      <i class="ti {{ s.icon or 'ti-box' }} accent"></i> {{ s.label }}
+    </h3>
+    <button class="muted hover:opacity-70" onclick="document.getElementById('panel').innerHTML=''">
+      <i class="ti ti-x"></i>
+    </button>
+  </div>
+
+  <form hx-post="/scenarios/{{ key }}/run" hx-target="#panel" hx-swap="innerHTML"
+        class="space-y-4">
+    {% for p in s.params %}
+    <div>
+      <label class="block text-sm muted mb-1">
+        {{ p.label }}{% if p.required %} <span class="accent">*</span>{% endif %}
+      </label>
+      {% if p.type == "choice" %}
+        <select name="{{ p.name }}">
+          {% for opt in p.options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+        </select>
+      {% elif p.type == "boolean" %}
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" name="{{ p.name }}" value="true" style="width:auto;"
+                 {% if p.default %}checked{% endif %}>
+          <span class="text-sm">Enabled</span>
+        </label>
+      {% else %}
+        <input type="text" name="{{ p.name }}" value="{{ p.default or '' }}"
+               {% if p.required %}required{% endif %}>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+    <div class="flex gap-2 pt-1">
+      <button type="submit" class="btn flex-1">
+        <i class="ti ti-player-play"></i> Run
+      </button>
+      <button type="button" class="btn-ghost flex-1"
+              onclick="document.getElementById('panel').innerHTML=''">Cancel</button>
+    </div>
+  </form>
+</div>

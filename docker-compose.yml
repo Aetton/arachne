@@ -1,0 +1,56 @@
+# Deployment Portal — Docker Compose
+#
+#   docker compose up -d                # SQLite, single container
+#   docker compose --profile pg up -d   # Postgres-backed (when the dept grows)
+#
+# On first boot an 'admin' user is seeded. Override the password:
+#   ADMIN_PASSWORD=... docker compose up -d
+
+services:
+  portal:
+    build: .
+    container_name: deployment-portal
+    restart: unless-stopped
+    ports:
+      - "8080:8000"
+    environment:
+      JWT_SECRET: "${JWT_SECRET:-change-me-in-prod}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin}"
+      NEXUS_URL: "${NEXUS_URL:-https://nexus.redsoft.internal}"
+      # SQLite by default; uncomment to use the postgres profile below:
+      # DATABASE_URL: "postgresql+psycopg://portal:portal@db/portal"
+      ANSIBLE_PLAYBOOKS_DIR: /app/playbooks
+      SCENARIOS_CONFIG: /app/config/scenarios.yaml
+    volumes:
+      # persist the SQLite db + let you edit config/playbooks without rebuild
+      - ./data:/app/api/data
+      - ./config:/app/config:ro
+      - ./playbooks:/app/playbooks:ro
+      # mount your ssh key if playbooks provision remote VMs
+      # - ~/.ssh/portal_id_ed25519:/root/.ssh/id_ed25519:ro
+    # depends_on:
+    #   - db          # enable with the pg profile
+
+  db:
+    image: postgres:16-alpine
+    container_name: portal-db
+    profiles: ["pg"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: portal
+      POSTGRES_PASSWORD: portal
+      POSTGRES_DB: portal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  nats:
+    image: nats:2-alpine
+    container_name: arachne-nats
+    profiles: ["nats"]
+    restart: unless-stopped
+    command: ["-js"]
+    ports:
+      - "4222:4222"
+
+volumes:
+  pgdata:

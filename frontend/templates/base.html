@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dracula">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Deployment Portal{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/static/css/themes.css">
+  <style>
+    body { background: var(--bg); color: var(--fg); }
+    .surface { background: var(--surface); border: 1px solid var(--border); }
+    .surface-2 { background: var(--surface2); }
+    .accent { color: var(--accent); }
+    .muted { color: var(--muted); }
+    .btn {
+      background: var(--accent); color: var(--bg-on-accent);
+      border-radius: .5rem; padding: .5rem 1rem; font-weight: 500;
+      transition: filter .15s;
+    }
+    .btn:hover { filter: brightness(1.1); }
+    .btn-ghost {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--fg); border-radius: .5rem; padding: .5rem 1rem;
+    }
+    .btn-ghost:hover { background: var(--surface2); }
+    .pill { border-radius: .375rem; padding: .2rem .5rem; font-size: .72rem; font-weight: 500; }
+    .pill-ok      { background: var(--ok-bg);   color: var(--ok-fg); }
+    .pill-fail    { background: var(--fail-bg); color: var(--fail-fg); }
+    .pill-run     { background: var(--run-bg);  color: var(--run-fg); }
+    .pill-pending { background: var(--surface2); color: var(--muted); }
+    input, select {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--fg); border-radius: .5rem; padding: .5rem .75rem; width: 100%;
+    }
+    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .log { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: .8rem; line-height: 1.55; }
+    a.link { color: var(--accent); }
+    a.link:hover { filter: brightness(1.15); }
+  </style>
+</head>
+<body class="min-h-screen">
+  {% if user %}
+  <nav class="surface px-6 py-3 flex justify-between items-center border-b" style="border-color: var(--border);">
+    <div class="flex items-center gap-6">
+      <a href="/" class="text-lg font-semibold accent flex items-center gap-2">
+        <i class="ti ti-rocket"></i> Deployment Portal
+      </a>
+      <div class="flex gap-1 text-sm">
+        <a href="/" class="px-3 py-1.5 rounded hover:surface-2">Dashboard</a>
+        {% if "admin" in (user.roles or []) %}
+        <a href="/admin/users" class="px-3 py-1.5 rounded hover:surface-2">Admin</a>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex items-center gap-3 text-sm">
+      <select id="theme-select" onchange="setTheme(this.value)"
+              style="width:auto; padding:.3rem .5rem;" class="text-xs">
+        <option value="dracula">Dracula</option>
+        <option value="light">Light</option>
+        <option value="nord">Nord</option>
+      </select>
+      <span class="muted">{{ user.full_name or user.username }}</span>
+      <a href="/logout" class="link">Logout</a>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="max-w-6xl mx-auto p-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    function setTheme(name) {
+      document.documentElement.setAttribute('data-theme', name);
+      try { localStorage.setItem('portal-theme', name); } catch (e) {}
+    }
+    (function () {
+      let t = 'dracula';
+      try { t = localStorage.getItem('portal-theme') || 'dracula'; } catch (e) {}
+      document.documentElement.setAttribute('data-theme', t);
+      var sel = document.getElementById('theme-select');
+      if (sel) sel.value = t;
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,79 @@
+---
+# Update an existing stand:
+#   1. check broker+frontend tarballs in Nexus
+#   2. if missing OR older than 24h -> trigger their build playbooks
+#   3. fetch tarballs, deploy onto the target VM, restart services
+#
+# Inherits version/release/branch/debug from the build scenarios.
+
+- name: update-stage
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    version: "0.0.0"
+    release: "release-dev"
+    branch: "main"
+    debug: false
+    target: "stage-01"
+    max_age_hours: 24
+    nexus_url: "{{ lookup('env', 'NEXUS_URL') | default('https://nexus.redsoft.internal', true) }}"
+    nexus_repo: "dev-artifacts"
+
+  tasks:
+    - name: "preflight : resolve artifact urls"
+      ansible.builtin.set_fact:
+        frontend_url: "{{ nexus_url }}/repository/{{ nexus_repo }}/frontend/{{ version }}/frontend-{{ version }}.tar.gz"
+        broker_url: "{{ nexus_url }}/repository/{{ nexus_repo }}/broker/{{ version }}/broker-{{ version }}.tar.gz"
+
+    - name: "preflight : check frontend freshness"
+      ansible.builtin.uri:
+        url: "{{ frontend_url }}"
+        method: HEAD
+        status_code: [200, 404]
+      register: fe_head
+      failed_when: false
+
+    - name: "preflight : check broker freshness"
+      ansible.builtin.uri:
+        url: "{{ broker_url }}"
+        method: HEAD
+        status_code: [200, 404]
+      register: br_head
+      failed_when: false
+
+    - name: "preflight : decide rebuilds"
+      ansible.builtin.set_fact:
+        need_frontend: "{{ fe_head.status != 200 or (fe_head.last_modified is defined and (ansible_date_time.epoch | int - (fe_head.last_modified | to_datetime('%a, %d %b %Y %H:%M:%S GMT')).strftime('%s') | int) > (max_age_hours | int * 3600)) }}"
+        need_broker: "{{ br_head.status != 200 }}"
+
+    - name: "build : rebuild frontend if stale"
+      ansible.builtin.command:
+        cmd: >
+          ansible-playbook {{ playbook_dir }}/build-frontend.yml
+          -e version={{ version }} -e release={{ release }}
+          -e branch={{ branch }} -e debug={{ debug }}
+      changed_when: true
+      when: need_frontend | bool
+
+    - name: "build : rebuild broker if stale"
+      ansible.builtin.command:
+        cmd: >
+          ansible-playbook {{ playbook_dir }}/build-broker.yml
+          -e version={{ version }} -e release={{ release }}
+          -e branch={{ branch }} -e debug={{ debug }}
+      changed_when: true
+      when: need_broker | bool
+
+    - name: "deploy : push to target VM {{ target }}"
+      ansible.builtin.debug:
+        msg: >
+          changed: deploying frontend+broker {{ version }} ({{ release }})
+          to {{ target }} [debug={{ debug }}]
+
+    # Real deploy step would delegate_to: "{{ target }}" and unarchive the
+    # tarballs into place, then restart systemd units. Stubbed for safety.
+    - name: "deploy : restart services"
+      ansible.builtin.debug:
+        msg: "ok: services restarted on {{ target }}"

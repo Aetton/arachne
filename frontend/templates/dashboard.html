@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Deployment Portal{% endblock %}
+{% block content %}
+
+<h1 class="text-xl font-semibold mb-1">Scenarios</h1>
+<p class="muted text-sm mb-5">Pick a build or deployment scenario to run.</p>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-10">
+  {% for key, s in scenarios.items() %}
+  <button hx-get="/scenarios/{{ key }}/form" hx-target="#panel" hx-swap="innerHTML"
+          class="surface rounded-xl p-4 text-left hover:brightness-110 transition"
+          style="border-color: var(--border);">
+    <div class="flex items-center gap-2 mb-1.5">
+      <i class="ti {{ s.icon or 'ti-box' }} text-lg accent"></i>
+      <span class="font-medium">{{ s.label }}</span>
+    </div>
+    <p class="muted text-xs">{{ s.component }}</p>
+  </button>
+  {% endfor %}
+</div>
+
+<div id="panel"></div>
+
+<div class="flex items-center justify-between mt-8 mb-3">
+  <h2 class="text-lg font-semibold">Recent runs</h2>
+  <button class="btn-ghost text-xs" hx-get="/runs/history" hx-target="#history" hx-swap="innerHTML">
+    <i class="ti ti-refresh"></i> Refresh
+  </button>
+</div>
+<div id="history" hx-get="/runs/history" hx-trigger="load, runStarted from:body delay:500ms">
+</div>
+
+{% endblock %}

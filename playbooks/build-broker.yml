@@ -1,0 +1,61 @@
+---
+# Build broker → tarball → Nexus. debug toggles Swagger.
+
+- name: build-broker
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    version: "0.0.0"
+    release: "release-dev"
+    branch: "main"
+    debug: false
+    repo_url: "https://gitea.redsoft.internal/redsoft/broker.git"
+    workdir: "/tmp/build-broker-{{ version }}"
+    nexus_repo: "dev-artifacts"
+    nexus_path: "broker/{{ version }}/broker-{{ version }}.tar.gz"
+    nexus_user: "{{ lookup('env', 'NEXUS_USER') | default('', true) }}"
+    nexus_password: "{{ lookup('env', 'NEXUS_PASSWORD') | default('', true) }}"
+    nexus_url: "{{ lookup('env', 'NEXUS_URL') | default('https://nexus.redsoft.internal', true) }}"
+
+  tasks:
+    - name: "checkout : clone repository"
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ workdir }}"
+        version: "{{ branch }}"
+        force: true
+      register: checkout
+
+    - name: "build : compose env"
+      ansible.builtin.set_fact:
+        build_env:
+          APP_VERSION: "{{ version }}"
+          APP_RELEASE: "{{ release }}"
+          SWAGGER_ENABLED: "{{ 'true' if debug | bool else 'false' }}"
+
+    - name: "build : compile broker"
+      ansible.builtin.command:
+        cmd: make build VERSION={{ version }}
+        chdir: "{{ workdir }}"
+      environment: "{{ build_env }}"
+      changed_when: true
+
+    - name: "package : create tarball"
+      ansible.builtin.command:
+        cmd: tar czf broker-{{ version }}.tar.gz -C build .
+        chdir: "{{ workdir }}"
+      changed_when: true
+
+    - name: "nexus : upload artifact"
+      ansible.builtin.command:
+        cmd: >
+          curl -f -u {{ nexus_user }}:{{ nexus_password }}
+          --upload-file {{ workdir }}/broker-{{ version }}.tar.gz
+          {{ nexus_url }}/repository/{{ nexus_repo }}/{{ nexus_path }}
+      changed_when: true
+
+    - name: "nexus : confirm"
+      ansible.builtin.debug:
+        msg: "changed: uploaded to {{ nexus_repo }}/{{ nexus_path }}"

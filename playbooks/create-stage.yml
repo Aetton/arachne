@@ -1,0 +1,66 @@
+---
+# Create a fresh test stand:
+#   1. provision a VM with OpenTofu (Proxmox provider)
+#   2. ensure artifacts exist in Nexus (build if missing)
+#   3. deploy frontend + broker onto the new VM
+#
+# Inherits version/release/branch/debug from the build scenarios.
+
+- name: create-stage
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    version: "0.0.0"
+    release: "release-dev"
+    branch: "main"
+    debug: false
+    stand_name: "test-stand"
+    tofu_dir: "{{ playbook_dir }}/../tofu/stand"
+
+  tasks:
+    - name: "provision : opentofu init"
+      ansible.builtin.command:
+        cmd: tofu init -input=false
+        chdir: "{{ tofu_dir }}"
+      changed_when: false
+
+    - name: "provision : opentofu apply"
+      ansible.builtin.command:
+        cmd: >
+          tofu apply -auto-approve -input=false
+          -var stand_name={{ stand_name }}
+          -var version={{ version }}
+        chdir: "{{ tofu_dir }}"
+      changed_when: true
+      register: tofu_apply
+
+    - name: "provision : read VM ip"
+      ansible.builtin.command:
+        cmd: tofu output -raw vm_ip
+        chdir: "{{ tofu_dir }}"
+      changed_when: false
+      register: vm_ip
+
+    - name: "build : ensure frontend artifact"
+      ansible.builtin.command:
+        cmd: >
+          ansible-playbook {{ playbook_dir }}/build-frontend.yml
+          -e version={{ version }} -e release={{ release }}
+          -e branch={{ branch }} -e debug={{ debug }}
+      changed_when: true
+
+    - name: "build : ensure broker artifact"
+      ansible.builtin.command:
+        cmd: >
+          ansible-playbook {{ playbook_dir }}/build-broker.yml
+          -e version={{ version }} -e release={{ release }}
+          -e branch={{ branch }} -e debug={{ debug }}
+      changed_when: true
+
+    - name: "deploy : install onto {{ stand_name }} ({{ vm_ip.stdout | default('?') }})"
+      ansible.builtin.debug:
+        msg: >
+          changed: deployed frontend+broker {{ version }} to new stand
+          {{ stand_name }} at {{ vm_ip.stdout | default('pending') }}

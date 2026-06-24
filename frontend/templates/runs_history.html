@@ -1,0 +1,24 @@
+<div class="surface rounded-xl divide-y" style="border-color: var(--border);">
+  {% if not runs %}
+    <div class="p-4 muted text-sm text-center">No runs yet.</div>
+  {% endif %}
+  {% for r in runs %}
+  <button class="w-full px-4 py-3 flex items-center justify-between text-left hover:surface-2"
+          style="border-color: var(--border);"
+          hx-get="/runs/{{ r.id }}/view" hx-target="#panel" hx-swap="innerHTML"
+          onclick="window.scrollTo({top:0,behavior:'smooth'})">
+    <div>
+      <div class="text-sm font-medium">{{ r.scenario_label }}</div>
+      <div class="muted text-xs">
+        {% for k, v in r.params.items() %}{{ k }}={{ v }}{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="muted text-xs">{{ r.when }}</span>
+      {% if r.status == "running" %}<span class="pill pill-run">running</span>
+      {% elif r.status == "success" %}<span class="pill pill-ok">success</span>
+      {% else %}<span class="pill pill-fail">failed</span>{% endif %}
+    </div>
+  </button>
+  {% endfor %}
+</div>

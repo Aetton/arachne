@@ -1,0 +1,146 @@
+{# Two-level web view: steps (timeline) → tasks inside. Collapsed by default.
+   Self-refreshes via HTMX while running (block-level statuses, not per-line). #}
+<div id="run-{{ run.id }}"
+     {% if run.status == "running" %}
+     hx-get="/runs/{{ run.id }}/view" hx-trigger="load delay:2s" hx-swap="outerHTML"
+     {% endif %}>
+
+  <div class="surface rounded-xl p-5">
+
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="font-semibold flex items-center gap-2">
+        <i class="ti {{ s.icon or 'ti-box' }} accent"></i> {{ s.label }}
+      </h3>
+      {% if run.status == "running" %}
+        <span class="pill pill-run flex items-center gap-1">
+          <i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> Running
+        </span>
+      {% elif run.status == "success" %}
+        <span class="pill pill-ok flex items-center gap-1"><i class="ti ti-check"></i> Success</span>
+      {% elif run.status == "cancelled" %}
+        <span class="pill pill-pending flex items-center gap-1"><i class="ti ti-ban"></i> Cancelled</span>
+      {% else %}
+        <span class="pill pill-fail flex items-center gap-1"><i class="ti ti-x"></i> Failed</span>
+      {% endif %}
+    </div>
+
+    {# meta #}
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
+      {% for k, v in run.params.items() %}
+      <div class="surface-2 rounded-lg px-3 py-2">
+        <div class="muted text-[11px] uppercase tracking-wide">{{ k }}</div>
+        <div class="text-sm font-medium truncate">{{ v }}</div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# the web: steps as a vertical thread-timeline #}
+    <div class="relative">
+      {% for step in steps %}
+      <div class="relative pl-7 {% if not loop.last %}pb-1.5{% endif %}">
+        {# thread connector #}
+        {% if not loop.last %}
+        <div class="absolute" style="left:9px; top:24px; bottom:-6px; width:2px; background:var(--border);"></div>
+        {% endif %}
+        {# node #}
+        <div class="absolute flex items-center justify-center"
+             style="left:0; top:3px; width:20px; height:20px; border-radius:50%;
+             {% if step.status == 'passed' %}background:var(--ok-bg);
+             {% elif step.status == 'failed' %}background:var(--fail-bg);
+             {% elif step.status == 'running' %}background:var(--run-bg);
+             {% else %}background:var(--surface2);{% endif %}">
+          {% if step.status == 'passed' %}<i class="ti ti-check text-xs" style="color:var(--ok-fg)"></i>
+          {% elif step.status == 'failed' %}<i class="ti ti-x text-xs" style="color:var(--fail-fg)"></i>
+          {% elif step.status == 'running' %}<i class="ti ti-loader-2 text-xs" style="color:var(--run-fg); animation:spin 1s linear infinite;"></i>
+          {% else %}<i class="ti ti-point text-xs muted"></i>{% endif %}
+        </div>
+
+        {# step card #}
+        <div class="rounded-lg overflow-hidden"
+             style="border:1px solid {% if step.status=='running' %}var(--run-fg){% elif step.status=='failed' %}var(--fail-fg){% else %}var(--border){% endif %};
+             {% if step.status=='pending' %}opacity:.55;{% endif %}">
+          <button type="button"
+                  onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.chev').classList.toggle('open')"
+                  class="surface-2 w-full px-3 py-2.5 flex items-center justify-between text-left">
+            <span class="flex items-center gap-2">
+              <i class="ti ti-chevron-right text-xs chev muted" style="transition:transform .15s;"></i>
+              <span class="text-sm font-medium">{{ step.id }}</span>
+              <span class="muted text-[11px]" style="background:var(--bg); padding:1px 7px; border-radius:999px;">{{ step.spider }}</span>
+            </span>
+            <span class="muted text-xs">
+              {% if step.status == 'running' %}running…
+              {% elif step.status == 'pending' %}pending
+              {% else %}{{ step.tasks|length }} task{{ 's' if step.tasks|length != 1 }}{% endif %}
+            </span>
+          </button>
+
+          {# tasks inside (hidden by default) #}
+          <div class="hidden" style="border-top:1px solid var(--border);">
+            {% for task in step.tasks %}
+            <div class="px-3 py-2 {% if not loop.last %}border-b{% endif %}" style="border-color:var(--border);">
+              <div class="flex items-center gap-2 mb-1">
+                {% if task.status == 'failed' %}
+                  <i class="ti ti-x text-xs" style="color:var(--fail-fg)"></i>
+                {% else %}
+                  <i class="ti ti-check text-xs" style="color:var(--ok-fg)"></i>
+                {% endif %}
+                <span class="text-xs font-medium">{{ task.title }}</span>
+              </div>
+              {% if task.lines %}
+              <div class="log pl-5" style="max-height:220px; overflow:auto;">
+                {% for line in task.lines %}<div class="muted">{{ line }}</div>{% endfor %}
+              </div>
+              {% endif %}
+            </div>
+            {% endfor %}
+            {% if not step.tasks %}
+            <div class="px-3 py-2 muted text-xs">(no output yet)</div>
+            {% endif %}
+
+            {# per-step artifacts #}
+            {% if step.artifacts %}
+            <div class="px-3 py-2" style="border-top:1px solid var(--border); background:var(--ok-bg);">
+              {% for a in step.artifacts %}
+              <a href="{{ a.url or '#' }}" class="link block text-xs py-0.5">
+                <i class="ti ti-file-zip"></i> {{ a.name }}
+              </a>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {# overall artifacts (success) #}
+    {% if run.status == "success" and artifacts %}
+    <div class="mt-5 rounded-lg p-4" style="background: var(--ok-bg);">
+      <h4 class="font-medium mb-2" style="color: var(--ok-fg);">
+        <i class="ti ti-download"></i> Artifacts
+      </h4>
+      {% for a in artifacts %}
+      <a href="{{ a.url }}" class="link block text-sm py-0.5">
+        <i class="ti ti-file-zip"></i> {{ a.name }}
+        <span class="muted text-xs">· {{ a.repo }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="flex gap-2 mt-5">
+      {% if run.status == "running" %}
+      <button class="btn-ghost flex-1" style="color:var(--fail-fg);"
+              hx-post="/runs/{{ run.id }}/cancel" hx-swap="none">
+        <i class="ti ti-x"></i> Cancel run
+      </button>
+      {% endif %}
+      <button class="btn-ghost flex-1" onclick="document.getElementById('panel').innerHTML=''">Close</button>
+    </div>
+  </div>
+</div>
+
+<style>
+@keyframes spin { to { transform: rotate(360deg); } }
+.chev.open { transform: rotate(90deg); }
+</style>

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+data/
+*.db
+.env
+.venv/
+venv/
+tofu/**/.terraform/
+tofu/**/terraform.tfstate*
+*.retry

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Users · Admin{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5">
+  <h1 class="text-xl font-semibold">User management</h1>
+  <button class="btn" hx-get="/admin/users/new" hx-target="#modal-body"
+          onclick="document.getElementById('modal').classList.remove('hidden')">
+    <i class="ti ti-plus"></i> New user
+  </button>
+</div>
+
+<div class="surface rounded-xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="surface-2">
+      <tr class="text-left muted">
+        <th class="px-4 py-2.5 font-medium">Username</th>
+        <th class="px-4 py-2.5 font-medium">Name</th>
+        <th class="px-4 py-2.5 font-medium">Roles</th>
+        <th class="px-4 py-2.5 font-medium">Teams</th>
+        <th class="px-4 py-2.5 font-medium">Source</th>
+        <th class="px-4 py-2.5 font-medium">Status</th>
+        <th class="px-4 py-2.5 font-medium text-right">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y" style="border-color: var(--border);">
+      {% for u in users %}
+      <tr class="hover:surface-2">
+        <td class="px-4 py-2.5 font-medium">{{ u.username }}</td>
+        <td class="px-4 py-2.5 muted">{{ u.full_name or "—" }}</td>
+        <td class="px-4 py-2.5">
+          {% for r in u.roles %}<span class="pill pill-pending mr-1">{{ r }}</span>{% endfor %}
+        </td>
+        <td class="px-4 py-2.5 muted">{{ u.teams|join(", ") if u.teams else "—" }}</td>
+        <td class="px-4 py-2.5 muted">{{ u.auth_source }}</td>
+        <td class="px-4 py-2.5">
+          {% if u.is_active %}<span class="pill pill-ok">active</span>
+          {% else %}<span class="pill pill-fail">inactive</span>{% endif %}
+        </td>
+        <td class="px-4 py-2.5 text-right whitespace-nowrap">
+          <button class="link mr-3" hx-get="/admin/users/{{ u.id }}/edit" hx-target="#modal-body"
+                  onclick="document.getElementById('modal').classList.remove('hidden')">Edit</button>
+          {% if u.username != current_user.username %}
+          <button class="link" style="color: var(--fail-fg);"
+                  hx-delete="/admin/users/{{ u.id }}" hx-confirm="Delete {{ u.username }}?"
+                  hx-target="closest tr" hx-swap="outerHTML">Delete</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div id="modal" class="hidden fixed inset-0 flex items-center justify-center p-4"
+     style="background: rgba(0,0,0,.5);"
+     onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="surface rounded-xl p-6 w-full max-w-md" id="modal-body"></div>
+</div>
+
+{% endblock %}

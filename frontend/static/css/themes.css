@@ -1,0 +1,44 @@
+/* Theme system. Each [data-theme="x"] block is a full palette.
+   Add a theme = copy a block, rename, recolor, add an <option> in base.html. */
+
+[data-theme="dracula"] {
+  --bg:        #282a36;
+  --surface:   #21222c;
+  --surface2:  #343746;
+  --border:    #44475a;
+  --fg:        #f8f8f2;
+  --muted:     #6272a4;
+  --accent:    #bd93f9;
+  --bg-on-accent: #21222c;
+  --ok-bg:   #1c3d2e; --ok-fg:   #50fa7b;
+  --fail-bg: #432020; --fail-fg: #ff5555;
+  --run-bg:  #3d3a1c; --run-fg:  #f1fa8c;
+}
+
+[data-theme="light"] {
+  --bg:        #f5f5f7;
+  --surface:   #ffffff;
+  --surface2:  #ececef;
+  --border:    #d6d6db;
+  --fg:        #1c1c1e;
+  --muted:     #6b6b70;
+  --accent:    #7c3aed;
+  --bg-on-accent: #ffffff;
+  --ok-bg:   #d8f5e3; --ok-fg:   #157347;
+  --fail-bg: #f7dada; --fail-fg: #b02a2a;
+  --run-bg:  #fdf3cf; --run-fg:  #8a6d0b;
+}
+
+[data-theme="nord"] {
+  --bg:        #2e3440;
+  --surface:   #292e39;
+  --surface2:  #3b4252;
+  --border:    #434c5e;
+  --fg:        #eceff4;
+  --muted:     #7b88a1;
+  --accent:    #88c0d0;
+  --bg-on-accent: #2e3440;
+  --ok-bg:   #2b3b34; --ok-fg:   #a3be8c;
+  --fail-bg: #3f2e30; --fail-fg: #bf616a;
+  --run-bg:  #3b3a2c; --run-fg:  #ebcb8b;
+}

@@ -1,0 +1,49 @@
+---
+# Build RedOS 8 client → rpm → Nexus. debug toggles Sentry.
+
+- name: build-client-redos8
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    version: "0.0.0"
+    release: "release-dev"
+    branch: "main"
+    debug: false
+    workdir: "/tmp/build-client-redos8-{{ version }}"
+    nexus_repo: "dev-artifacts"
+    nexus_path: "client-redos8/{{ version }}/client-redos8-{{ version }}.rpm"
+    nexus_user: "{{ lookup('env', 'NEXUS_USER') | default('', true) }}"
+    nexus_password: "{{ lookup('env', 'NEXUS_PASSWORD') | default('', true) }}"
+    nexus_url: "{{ lookup('env', 'NEXUS_URL') | default('https://nexus.redsoft.internal', true) }}"
+
+  tasks:
+    - name: "checkout : clone repository"
+      ansible.builtin.git:
+        repo: "https://gitea.redsoft.internal/redsoft/client-redos8.git"
+        dest: "{{ workdir }}"
+        version: "{{ branch }}"
+        force: true
+
+    - name: "build : compile"
+      ansible.builtin.command:
+        cmd: make VERSION={{ version }}
+        chdir: "{{ workdir }}"
+      environment:
+        APP_VERSION: "{{ version }}"
+        APP_RELEASE: "{{ release }}"
+        SENTRY_ENABLED: "{{ 'true' if debug | bool else 'false' }}"
+      changed_when: true
+
+    - name: "nexus : upload artifact"
+      ansible.builtin.command:
+        cmd: >
+          curl -f -u {{ nexus_user }}:{{ nexus_password }}
+          --upload-file {{ workdir }}/release/client-redos8-{{ version }}.rpm
+          {{ nexus_url }}/repository/{{ nexus_repo }}/{{ nexus_path }}
+      changed_when: true
+
+    - name: "nexus : confirm"
+      ansible.builtin.debug:
+        msg: "changed: uploaded to {{ nexus_repo }}/{{ nexus_path }}"

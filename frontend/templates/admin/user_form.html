@@ -1,0 +1,63 @@
+<form hx-post="{{ action }}" hx-target="body" hx-swap="outerHTML" class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h3 class="font-semibold">{{ "Edit user" if edit else "New user" }}</h3>
+    <button type="button" class="muted hover:opacity-70"
+            onclick="document.getElementById('modal').classList.add('hidden')">
+      <i class="ti ti-x"></i>
+    </button>
+  </div>
+
+  <div>
+    <label class="block text-sm muted mb-1">Username</label>
+    <input type="text" name="username" value="{{ u.username if edit else '' }}"
+           {% if edit %}readonly{% endif %} required>
+  </div>
+
+  <div>
+    <label class="block text-sm muted mb-1">Full name</label>
+    <input type="text" name="full_name" value="{{ u.full_name if edit else '' }}">
+  </div>
+
+  <div>
+    <label class="block text-sm muted mb-1">
+      Password {% if edit %}<span class="text-xs">(blank = keep current)</span>{% endif %}
+    </label>
+    <input type="password" name="password" {% if not edit %}required{% endif %}>
+  </div>
+
+  <div>
+    <label class="block text-sm muted mb-1">Roles</label>
+    <div class="flex flex-wrap gap-3">
+      {% for r in all_roles %}
+      <label class="flex items-center gap-1.5 text-sm cursor-pointer">
+        <input type="checkbox" name="roles" value="{{ r }}" style="width:auto;"
+               {% if edit and r in u.roles %}checked{% endif %}>
+        {{ r }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div>
+    <label class="block text-sm muted mb-1">Teams</label>
+    <div class="flex flex-wrap gap-3">
+      {% for t in all_teams %}
+      <label class="flex items-center gap-1.5 text-sm cursor-pointer">
+        <input type="checkbox" name="teams" value="{{ t.id }}" style="width:auto;"
+               {% if edit and t.id in u.teams %}checked{% endif %}>
+        {{ t.name }}
+      </label>
+      {% else %}
+      <span class="muted text-xs">No teams yet.</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <label class="flex items-center gap-2 text-sm cursor-pointer">
+    <input type="checkbox" name="is_active" value="true" style="width:auto;"
+           {% if (not edit) or u.is_active %}checked{% endif %}>
+    Active
+  </label>
+
+  <button type="submit" class="btn w-full">Save</button>
+</form>

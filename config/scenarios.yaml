@@ -1,0 +1,143 @@
+# Scenario definitions — step-based orchestration format.
+#
+# Each scenario has:
+#   params:   form inputs (rendered in the UI)
+#   triggers: how it can be started (manual/schedule/chain)
+#   steps:    ordered list, each dispatched through a driver plugin
+#
+# Step `with` values support ${params.X} and ${step_id.field} references.
+
+components:
+  frontend:       {label: "Frontend",          icon: "ti-code"}
+  broker:         {label: "Broker",            icon: "ti-server"}
+  client-redos8:  {label: "Client (RedOS 8)",  icon: "ti-package"}
+  client-windows: {label: "Client (Windows)",  icon: "ti-brand-windows"}
+  stage:          {label: "Test stand",        icon: "ti-stack-2"}
+
+scenarios:
+
+  build-frontend:
+    label: "Build frontend"
+    component: frontend
+    icon: "ti-code"
+    accent: blue
+    triggers: [{type: manual}]
+    params:
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
+      - {name: release, label: "Release", type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
+      - {name: debug,   label: "Debug (Sentry)", type: boolean, default: false}
+    steps:
+      - id: build
+        spider: forgejo
+        action: build
+        with: {component: frontend, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+
+  build-broker:
+    label: "Build broker"
+    component: broker
+    icon: "ti-server"
+    accent: purple
+    triggers: [{type: manual}]
+    params:
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
+      - {name: release, label: "Release", type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
+      - {name: debug,   label: "Debug (Swagger)", type: boolean, default: false}
+    steps:
+      - id: build
+        spider: forgejo
+        action: build
+        with: {component: broker, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+
+  build-client-redos8:
+    label: "Build client (RedOS 8)"
+    component: client-redos8
+    icon: "ti-package"
+    accent: teal
+    triggers: [{type: manual}]
+    params:
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
+      - {name: release, label: "Release", type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
+      - {name: debug,   label: "Debug (Sentry)", type: boolean, default: false}
+    steps:
+      - id: build
+        spider: forgejo
+        action: build
+        with: {component: client-redos8, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+
+  build-client-windows:
+    label: "Build client (Windows)"
+    component: client-windows
+    icon: "ti-brand-windows"
+    accent: teal
+    triggers: [{type: manual}]
+    params:
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
+      - {name: release, label: "Release", type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
+      - {name: debug,   label: "Debug (Sentry)", type: boolean, default: false}
+    steps:
+      - id: build
+        spider: forgejo
+        action: build
+        with: {component: client-windows, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+
+  update-stage:
+    label: "Update stand"
+    component: stage
+    icon: "ti-reload"
+    accent: amber
+    triggers: [{type: manual}]
+    params:
+      - {name: version, label: "Version",   type: string, required: true, default: "1.0.5"}
+      - {name: release, label: "Release",   type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: branch,  label: "Branch",    type: string, required: true, default: "main"}
+      - {name: os,      label: "Target OS", type: choice, required: true, options: [redos7, redos8, windows]}
+      - {name: debug,   label: "Debug",     type: boolean, default: false}
+      - {name: target,  label: "Target VM", type: string, required: true, default: "stage-01"}
+    steps:
+      - id: build-fe
+        spider: forgejo
+        action: build
+        with: {component: frontend, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+      - id: build-br
+        spider: forgejo
+        action: build
+        with: {component: broker, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+      - id: deploy
+        spider: ansible-local
+        action: deploy
+        with: {component: deploy-stage, target: "${params.target}", os: "${params.os}", version: "${params.version}", frontend: "${build-fe.artifact}", broker: "${build-br.artifact}"}
+
+  create-stage:
+    label: "Create test stand"
+    component: stage
+    icon: "ti-plus"
+    accent: green
+    triggers: [{type: manual}]
+    params:
+      - {name: version,    label: "Version",    type: string, required: true, default: "1.0.5"}
+      - {name: release,    label: "Release",    type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: branch,     label: "Branch",     type: string, required: true, default: "main"}
+      - {name: os,         label: "OS",         type: choice, required: true, options: [redos7, redos8, windows]}
+      - {name: debug,      label: "Debug",      type: boolean, default: false}
+      - {name: stand_name, label: "Stand name", type: string, required: true, default: "test-stand"}
+    steps:
+      - id: build-fe
+        spider: forgejo
+        action: build
+        with: {component: frontend, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+      - id: build-br
+        spider: forgejo
+        action: build
+        with: {component: broker, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+      - id: vm
+        spider: tofu-proxmox
+        action: provision
+        with: {name: "${params.stand_name}-${params.os}", os: "${params.os}"}
+      - id: deploy
+        spider: ansible-local
+        action: deploy
+        with: {component: deploy-stage, target: "${vm.ip}", os: "${vm.os}", conn: "${vm.conn}", version: "${params.version}", frontend: "${build-fe.artifact}", broker: "${build-br.artifact}"}

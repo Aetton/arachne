@@ -1,0 +1,98 @@
+# Reference Forgejo workflow implementing the Arachne callback contract.
+#
+# Arachne (the spider) plucks this thread via the dispatch API and injects three
+# inputs: build_id, arachne_callback, arachne_token. This workflow vibrates the
+# thread back — one signal per job block, then a final status.
+#
+# Block signal:  POST {callback}/signal   {step, status, output}   (X-Arachne-Token)
+# Final signal:  POST {callback}/status   {status, artifacts}      (X-Arachne-Token)
+#
+# Copy this into each component repo as .forgejo/workflows/build.yml and adapt
+# the actual build steps. The reporting plumbing stays the same.
+
+name: build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:          { type: string,  required: true }
+      release:          { type: string,  required: false, default: "release-dev" }
+      branch:           { type: string,  required: false, default: "main" }
+      debug:            { type: string,  required: false, default: "false" }
+      build_id:         { type: string,  required: true }
+      arachne_callback: { type: string,  required: true }
+      arachne_token:    { type: string,  required: true }
+
+jobs:
+  build:
+    runs-on: redos8        # or windows / redos7 depending on the component
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v4
+
+      - name: Report checkout
+        if: always()
+        shell: bash
+        run: |
+          curl -fsS -X POST "${{ inputs.arachne_callback }}/signal" \
+            -H "X-Arachne-Token: ${{ inputs.arachne_token }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"step\":\"checkout\",\"status\":\"${{ steps.checkout.outcome }}\",\"output\":\"checked out ${{ inputs.branch }}\"}"
+
+      - name: Build
+        id: build
+        shell: bash
+        env:
+          APP_VERSION: ${{ inputs.version }}
+          APP_RELEASE: ${{ inputs.release }}
+          SENTRY_ENABLED: ${{ inputs.debug }}
+        run: |
+          make VERSION="${{ inputs.version }}"
+
+      - name: Report build
+        if: always()
+        shell: bash
+        run: |
+          curl -fsS -X POST "${{ inputs.arachne_callback }}/signal" \
+            -H "X-Arachne-Token: ${{ inputs.arachne_token }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"step\":\"build\",\"status\":\"${{ steps.build.outcome }}\",\"output\":\"make finished\"}"
+
+      - name: Upload to Nexus
+        id: upload
+        shell: bash
+        env:
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          ART="build/app-${{ inputs.version }}.tar.gz"
+          URL="${{ vars.NEXUS_URL }}/repository/dev-artifacts/frontend/${{ inputs.version }}/frontend-${{ inputs.version }}.tar.gz"
+          curl -fsS -u "$NEXUS_USER:$NEXUS_PASSWORD" --upload-file "$ART" "$URL"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Report upload
+        if: always()
+        shell: bash
+        run: |
+          curl -fsS -X POST "${{ inputs.arachne_callback }}/signal" \
+            -H "X-Arachne-Token: ${{ inputs.arachne_token }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"step\":\"upload\",\"status\":\"${{ steps.upload.outcome }}\",\"output\":\"pushed to Nexus\"}"
+
+      # Final signal — settles the thread. always() so failures report too.
+      - name: Settle thread
+        if: always()
+        shell: bash
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            STATUS="success"
+            ARTS="[{\"name\":\"frontend-${{ inputs.version }}.tar.gz\",\"type\":\"nexus\",\"download_url\":\"${{ steps.upload.outputs.url }}\"}]"
+          else
+            STATUS="failed"
+            ARTS="[]"
+          fi
+          curl -fsS -X POST "${{ inputs.arachne_callback }}/status" \
+            -H "X-Arachne-Token: ${{ inputs.arachne_token }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"$STATUS\",\"artifacts\":$ARTS}"

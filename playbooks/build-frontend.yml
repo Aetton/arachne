@@ -1,0 +1,80 @@
+---
+# Build frontend → tarball → Nexus.
+# Invoked by the portal with:
+#   -e version=.. -e release=.. -e branch=.. -e debug=true|false
+#
+# The portal scrapes the line "uploaded to <repo>/<path>" to build the
+# download link, so keep that echo intact in the upload task.
+
+- name: build-frontend
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    version: "0.0.0"
+    release: "release-dev"
+    branch: "main"
+    debug: false
+    repo_url: "https://gitea.redsoft.internal/redsoft/frontend.git"
+    workdir: "/tmp/build-frontend-{{ version }}"
+    nexus_repo: "dev-artifacts"
+    nexus_path: "frontend/{{ version }}/frontend-{{ version }}.tar.gz"
+    # set in CI secrets / env; left blank here on purpose
+    nexus_user: "{{ lookup('env', 'NEXUS_USER') | default('', true) }}"
+    nexus_password: "{{ lookup('env', 'NEXUS_PASSWORD') | default('', true) }}"
+    nexus_url: "{{ lookup('env', 'NEXUS_URL') | default('https://nexus.redsoft.internal', true) }}"
+
+  tasks:
+    - name: "checkout : clone repository"
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ workdir }}"
+        version: "{{ branch }}"
+        force: true
+      register: checkout
+
+    - name: "checkout : report"
+      ansible.builtin.debug:
+        msg: "changed: cloned {{ branch }} @ {{ checkout.after | default('?') }}"
+
+    - name: "build : compose env"
+      ansible.builtin.set_fact:
+        build_env:
+          NODE_ENV: production
+          APP_VERSION: "{{ version }}"
+          APP_RELEASE: "{{ release }}"
+          SENTRY_ENABLED: "{{ 'true' if debug | bool else 'false' }}"
+
+    - name: "build : install dependencies"
+      ansible.builtin.command:
+        cmd: npm ci
+        chdir: "{{ workdir }}"
+      environment: "{{ build_env }}"
+      changed_when: true
+
+    - name: "build : compile application"
+      ansible.builtin.command:
+        cmd: npm run build
+        chdir: "{{ workdir }}"
+      environment: "{{ build_env }}"
+      changed_when: true
+
+    - name: "package : create tarball"
+      ansible.builtin.command:
+        cmd: tar czf frontend-{{ version }}.tar.gz -C dist .
+        chdir: "{{ workdir }}"
+      changed_when: true
+
+    - name: "nexus : upload artifact"
+      ansible.builtin.command:
+        cmd: >
+          curl -f -u {{ nexus_user }}:{{ nexus_password }}
+          --upload-file {{ workdir }}/frontend-{{ version }}.tar.gz
+          {{ nexus_url }}/repository/{{ nexus_repo }}/{{ nexus_path }}
+      changed_when: true
+      register: upload
+
+    - name: "nexus : confirm"
+      ansible.builtin.debug:
+        msg: "changed: uploaded to {{ nexus_repo }}/{{ nexus_path }}"
