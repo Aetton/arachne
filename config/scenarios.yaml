@@ -12,6 +12,7 @@ components:
   broker:         {label: "Broker",            icon: "ti-server"}
   client-redos8:  {label: "Client (RedOS 8)",  icon: "ti-package"}
   client-windows: {label: "Client (Windows)",  icon: "ti-brand-windows"}
+  agent-windows:  {label: "Agent (Windows)",   icon: "ti-device-desktop"}
   stage:          {label: "Test stand",        icon: "ti-stack-2"}
 
 scenarios:
@@ -31,7 +32,7 @@ scenarios:
       - id: build
         spider: forgejo
         action: build
-        with: {component: frontend, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: frontend, repo: frontend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
 
   build-broker:
     label: "Build broker"
@@ -48,7 +49,7 @@ scenarios:
       - id: build
         spider: forgejo
         action: build
-        with: {component: broker, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: broker, repo: broker, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
 
   build-client-redos8:
     label: "Build client (RedOS 8)"
@@ -65,7 +66,7 @@ scenarios:
       - id: build
         spider: forgejo
         action: build
-        with: {component: client-redos8, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: client-redos8, repo: client, workflow: build-redos8.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
 
   build-client-windows:
     label: "Build client (Windows)"
@@ -82,7 +83,22 @@ scenarios:
       - id: build
         spider: forgejo
         action: build
-        with: {component: client-windows, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: client-windows, repo: client, workflow: build-windows.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+
+  build-agent-windows:
+    label: "Build agent (Windows)"
+    component: agent-windows
+    icon: "ti-device-desktop"
+    accent: teal
+    triggers: [{type: manual}]
+    params:
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
+      - {name: upload,  label: "Upload to Nexus", type: choice, required: true, options: ["true", "false"]}
+    steps:
+      - id: build
+        spider: forgejo
+        action: build
+        with: {component: agent-windows, repo: broker, workflow: windows-agent-build.yml, version: "${params.version}", upload: "${params.upload}"}
 
   update-stage:
     label: "Update stand"
@@ -101,11 +117,11 @@ scenarios:
       - id: build-fe
         spider: forgejo
         action: build
-        with: {component: frontend, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: frontend, repo: frontend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
       - id: build-br
         spider: forgejo
         action: build
-        with: {component: broker, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: broker, repo: broker, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
       - id: deploy
         spider: ansible-local
         action: deploy
@@ -128,11 +144,11 @@ scenarios:
       - id: build-fe
         spider: forgejo
         action: build
-        with: {component: frontend, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: frontend, repo: frontend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
       - id: build-br
         spider: forgejo
         action: build
-        with: {component: broker, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: broker, repo: broker, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
       - id: vm
         spider: tofu-proxmox
         action: provision

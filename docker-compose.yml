@@ -9,10 +9,12 @@
 services:
   portal:
     build: .
-    container_name: deployment-portal
+    container_name: arachne
     restart: unless-stopped
     ports:
       - "8080:8000"
+    env_file:
+      - .env
     environment:
       JWT_SECRET: "${JWT_SECRET:-change-me-in-prod}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin}"
@@ -21,11 +23,14 @@ services:
       # DATABASE_URL: "postgresql+psycopg://portal:portal@db/portal"
       ANSIBLE_PLAYBOOKS_DIR: /app/playbooks
       SCENARIOS_CONFIG: /app/config/scenarios.yaml
+      SSL_CERT_FILE: /etc/ssl/certs/redsoft-ca.crt
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/redsoft-ca.crt
     volumes:
       # persist the SQLite db + let you edit config/playbooks without rebuild
       - ./data:/app/api/data
       - ./config:/app/config:ro
       - ./playbooks:/app/playbooks:ro
+      - ./certs/redsoft-ca-bundle.crt:/etc/ssl/certs/redsoft-ca.crt:ro
       # mount your ssh key if playbooks provision remote VMs
       # - ~/.ssh/portal_id_ed25519:/root/.ssh/id_ed25519:ro
     # depends_on:

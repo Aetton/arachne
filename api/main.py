@@ -1,4 +1,4 @@
-"""Deployment Portal — FastAPI entrypoint.
+"""Arachne — FastAPI entrypoint.
 
 Run: uvicorn main:app --reload  (from api/ dir)
 Seeds an 'admin/admin' user on first boot (change immediately).
@@ -67,7 +67,7 @@ async def lifespan(app: FastAPI):
     await stop_bus()
 
 
-app = FastAPI(title="Deployment Portal", lifespan=lifespan)
+app = FastAPI(title="Arachne", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

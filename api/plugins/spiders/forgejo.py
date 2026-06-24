@@ -36,18 +36,11 @@ VERIFY_TLS = os.getenv("FORGEJO_VERIFY_TLS", "true").lower() != "false"
 FORGEJO_DEADLINE = float(os.getenv("FORGEJO_DEADLINE", "3600"))   # 1h hard cap
 FORGEJO_SILENCE = float(os.getenv("FORGEJO_SILENCE", "600"))      # 10m no-signal
 
-# component -> (repo, workflow file)
-WORKFLOW_MAP = {
-    "frontend":       ("frontend", "build.yml"),
-    "broker":         ("broker", "build.yml"),
-    "client-redos7":  ("client", "build-redos7.yml"),
-    "client-redos8":  ("client", "build-redos8.yml"),
-    "client-windows": ("client", "build-windows.yml"),
-}
-
-
 class ForgejoSpider(BuildSpider):
     NAME = "forgejo"
+
+    # keys consumed by the spider itself — everything else flows to workflow inputs
+    _CONTROL_KEYS = {"component", "repo", "workflow", "owner", "ref"}
 
     def __init__(self):
         self._runs: dict[str, dict] = {}
@@ -65,27 +58,33 @@ class ForgejoSpider(BuildSpider):
             return False
 
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
-        comp = step.with_.get("component", "")
-        if comp not in WORKFLOW_MAP:
-            raise KeyError(f"no workflow mapping for component '{comp}'")
-        repo, wf = WORKFLOW_MAP[comp]
+        w = step.with_
+        repo = w.get("repo")
+        wf = w.get("workflow")
+        if not repo or not wf:
+            raise KeyError(
+                f"forgejo spider needs 'repo' and 'workflow' in step.with "
+                f"(got repo={repo!r}, workflow={wf!r}). "
+                f"Define them in the scenario step, not in code.")
+        owner = w.get("owner", FORGEJO_OWNER)
+        ref = w.get("ref") or w.get("branch", "main")
 
         thread = switchboard.pluck()           # stamp the thread
         build_id = thread.build_id
 
-        # workflow inputs: build params + the callback contract
+        # everything that isn't a control key flows to the workflow as inputs
         inputs = {k: (str(v).lower() if isinstance(v, bool) else str(v))
-                  for k, v in step.with_.items() if k != "component"}
+                  for k, v in w.items() if k not in self._CONTROL_KEYS}
         inputs["build_id"] = build_id
         inputs["arachne_callback"] = f"{ARACHNE_URL}/api/threads/{build_id}"
         inputs["arachne_token"] = thread.token
 
-        url = (f"{FORGEJO_URL}/api/v1/repos/{FORGEJO_OWNER}/{repo}"
+        url = (f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}"
                f"/actions/workflows/{wf}/dispatches")
-        body = {"ref": step.with_.get("branch", "main"), "inputs": inputs}
+        body = {"ref": ref, "inputs": inputs}
 
-        self._runs[build_id] = {"comp": comp, "repo": repo, "wf": wf,
-                                "version": inputs.get("version", "0.0.0"),
+        self._runs[build_id] = {"comp": w.get("component", repo), "repo": repo,
+                                "wf": wf, "version": inputs.get("version", "0.0.0"),
                                 "status": RunStatus.PENDING, "artifacts": []}
         try:
             r = httpx.post(url, headers=self._headers(), json=body,
@@ -94,7 +93,7 @@ class ForgejoSpider(BuildSpider):
             self._runs[build_id]["status"] = RunStatus.RUNNING
         except Exception as exc:  # noqa: BLE001
             self._runs[build_id]["status"] = RunStatus.FAILED
-            self._runs[build_id]["error"] = str(exc)
+            self._runs[build_id]["error"] = f"{exc} (while POST {url})"
 
         return RunHandle(spider=self.NAME, external_id=build_id,
                          metadata={"repo": repo, "workflow": wf})

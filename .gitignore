@@ -8,3 +8,8 @@ venv/
 tofu/**/.terraform/
 tofu/**/terraform.tfstate*
 *.retry
+*.bak
+
+# не плодить вложенные репозитории
+api/.git/
+**/.git/

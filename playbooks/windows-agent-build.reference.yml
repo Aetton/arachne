@@ -1,0 +1,139 @@
+# .forgejo/workflows/build-windows.yml  — в репе `client`
+#
+# Рабочий билдер windows-агента + обвязка Arachne (закон нити).
+# Запускается двумя способами:
+#   1. Arachne дёргает dispatch и подкладывает build_id/arachne_callback/arachne_token
+#      → workflow стучит сигналами обратно, паук слышит вибрацию.
+#   2. Руками из Forgejo UI → служебные inputs пустые, callback-шаги скипаются,
+#      сборка работает как раньше.
+#
+# Powershell-кухня живёт ЗДЕСЬ, в нити. Драйверу forgejo.py на неё плевать —
+# ему важен только сигнал {step,status,output} + токен в заголовке.
+
+name: windows-agent-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        description: "Agent version"
+        required: true
+        default: "1.0.5"
+      upload:
+        type: choice
+        description: "Upload installer to Nexus"
+        required: true
+        default: "true"
+        options: ["true", "false"]
+      # --- служебные: подставляет Arachne при dispatch (пусто при ручном запуске) ---
+      build_id:
+        type: string
+        required: false
+        default: ""
+      arachne_callback:
+        type: string
+        required: false
+        default: ""
+      arachne_token:
+        type: string
+        required: false
+        default: ""
+
+jobs:
+  build:
+    runs-on: windows-build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show context
+        shell: powershell
+        run: |
+          hostname
+          whoami
+          Write-Host "### Git";  git --version; git rev-parse HEAD
+          Write-Host "### Go";    go version;  where.exe go
+          Write-Host "### Node";  node --version
+          Write-Host "### make";  make --version
+          Write-Host "### Inno";  where.exe iscc
+
+      - name: Build installer
+        id: build
+        shell: powershell
+        run: |
+          make -f build/agent/Makefile show VERSION="${{ inputs.version }}"
+          make -f build/agent/Makefile installer VERSION="${{ inputs.version }}"
+
+      # --- вибрация по нити: шаг сборки завершён ---
+      - name: Signal build
+        if: always() && inputs.arachne_callback != ''
+        shell: powershell
+        run: |
+          $body = @{
+            step   = "build"
+            status = "${{ steps.build.outcome }}"
+            output = "make installer VERSION=${{ inputs.version }}"
+          } | ConvertTo-Json -Compress
+          Invoke-RestMethod -Method Post `
+            -Uri "${{ inputs.arachne_callback }}/signal" `
+            -Headers @{ "X-Arachne-Token" = "${{ inputs.arachne_token }}" } `
+            -ContentType "application/json" -Body $body
+
+      - name: Show release
+        shell: powershell
+        run: Get-ChildItem .\release -Recurse
+
+      - name: Upload to Nexus
+        id: upload
+        if: ${{ inputs.upload == 'true' }}
+        shell: powershell
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_REPO: ${{ secrets.NEXUS_REPO }}
+          NEXUS_USER: ${{ secrets.NEXUS_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+        run: |
+          make -f build/agent/Makefile upload-only VERSION="${{ inputs.version }}"
+
+      # --- вибрация по нити: шаг загрузки завершён ---
+      - name: Signal upload
+        if: always() && inputs.arachne_callback != '' && inputs.upload == 'true'
+        shell: powershell
+        run: |
+          $body = @{
+            step   = "upload"
+            status = "${{ steps.upload.outcome }}"
+            output = "uploaded to Nexus"
+          } | ConvertTo-Json -Compress
+          Invoke-RestMethod -Method Post `
+            -Uri "${{ inputs.arachne_callback }}/signal" `
+            -Headers @{ "X-Arachne-Token" = "${{ inputs.arachne_token }}" } `
+            -ContentType "application/json" -Body $body
+
+      # --- финал: нить закрыта, отдаём добычу ---
+      - name: Settle thread
+        if: always() && inputs.arachne_callback != ''
+        shell: powershell
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_REPO: ${{ secrets.NEXUS_REPO }}
+        run: |
+          if ("${{ job.status }}" -eq "success") {
+            $status = "success"
+            $url = "$($env:NEXUS_URL)/repository/$($env:NEXUS_REPO)/windows/redvrm-agent/${{ inputs.version }}/redvrm-agent.${{ inputs.version }}.win.x86_64.exe"
+            $arts = @(@{
+              name         = "redvrm-agent.${{ inputs.version }}.win.x86_64.exe"
+              type         = "nexus"
+              download_url = $url
+            })
+          } else {
+            $status = "failed"
+            $arts = @()
+          }
+          $body = @{ status = $status; artifacts = $arts } | ConvertTo-Json -Compress -Depth 5
+          Invoke-RestMethod -Method Post `
+            -Uri "${{ inputs.arachne_callback }}/status" `
+            -Headers @{ "X-Arachne-Token" = "${{ inputs.arachne_token }}" } `
+            -ContentType "application/json" -Body $body
