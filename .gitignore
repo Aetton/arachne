@@ -10,6 +10,8 @@ data/
 *.pem
 *.key
 *.crt
+docker-compose.yml
+scenarios.yaml
 
 # Python environments
 .venv/
