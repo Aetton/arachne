@@ -1,0 +1,28 @@
+name: "Arachne Init PowerShell"
+description: "Mirror subsequent PowerShell step logs to Arachne with one workflow line"
+inputs:
+  callback:
+    required: false
+    description: "Arachne thread callback URL. Auto-detected from workflow_dispatch inputs when omitted."
+    default: ""
+  token:
+    required: false
+    description: "Arachne one-time thread token. Auto-detected from workflow_dispatch inputs when omitted."
+    default: ""
+  step:
+    required: false
+    description: "Arachne log block name"
+    default: "runner-log"
+  settle:
+    required: false
+    description: "Send final /status from the post hook"
+    default: "true"
+  artifacts-path:
+    required: false
+    description: "Optional JSON file with Arachne artifacts to send at settle time"
+    default: ".arachne/artifacts.json"
+runs:
+  using: "node20"
+  main: "dist/main.js"
+  post: "dist/post.js"
+  post-if: "always()"
