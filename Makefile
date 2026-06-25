@@ -15,21 +15,21 @@
 # Override the compose command if needed:  make up DC="docker-compose"
 
 DC ?= docker compose
-SERVICE ?= portal
+SERVICE ?= arachne
 
 # ---- guards -------------------------------------------------------------
 # .env must exist; data/ must exist before the volume mounts (else Docker
 # creates it as root and the container can't write the SQLite file).
 .PHONY: _preflight
 _preflight:
-	@test -f .env || (cp .env.example .env && echo "→ created .env from .env.example — edit JWT_SECRET/ADMIN_PASSWORD before prod")
+	@test -f .env || (cp .env.example .env && echo "→ created .env from .env.example — edit runtime settings before production")
 	@mkdir -p data
 
 # ---- core lifecycle -----------------------------------------------------
 .PHONY: up
 up: _preflight
 	$(DC) up -d --build
-	@echo "→ Arachne on http://localhost:8080  (admin / \$$ADMIN_PASSWORD from .env)"
+	@echo "→ Arachne on http://localhost:8080"
 
 .PHONY: down
 down:
@@ -85,8 +85,8 @@ up-full: _preflight
 reset:
 	@printf "This stops Arachne and DELETES the SQLite db + volumes. Type yes: " && read ans && [ "$$ans" = "yes" ]
 	$(DC) down -v
-	rm -f data/portal.db
-	@echo "→ wiped. 'make up' starts fresh (admin user re-seeded)."
+	rm -f data/arachne.db
+	@echo "→ wiped. 'make up' starts fresh."
 
 .PHONY: config
 config:
