@@ -25,11 +25,11 @@ from core.registry import register_spider
 from core.types import RunHandle, LogLine, RunStatus, Artifact, StepSpec
 from core import switchboard
 
-FORGEJO_URL = os.getenv("FORGEJO_URL", "https://gitea.redsoft.internal").rstrip("/")
+FORGEJO_URL = os.getenv("FORGEJO_URL", "https://forgejo.example.internal").rstrip("/")
 FORGEJO_TOKEN = os.getenv("FORGEJO_TOKEN", "")
-FORGEJO_OWNER = os.getenv("FORGEJO_OWNER", "redsoft")
-ARACHNE_URL = os.getenv("ARACHNE_URL", "https://arachne.redsoft.internal").rstrip("/")
-NEXUS_URL = os.getenv("NEXUS_URL", "https://nexus.redsoft.internal").rstrip("/")
+FORGEJO_OWNER = os.getenv("FORGEJO_OWNER", "example")
+ARACHNE_URL = os.getenv("ARACHNE_URL", "https://arachne.example.internal").rstrip("/")
+NEXUS_URL = os.getenv("NEXUS_URL", "https://nexus.example.internal").rstrip("/")
 VERIFY_TLS = os.getenv("FORGEJO_VERIFY_TLS", "true").lower() != "false"
 
 # overall watchdog: max total wait, and max silence between vibrations
