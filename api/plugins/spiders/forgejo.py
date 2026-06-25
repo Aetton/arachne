@@ -13,8 +13,10 @@ validates the token (law of the thread) and wakes the waiting driver.
 """
 from __future__ import annotations
 
+import io
 import os
 import time
+import zipfile
 from typing import AsyncIterator
 
 import httpx
@@ -117,6 +119,9 @@ class ForgejoSpider(BuildSpider):
             "forgejo_workflow": None,
             "forgejo_repository": None,
             "seen_log_lines": {},
+            "seen_run_log_lines": 0,
+            "jobs_api_missing": False,
+            "run_log_error_reported": False,
             "last_log_at": time.time(),
         }
         try:
@@ -172,12 +177,55 @@ class ForgejoSpider(BuildSpider):
 
     def _fetch_run_jobs(self, st: dict) -> list[dict]:
         owner, repo, run_id = st["owner"], st["repo"], st.get("forgejo_run_id")
-        if not run_id:
+        if not run_id or st.get("jobs_api_missing"):
             return []
         url = f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}/actions/runs/{run_id}/jobs"
-        data = self._forgejo_get_json(url)
+        try:
+            data = self._forgejo_get_json(url)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                st["jobs_api_missing"] = True
+                return []
+            raise
         jobs = data.get("jobs", data if isinstance(data, list) else [])
         return jobs if isinstance(jobs, list) else []
+
+    @staticmethod
+    def _response_to_text(resp: httpx.Response) -> str:
+        content_type = resp.headers.get("content-type", "").lower()
+        blob = resp.content
+        if "zip" in content_type or blob.startswith(b"PK\x03\x04"):
+            chunks: list[str] = []
+            with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+                for name in sorted(archive.namelist()):
+                    if name.endswith("/"):
+                        continue
+                    chunks.append(f"TASK [{name}]")
+                    chunks.append(archive.read(name).decode("utf-8", errors="replace"))
+            return "\n".join(chunks)
+        return resp.text
+
+    def _fetch_run_log_text(self, st: dict) -> str:
+        owner, repo, run_id = st["owner"], st["repo"], st.get("forgejo_run_id")
+        candidates = [
+            f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}/actions/runs/{run_id}/logs",
+            f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}/actions/runs/{run_id}/attempts/1/logs",
+        ]
+        errors: list[str] = []
+        for url in candidates:
+            try:
+                r = httpx.get(url, headers=self._log_headers(), timeout=20, verify=VERIFY_TLS)
+                if r.status_code == 404:
+                    errors.append(f"{url}: 404")
+                    continue
+                r.raise_for_status()
+                return self._response_to_text(r)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(self._http_error(exc, url, method="GET"))
+        if not st.get("run_log_error_reported"):
+            st["run_log_error_reported"] = True
+            return "[Arachne] could not read Forgejo run log: " + " | ".join(errors)
+        return ""
 
     def _fetch_job_log_text(self, st: dict, job_id: str | int) -> str:
         owner, repo = st["owner"], st["repo"]
@@ -193,12 +241,27 @@ class ForgejoSpider(BuildSpider):
                     last_error = f"{url}: 404"
                     continue
                 r.raise_for_status()
-                return r.text
+                return self._response_to_text(r)
             except Exception as exc:  # noqa: BLE001
                 last_error = self._http_error(exc, url, method="GET")
         if last_error:
             return f"[Arachne] could not read Forgejo job log: {last_error}"
         return ""
+
+    def _poll_run_log_fallback(self, st: dict) -> list[LogLine]:
+        text = self._fetch_run_log_text(st)
+        raw_lines = text.splitlines()
+        prev = int(st.get("seen_run_log_lines", 0))
+        if prev == 0 and raw_lines:
+            lines = [LogLine("TASK [Forgejo run log]", "stdout")]
+        else:
+            lines = []
+        for line in raw_lines[prev:]:
+            lines.append(LogLine(line, "stdout"))
+        if len(raw_lines) > prev:
+            st["seen_run_log_lines"] = len(raw_lines)
+            st["last_log_at"] = time.time()
+        return lines
 
     def _poll_forgejo_logs(self, st: dict) -> list[LogLine]:
         if not st.get("forgejo_run_id"):
@@ -208,7 +271,12 @@ class ForgejoSpider(BuildSpider):
         try:
             jobs = self._fetch_run_jobs(st)
         except Exception as exc:  # noqa: BLE001
-            return [LogLine(f"Forgejo log polling failed: {exc}", "stderr")]
+            jobs = []
+            if not st.get("run_log_error_reported"):
+                lines.append(LogLine(f"Forgejo jobs polling failed, trying run log: {exc}", "system"))
+
+        if not jobs:
+            return lines + self._poll_run_log_fallback(st)
 
         seen = st.setdefault("seen_log_lines", {})
         for job in jobs:
