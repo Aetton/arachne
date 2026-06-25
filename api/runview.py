@@ -15,8 +15,7 @@ _STEP_MARK = re.compile(r"^━+ step '(?P<id>[^']+)' via (?P<spider>\S+) ━+")
 
 def _failed(text: str) -> bool:
     s = text.lstrip()
-    return s.startswith(("fatal:", "failed:", "PORTAL ERROR", "error [")) \
-        or s.startswith("PORTAL ERROR")
+    return s.startswith(("fatal:", "failed:", "ARACHNE ERROR", "PORTAL ERROR", "error ["))
 
 
 def build(records: list[dict], run_status: str) -> list[dict]:
@@ -50,7 +49,7 @@ def build(records: list[dict], run_status: str) -> list[dict]:
             st = ensure_step(sid)
             body = text[len("artifact: "):]
             name = body.split(" [", 1)[0].strip()
-            url = body.split("\u2192", 1)[1].strip() if "\u2192" in body else None
+            url = body.split("→", 1)[1].strip() if "→" in body else None
             st["artifacts"].append({"name": name, "url": url})
             continue
 
