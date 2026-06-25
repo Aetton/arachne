@@ -1,12 +1,31 @@
 __pycache__/
 *.pyc
+
+# Runtime data and local secrets
 data/
 *.db
 .env
+.env.*
+!.env.example
+certs/
+*.pem
+*.key
+*.crt
+
+# Python environments
 .venv/
 venv/
+
+# Local scenario overrides and company-specific configs
+config/*.local.yaml
+config/*redsoft*.yaml
+config/*internal*.yaml
+
+# OpenTofu/Terraform state
 tofu/**/.terraform/
 tofu/**/terraform.tfstate*
+
+# Misc
 *.retry
 *.bak
 
