@@ -6,155 +6,176 @@
 #   steps:    ordered list, each dispatched through a driver plugin
 #
 # Step `with` values support ${params.X} and ${step_id.field} references.
+#
+# Keep this file generic. Product-specific scenarios belong in ignored local
+# overlays such as config/scenarios.local.yaml.
 
 components:
-  frontend:       {label: "Frontend",          icon: "ti-code"}
-  broker:         {label: "Broker",            icon: "ti-server"}
-  client-redos8:  {label: "Client (RedOS 8)",  icon: "ti-package"}
-  client-windows: {label: "Client (Windows)",  icon: "ti-brand-windows"}
-  agent-windows:  {label: "Agent (Windows)",   icon: "ti-device-desktop"}
-  stage:          {label: "Test stand",        icon: "ti-stack-2"}
+  webapp:        {label: "Web application",       icon: "ti-code"}
+  backend:       {label: "Backend service",       icon: "ti-server"}
+  rpm-el7:       {label: "RPM (EL7-compatible)", icon: "ti-package"}
+  rpm-modern:    {label: "RPM (modern Linux)",   icon: "ti-package"}
+  windows-app:   {label: "Windows installer",    icon: "ti-brand-windows"}
+  agent-windows: {label: "Windows agent",        icon: "ti-device-desktop"}
+  stage:         {label: "Test environment",     icon: "ti-stack-2"}
 
 scenarios:
 
-  build-frontend:
-    label: "Build frontend"
-    component: frontend
+  build-webapp:
+    label: "Build web application"
+    component: webapp
     icon: "ti-code"
     accent: blue
     triggers: [{type: manual}]
     params:
-      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
-      - {name: release, label: "Release", type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.0"}
+      - {name: release, label: "Release", type: choice, required: true, options: [stable, staging, dev]}
       - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
-      - {name: debug,   label: "Debug (Sentry)", type: boolean, default: false}
+      - {name: debug,   label: "Debug", type: boolean, default: false}
     steps:
       - id: build
         spider: forgejo
         action: build
-        with: {component: frontend, repo: frontend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: webapp, repo: example-webapp, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
 
-  build-broker:
-    label: "Build broker"
-    component: broker
+  build-backend:
+    label: "Build backend service"
+    component: backend
     icon: "ti-server"
     accent: purple
     triggers: [{type: manual}]
     params:
-      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
-      - {name: release, label: "Release", type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.0"}
+      - {name: release, label: "Release", type: choice, required: true, options: [stable, staging, dev]}
       - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
-      - {name: debug,   label: "Debug (Swagger)", type: boolean, default: false}
+      - {name: debug,   label: "Debug", type: boolean, default: false}
     steps:
       - id: build
         spider: forgejo
         action: build
-        with: {component: broker, repo: broker, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: backend, repo: example-backend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
 
-  build-client-redos8:
-    label: "Build client (RedOS 8)"
-    component: client-redos8
+  build-rpm-el7:
+    label: "Build RPM (EL7-compatible)"
+    component: rpm-el7
     icon: "ti-package"
     accent: teal
     triggers: [{type: manual}]
     params:
-      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
-      - {name: release, label: "Release", type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.0"}
+      - {name: release, label: "Release", type: choice, required: true, options: [stable, staging, dev]}
       - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
-      - {name: debug,   label: "Debug (Sentry)", type: boolean, default: false}
+      - {name: debug,   label: "Debug", type: boolean, default: false}
     steps:
       - id: build
         spider: forgejo
         action: build
-        with: {component: client-redos8, repo: client, workflow: build-redos8.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: rpm-el7, repo: example-rpm-app, workflow: build-el7.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
 
-  build-client-windows:
-    label: "Build client (Windows)"
-    component: client-windows
+  build-rpm-modern:
+    label: "Build RPM (modern Linux)"
+    component: rpm-modern
+    icon: "ti-package"
+    accent: teal
+    triggers: [{type: manual}]
+    params:
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.0"}
+      - {name: release, label: "Release", type: choice, required: true, options: [stable, staging, dev]}
+      - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
+      - {name: debug,   label: "Debug", type: boolean, default: false}
+    steps:
+      - id: build
+        spider: forgejo
+        action: build
+        with: {component: rpm-modern, repo: example-rpm-app, workflow: build-rpm-modern.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+
+  build-windows-installer:
+    label: "Build Windows installer"
+    component: windows-app
     icon: "ti-brand-windows"
     accent: teal
     triggers: [{type: manual}]
     params:
-      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
-      - {name: release, label: "Release", type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.0"}
+      - {name: release, label: "Release", type: choice, required: true, options: [stable, staging, dev]}
       - {name: branch,  label: "Branch",  type: string, required: true, default: "main"}
-      - {name: debug,   label: "Debug (Sentry)", type: boolean, default: false}
+      - {name: debug,   label: "Debug", type: boolean, default: false}
     steps:
       - id: build
         spider: forgejo
         action: build
-        with: {component: client-windows, repo: client, workflow: build-windows.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: windows-app, repo: example-windows-app, workflow: build-windows.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
 
-  build-agent-windows:
-    label: "Build agent (Windows)"
+  build-windows-agent:
+    label: "Build Windows agent"
     component: agent-windows
     icon: "ti-device-desktop"
     accent: teal
     triggers: [{type: manual}]
     params:
-      - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
-      - {name: upload,  label: "Upload to Nexus", type: choice, required: true, options: ["true", "false"]}
-      - {name: branch,  label: "Branch", type: string, required: true, default: "feat-ci"}
+      - {name: version, label: "Version", type: string, required: true, default: "1.0.0"}
+      - {name: upload,  label: "Upload artifact", type: choice, required: true, options: ["true", "false"]}
+      - {name: branch,  label: "Branch", type: string, required: true, default: "main"}
     steps:
       - id: build
         spider: forgejo
         action: build
-        with: {component: agent-windows, repo: broker, workflow: windows-agent-build.yml, version: "${params.version}", upload: "${params.upload}", branch: "${params.branch}"}
+        with: {component: agent-windows, repo: example-agent, workflow: build-windows-agent.yml, version: "${params.version}", upload: "${params.upload}", branch: "${params.branch}"}
 
   update-stage:
-    label: "Update stand"
+    label: "Update test environment"
     component: stage
     icon: "ti-reload"
     accent: amber
     triggers: [{type: manual}]
     params:
-      - {name: version, label: "Version",   type: string, required: true, default: "1.0.5"}
-      - {name: release, label: "Release",   type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: version, label: "Version",   type: string, required: true, default: "1.0.0"}
+      - {name: release, label: "Release",   type: choice, required: true, options: [stable, staging, dev]}
       - {name: branch,  label: "Branch",    type: string, required: true, default: "main"}
-      - {name: os,      label: "Target OS", type: choice, required: true, options: [redos7, redos8, windows]}
+      - {name: os,      label: "Target OS", type: choice, required: true, options: [el7, modern-linux, windows]}
       - {name: debug,   label: "Debug",     type: boolean, default: false}
       - {name: target,  label: "Target VM", type: string, required: true, default: "stage-01"}
     steps:
-      - id: build-fe
+      - id: build-web
         spider: forgejo
         action: build
-        with: {component: frontend, repo: frontend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
-      - id: build-br
+        with: {component: webapp, repo: example-webapp, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+      - id: build-backend
         spider: forgejo
         action: build
-        with: {component: broker, repo: broker, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: backend, repo: example-backend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
       - id: deploy
         spider: ansible-local
         action: deploy
-        with: {component: deploy-stage, target: "${params.target}", os: "${params.os}", version: "${params.version}", frontend: "${build-fe.artifact}", broker: "${build-br.artifact}"}
+        with: {component: deploy-stage, target: "${params.target}", os: "${params.os}", version: "${params.version}", webapp: "${build-web.artifact}", backend: "${build-backend.artifact}"}
 
   create-stage:
-    label: "Create test stand"
+    label: "Create test environment"
     component: stage
     icon: "ti-plus"
     accent: green
     triggers: [{type: manual}]
     params:
-      - {name: version,    label: "Version",    type: string, required: true, default: "1.0.5"}
-      - {name: release,    label: "Release",    type: choice, required: true, options: [release-prod, release-staging, release-dev]}
+      - {name: version,    label: "Version",    type: string, required: true, default: "1.0.0"}
+      - {name: release,    label: "Release",    type: choice, required: true, options: [stable, staging, dev]}
       - {name: branch,     label: "Branch",     type: string, required: true, default: "main"}
-      - {name: os,         label: "OS",         type: choice, required: true, options: [redos7, redos8, windows]}
+      - {name: os,         label: "OS",         type: choice, required: true, options: [el7, modern-linux, windows]}
       - {name: debug,      label: "Debug",      type: boolean, default: false}
-      - {name: stand_name, label: "Stand name", type: string, required: true, default: "test-stand"}
+      - {name: stage_name, label: "Environment name", type: string, required: true, default: "test-stage"}
     steps:
-      - id: build-fe
+      - id: build-web
         spider: forgejo
         action: build
-        with: {component: frontend, repo: frontend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
-      - id: build-br
+        with: {component: webapp, repo: example-webapp, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+      - id: build-backend
         spider: forgejo
         action: build
-        with: {component: broker, repo: broker, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
+        with: {component: backend, repo: example-backend, workflow: build.yml, version: "${params.version}", release: "${params.release}", branch: "${params.branch}", debug: "${params.debug}"}
       - id: vm
         spider: tofu-proxmox
         action: provision
-        with: {name: "${params.stand_name}-${params.os}", os: "${params.os}"}
+        with: {name: "${params.stage_name}-${params.os}", os: "${params.os}"}
       - id: deploy
         spider: ansible-local
         action: deploy
-        with: {component: deploy-stage, target: "${vm.ip}", os: "${vm.os}", conn: "${vm.conn}", version: "${params.version}", frontend: "${build-fe.artifact}", broker: "${build-br.artifact}"}
+        with: {component: deploy-stage, target: "${vm.ip}", os: "${vm.os}", conn: "${vm.conn}", version: "${params.version}", webapp: "${build-web.artifact}", backend: "${build-backend.artifact}"}
