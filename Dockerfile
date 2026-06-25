@@ -20,7 +20,7 @@ RUN chmod +x api/runners/demo_play.sh
 WORKDIR /app/api
 
 ENV PYTHONUNBUFFERED=1 \
-    DATABASE_URL=sqlite:///./data/portal.db \
+    DATABASE_URL=sqlite:///./data/arachne.db \
     ANSIBLE_PLAYBOOKS_DIR=/app/playbooks \
     SCENARIOS_CONFIG=/app/config/scenarios.yaml
 
