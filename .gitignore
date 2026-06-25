@@ -7,7 +7,6 @@ data/
 .env
 .env.*
 !.env.example
-!.gitkeep
 certs/
 *.pem
 *.key
