@@ -13,3 +13,6 @@ tofu/**/terraform.tfstate*
 # не плодить вложенные репозитории
 api/.git/
 **/.git/
+
+
+certs/*
