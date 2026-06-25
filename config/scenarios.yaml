@@ -94,11 +94,12 @@ scenarios:
     params:
       - {name: version, label: "Version", type: string, required: true, default: "1.0.5"}
       - {name: upload,  label: "Upload to Nexus", type: choice, required: true, options: ["true", "false"]}
+      - {name: branch,  label: "Branch", type: string, required: true, default: "feat-ci"}
     steps:
       - id: build
         spider: forgejo
         action: build
-        with: {component: agent-windows, repo: broker, workflow: windows-agent-build.yml, version: "${params.version}", upload: "${params.upload}"}
+        with: {component: agent-windows, repo: broker, workflow: windows-agent-build.yml, version: "${params.version}", upload: "${params.upload}", branch: "${params.branch}"}
 
   update-stage:
     label: "Update stand"

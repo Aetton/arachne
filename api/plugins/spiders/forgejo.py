@@ -36,11 +36,12 @@ VERIFY_TLS = os.getenv("FORGEJO_VERIFY_TLS", "true").lower() != "false"
 FORGEJO_DEADLINE = float(os.getenv("FORGEJO_DEADLINE", "3600"))   # 1h hard cap
 FORGEJO_SILENCE = float(os.getenv("FORGEJO_SILENCE", "600"))      # 10m no-signal
 
+
 class ForgejoSpider(BuildSpider):
     NAME = "forgejo"
 
     # keys consumed by the spider itself — everything else flows to workflow inputs
-    _CONTROL_KEYS = {"component", "repo", "workflow", "owner", "ref"}
+    _CONTROL_KEYS = {"component", "repo", "workflow", "owner", "ref", "branch"}
 
     def __init__(self):
         self._runs: dict[str, dict] = {}
@@ -48,6 +49,24 @@ class ForgejoSpider(BuildSpider):
     def _headers(self):
         return {"Authorization": f"token {FORGEJO_TOKEN}",
                 "Content-Type": "application/json"}
+
+    @staticmethod
+    def _http_error(exc: Exception, url: str, body: dict | None = None) -> str:
+        """Return an operator-readable backend error, including Forgejo's body.
+
+        httpx's default string often hides the response payload, which is exactly
+        where Forgejo explains refs/workflows/permissions. Don't make the UI read
+        goat entrails from container logs.
+        """
+        if isinstance(exc, httpx.HTTPStatusError):
+            resp = exc.response
+            try:
+                detail = resp.json()
+            except ValueError:
+                detail = resp.text
+            return (f"Forgejo API {resp.status_code} while POST {url}: {detail!r}; "
+                    f"request={body!r}")
+        return f"{exc} (while POST {url}; request={body!r})"
 
     def healthcheck(self) -> bool:
         try:
@@ -67,7 +86,7 @@ class ForgejoSpider(BuildSpider):
                 f"(got repo={repo!r}, workflow={wf!r}). "
                 f"Define them in the scenario step, not in code.")
         owner = w.get("owner", FORGEJO_OWNER)
-        ref = w.get("ref") or w.get("branch", "main")
+        ref = str(w.get("ref") or w.get("branch") or "main")
 
         thread = switchboard.pluck()           # stamp the thread
         build_id = thread.build_id
@@ -82,9 +101,11 @@ class ForgejoSpider(BuildSpider):
         url = (f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}"
                f"/actions/workflows/{wf}/dispatches")
         body = {"ref": ref, "inputs": inputs}
+        metadata = {"repo": repo, "workflow": wf, "owner": owner, "ref": ref}
 
         self._runs[build_id] = {"comp": w.get("component", repo), "repo": repo,
-                                "wf": wf, "version": inputs.get("version", "0.0.0"),
+                                "owner": owner, "wf": wf, "ref": ref,
+                                "version": inputs.get("version", "0.0.0"),
                                 "status": RunStatus.PENDING, "artifacts": []}
         try:
             r = httpx.post(url, headers=self._headers(), json=body,
@@ -92,17 +113,18 @@ class ForgejoSpider(BuildSpider):
             r.raise_for_status()
             self._runs[build_id]["status"] = RunStatus.RUNNING
         except Exception as exc:  # noqa: BLE001
+            err = self._http_error(exc, url, body)
             self._runs[build_id]["status"] = RunStatus.FAILED
-            self._runs[build_id]["error"] = f"{exc} (while POST {url})"
+            self._runs[build_id]["error"] = err
+            metadata["error"] = err
 
-        return RunHandle(spider=self.NAME, external_id=build_id,
-                         metadata={"repo": repo, "workflow": wf})
+        return RunHandle(spider=self.NAME, external_id=build_id, metadata=metadata)
 
     async def stream_logs(self, handle: RunHandle) -> AsyncIterator[LogLine]:
         bid = handle.external_id
         st = self._runs[bid]
         yield LogLine(f"plucked {st['comp']} → {st['repo']}/{st['wf']} "
-                      f"(build_id={bid})", "system")
+                      f"@ {st.get('ref', 'main')} (build_id={bid})", "system")
 
         if st["status"] == RunStatus.FAILED:
             yield LogLine(f"dispatch failed: {st.get('error','unknown')}", "stderr")
@@ -135,8 +157,12 @@ class ForgejoSpider(BuildSpider):
                 yield LogLine(f"{marker}: [{name}]")
 
             if thread.final_status is not None:
-                st["status"] = (RunStatus.SUCCESS if thread.final_status == "success"
-                                else RunStatus.FAILED)
+                if thread.final_status == "success":
+                    st["status"] = RunStatus.SUCCESS
+                elif thread.final_status == "cancelled":
+                    st["status"] = RunStatus.CANCELLED
+                else:
+                    st["status"] = RunStatus.FAILED
                 self._finish(handle, thread)
                 yield LogLine(f"thread settled: {thread.final_status}", "system")
                 switchboard.release(bid)
@@ -188,11 +214,12 @@ class ForgejoSpider(BuildSpider):
         Each spider cuts its own anchor — that's the contract."""
         bid = handle.external_id
         st = self._runs.get(bid, {})
+        owner = st.get("owner", FORGEJO_OWNER)
         repo, ext_run = st.get("repo"), st.get("forgejo_run_id")
         cancelled = False
         if repo and ext_run:
             try:
-                url = (f"{FORGEJO_URL}/api/v1/repos/{FORGEJO_OWNER}/{repo}"
+                url = (f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}"
                        f"/actions/runs/{ext_run}/cancel")
                 r = httpx.post(url, headers=self._headers(), timeout=10,
                                verify=VERIFY_TLS)
