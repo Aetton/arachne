@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal, User
 from auth.security import verify_token
 
-COOKIE_NAME = "portal_session"
+COOKIE_NAME = "arachne_session"
 
 
 def get_db():
