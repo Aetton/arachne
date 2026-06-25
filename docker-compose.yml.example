@@ -1,4 +1,4 @@
-# Deployment Portal — Docker Compose
+# Arachne — Docker Compose
 #
 #   docker compose up -d                # SQLite, single container
 #   docker compose --profile pg up -d   # Postgres-backed (when the dept grows)
@@ -7,7 +7,7 @@
 #   ADMIN_PASSWORD=... docker compose up -d
 
 services:
-  portal:
+  arachne:
     build: .
     container_name: arachne
     restart: unless-stopped
@@ -18,9 +18,9 @@ services:
     environment:
       JWT_SECRET: "${JWT_SECRET:-change-me-in-prod}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin}"
-      NEXUS_URL: "${NEXUS_URL:-https://nexus.redsoft.internal}"
+      NEXUS_URL: "${NEXUS_URL:-https://nexus.example.internal}"
       # SQLite by default; uncomment to use the postgres profile below:
-      # DATABASE_URL: "postgresql+psycopg://portal:portal@db/portal"
+      # DATABASE_URL: "postgresql+psycopg://arachne:arachne@db/arachne"
       ANSIBLE_PLAYBOOKS_DIR: /app/playbooks
       SCENARIOS_CONFIG: /app/config/scenarios.yaml
       SSL_CERT_FILE: /etc/ssl/certs/ca.crt
@@ -32,19 +32,19 @@ services:
       - ./playbooks:/app/playbooks:ro
       - ./certs/:/etc/ssl/certs/:ro
       # mount your ssh key if playbooks provision remote VMs
-      # - ~/.ssh/portal_id_ed25519:/root/.ssh/id_ed25519:ro
+      # - ~/.ssh/arachne_id_ed25519:/root/.ssh/id_ed25519:ro
     # depends_on:
     #   - db          # enable with the pg profile
 
   db:
     image: postgres:16-alpine
-    container_name: portal-db
+    container_name: arachne-db
     profiles: ["pg"]
     restart: unless-stopped
     environment:
-      POSTGRES_USER: portal
-      POSTGRES_PASSWORD: portal
-      POSTGRES_DB: portal
+      POSTGRES_USER: arachne
+      POSTGRES_PASSWORD: arachne
+      POSTGRES_DB: arachne
     volumes:
       - pgdata:/var/lib/postgresql/data
 

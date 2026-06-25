@@ -1,8 +1,8 @@
 """
 Database layer. SQLite by default, swap DATABASE_URL for Postgres later.
 
-    sqlite:  sqlite:///./data/portal.db
-    postgres: postgresql+psycopg://user:pass@host/portal
+    sqlite:  sqlite:///./data/arachne.db
+    postgres: postgresql+psycopg://user:pass@host/arachne
 
 JSON columns work on both backends (SQLAlchemy emits JSON on PG, TEXT-JSON on SQLite).
 """
@@ -14,7 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/portal.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/arachne.db")
 
 # check_same_thread only matters for SQLite; ignored elsewhere.
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}

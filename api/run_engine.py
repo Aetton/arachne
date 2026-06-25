@@ -112,7 +112,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
             run_id, scenario_key, scenario, clean, _log_sink)
     except Exception as exc:  # noqa: BLE001
         _live[run_id].append({"step_id": "", "seq": 0, "stream": "stderr",
-                              "text": f"PORTAL ERROR: {exc}"})
+                              "text": f"ARACHNE ERROR: {exc}"})
         status = RunStatus.FAILED
 
     db = SessionLocal()
