@@ -74,11 +74,11 @@
   <script>
     function setTheme(name) {
       document.documentElement.setAttribute('data-theme', name);
-      try { localStorage.setItem('portal-theme', name); } catch (e) {}
+      try { localStorage.setItem('arachne-theme', name); } catch (e) {}
     }
     (function () {
       let t = 'dracula';
-      try { t = localStorage.getItem('portal-theme') || 'dracula'; } catch (e) {}
+      try { t = localStorage.getItem('arachne-theme') || 'dracula'; } catch (e) {}
       document.documentElement.setAttribute('data-theme', t);
       var sel = document.getElementById('theme-select');
       if (sel) sel.value = t;
