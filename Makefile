@@ -11,12 +11,27 @@
 #   make up-nats   — + NATS  (also flips BUS_BACKEND for you)
 #   make up-full   — + Postgres + NATS
 #   make bootstrap-init-pwsh ACTION_REPO=ssh://git@git.redsoft.internal:2222/arachne/init-pwsh.git
+#   make bootstrap-init-pwsh-local ACTION_REPO=ssh://git@git.redsoft.internal:2222/arachne/init-pwsh.git
 #   make reset     — DANGER: stop and wipe the SQLite db + volumes
 #
 # Override the compose command if needed:  make up DC="docker-compose"
 
 DC ?= docker compose
 SERVICE ?= arachne
+
+# Optional knobs for scripts/bootstrap-init-pwsh-action.sh.
+# These are passed into the container only when set for make.
+BOOTSTRAP_ENV = \
+	ACTION_REPO='$(ACTION_REPO)' \
+	ACTION_OWNER='$(ACTION_OWNER)' \
+	ACTION_NAME='$(ACTION_NAME)' \
+	ACTION_BRANCH='$(ACTION_BRANCH)' \
+	ACTION_TAG='$(ACTION_TAG)' \
+	SOURCE_DIR='$(SOURCE_DIR)' \
+	FORCE_PUSH='$(FORCE_PUSH)' \
+	BOOTSTRAP_CREATE_REPO='$(BOOTSTRAP_CREATE_REPO)' \
+	FORGEJO_REPO_PRIVATE='$(FORGEJO_REPO_PRIVATE)' \
+	FORGEJO_VERIFY_TLS='$(FORGEJO_VERIFY_TLS)'
 
 # ---- guards -------------------------------------------------------------
 # .env must exist; data/ must exist before the volume mounts (else Docker
@@ -84,6 +99,10 @@ up-full: _preflight
 # ---- hub bootstrap ------------------------------------------------------
 .PHONY: bootstrap-init-pwsh
 bootstrap-init-pwsh:
+	@$(DC) exec -T $(SERVICE) bash -lc "$(BOOTSTRAP_ENV) bash scripts/bootstrap-init-pwsh-action.sh"
+
+.PHONY: bootstrap-init-pwsh-local
+bootstrap-init-pwsh-local:
 	@bash scripts/bootstrap-init-pwsh-action.sh
 
 # ---- maintenance --------------------------------------------------------
