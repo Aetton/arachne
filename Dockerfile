@@ -1,8 +1,9 @@
 FROM python:3.12-slim
 
-# ansible + openssh-client for playbooks that provision/deploy over SSH
+# ansible + openssh-client for playbooks that provision/deploy over SSH.
+# git/rsync are needed by hub bootstrap tasks that publish reusable Forgejo actions.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ansible openssh-client curl ca-certificates bash \
+        ansible openssh-client curl ca-certificates bash git rsync \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -14,8 +15,11 @@ COPY api/ ./api/
 COPY frontend/ ./frontend/
 COPY config/ ./config/
 COPY playbooks/ ./playbooks/
+COPY hubs/ ./hubs/
+COPY scripts/ ./scripts/
 
-RUN chmod +x api/runners/demo_play.sh
+RUN chmod +x api/runners/demo_play.sh \
+    && chmod +x scripts/*.sh
 
 WORKDIR /app/api
 
