@@ -38,9 +38,9 @@ async def _execute(spider, step, run_id: str, emit_log) -> dict:
         await emit_log(text, stream, seq, step.id)
         seq += 1
 
-    # dispatch
+    # dispatch can do blocking backend I/O; keep it off the event loop.
     try:
-        handle = spider.dispatch(step, None)
+        handle = await asyncio.to_thread(spider.dispatch, step, None)
     except Exception as exc:  # noqa: BLE001
         await log(f"PORTAL ERROR dispatching {step.id}: {exc}", "stderr")
         return {"status": RunStatus.FAILED.value, "handle": None, "artifacts": [],
@@ -49,14 +49,15 @@ async def _execute(spider, step, run_id: str, emit_log) -> dict:
 
     _active[_run_key(run_id, step.id)]["handle"] = handle
 
-    # stream
+    # stream is already async by contract.
     try:
         async for line in spider.stream_logs(handle):
             await log(line.text, line.stream)
     except asyncio.CancelledError:
-        # cancel signal arrived — let the spider cut its own thread
+        # cancel signal arrived — let the spider cut its own thread. It may do
+        # backend I/O too, so run cleanup in a worker thread.
         try:
-            spider.cancel(handle)
+            await asyncio.to_thread(spider.cancel, handle)
         except Exception as exc:  # noqa: BLE001
             await log(f"cancel cleanup error: {exc}", "stderr")
         await log("thread cancelled", "system")
@@ -64,8 +65,8 @@ async def _execute(spider, step, run_id: str, emit_log) -> dict:
                 "handle": wire_codec.handle_to_dict(handle), "artifacts": [],
                 "error": RunError("Cancelled", "run cancelled by request").to_dict()}
 
-    status = spider.get_status(handle)
-    arts = spider.get_artifacts(handle)
+    status = await asyncio.to_thread(spider.get_status, handle)
+    arts = await asyncio.to_thread(spider.get_artifacts, handle)
 
     result = {
         "status": status.value,
