@@ -12,6 +12,7 @@ ACTION_TAG="${ACTION_TAG:-v1}"
 COMMIT_MESSAGE="${COMMIT_MESSAGE:-Bootstrap Arachne init-pwsh action}"
 FORCE_PUSH="${FORCE_PUSH:-false}"
 
+BOOTSTRAP_CREATE_OWNER="${BOOTSTRAP_CREATE_OWNER:-true}"
 BOOTSTRAP_CREATE_REPO="${BOOTSTRAP_CREATE_REPO:-false}"
 FORGEJO_URL="${FORGEJO_URL:-}"
 FORGEJO_TOKEN="${FORGEJO_TOKEN:-}"
@@ -21,29 +22,23 @@ FORGEJO_VERIFY_TLS="${FORGEJO_VERIFY_TLS:-true}"
 usage() {
   cat <<'EOF'
 Usage:
-  ACTION_REPO=ssh://git@git.example.internal:2222/arachne/init-pwsh.git \
-    make bootstrap-init-pwsh
-
-  BOOTSTRAP_CREATE_REPO=true \
-  FORGEJO_URL=https://git.example.internal \
-  FORGEJO_TOKEN=<token> \
-  ACTION_REPO=ssh://git@git.example.internal:2222/arachne/init-pwsh.git \
-    make bootstrap-init-pwsh
+  make bootstrap-init-pwsh
 
 Environment:
-  ACTION_REPO            Target Forgejo git remote. Required.
-  ACTION_OWNER           Forgejo org/user owner for API repo creation. Default: arachne.
-  ACTION_NAME            Action repository name. Default: init-pwsh.
-  ACTION_BRANCH          Branch to push. Default: main.
-  ACTION_TAG             Tag to create/update. Default: v1.
-  SOURCE_DIR             Action source directory. Default: hubs/forgejo/actions/init-pwsh.
-  FORCE_PUSH             Set true to force-push branch/tag. Default: false.
+  ACTION_REPO             Target Forgejo git remote.
+  ACTION_OWNER            Forgejo org/user owner for API repo creation. Default: arachne.
+  ACTION_NAME             Action repository name. Default: init-pwsh.
+  ACTION_BRANCH           Branch to push. Default: main.
+  ACTION_TAG              Tag to create/update. Default: v1.
+  SOURCE_DIR              Action source directory. Default: hubs/forgejo/actions/init-pwsh.
+  FORCE_PUSH              Set true to force-push branch/tag. Default: false.
 
-  BOOTSTRAP_CREATE_REPO  Set true to create the target repo through Forgejo API.
-  FORGEJO_URL            Forgejo base URL, required when BOOTSTRAP_CREATE_REPO=true.
-  FORGEJO_TOKEN          Forgejo API token, required when BOOTSTRAP_CREATE_REPO=true.
-  FORGEJO_REPO_PRIVATE   Create private repo. Default: true.
-  FORGEJO_VERIFY_TLS     Set false to pass curl -k for internal/self-signed TLS.
+  BOOTSTRAP_CREATE_OWNER  Create missing Forgejo owner/org. Default: true.
+  BOOTSTRAP_CREATE_REPO   Create the target repo through Forgejo API.
+  FORGEJO_URL             Forgejo base URL, required when creating owner/repo.
+  FORGEJO_TOKEN           Forgejo API token, required when creating owner/repo.
+  FORGEJO_REPO_PRIVATE    Create private repo. Default: true.
+  FORGEJO_VERIFY_TLS      Set false to pass curl -k for internal/self-signed TLS.
 EOF
 }
 
@@ -58,6 +53,42 @@ curl_tls_args() {
   if [[ "$FORGEJO_VERIFY_TLS" == "false" ]]; then
     printf '%s\n' "-k"
   fi
+}
+
+api_get_owner_status() {
+  local tls_args=()
+  mapfile -t tls_args < <(curl_tls_args)
+
+  curl "${tls_args[@]}" -sS \
+    -o /tmp/arachne-bootstrap-owner.json \
+    -w '%{http_code}' \
+    -H "Authorization: token $FORGEJO_TOKEN" \
+    "$FORGEJO_URL/api/v1/orgs/$ACTION_OWNER"
+}
+
+api_create_owner() {
+  local tls_args=()
+  mapfile -t tls_args < <(curl_tls_args)
+
+  local body
+  body="$(
+    cat <<EOF
+{
+  "username": "$ACTION_OWNER",
+  "full_name": "$ACTION_OWNER",
+  "description": "Arachne action hubs"
+}
+EOF
+  )"
+
+  curl "${tls_args[@]}" -sS \
+    -o /tmp/arachne-bootstrap-owner-create.json \
+    -w '%{http_code}' \
+    -X POST \
+    -H "Authorization: token $FORGEJO_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$body" \
+    "$FORGEJO_URL/api/v1/orgs"
 }
 
 api_get_repo_status() {
@@ -102,19 +133,68 @@ EOF
     "$FORGEJO_URL/api/v1/orgs/$ACTION_OWNER/repos"
 }
 
+ensure_api_settings() {
+  need curl
+
+  if [[ -z "$FORGEJO_URL" || -z "$FORGEJO_TOKEN" ]]; then
+    echo "ERROR: FORGEJO_URL and FORGEJO_TOKEN are required when creating owner/repo" >&2
+    exit 2
+  fi
+
+  FORGEJO_URL="${FORGEJO_URL%/}"
+}
+
+ensure_target_owner() {
+  if [[ "$BOOTSTRAP_CREATE_OWNER" != "true" && "$BOOTSTRAP_CREATE_REPO" != "true" ]]; then
+    return 0
+  fi
+
+  ensure_api_settings
+
+  echo "→ checking Forgejo owner/org $ACTION_OWNER"
+  local code
+  code="$(api_get_owner_status)"
+
+  case "$code" in
+    200)
+      echo "→ owner/org already exists: $ACTION_OWNER"
+      ;;
+    404)
+      if [[ "$BOOTSTRAP_CREATE_OWNER" != "true" ]]; then
+        echo "ERROR: owner/org $ACTION_OWNER does not exist and BOOTSTRAP_CREATE_OWNER=false" >&2
+        exit 2
+      fi
+      echo "→ owner/org not found, creating: $ACTION_OWNER"
+      code="$(api_create_owner)"
+      case "$code" in
+        201)
+          echo "→ owner/org created: $ACTION_OWNER"
+          ;;
+        409|422)
+          echo "→ owner/org create returned HTTP $code, assuming it already exists or was created concurrently"
+          ;;
+        *)
+          echo "ERROR: owner/org create failed with HTTP $code" >&2
+          cat /tmp/arachne-bootstrap-owner-create.json >&2 || true
+          exit 2
+          ;;
+      esac
+      ;;
+    *)
+      echo "ERROR: owner/org check failed with HTTP $code" >&2
+      cat /tmp/arachne-bootstrap-owner.json >&2 || true
+      exit 2
+      ;;
+  esac
+}
+
 ensure_target_repo() {
   if [[ "$BOOTSTRAP_CREATE_REPO" != "true" ]]; then
     return 0
   fi
 
-  need curl
-
-  if [[ -z "$FORGEJO_URL" || -z "$FORGEJO_TOKEN" ]]; then
-    echo "ERROR: FORGEJO_URL and FORGEJO_TOKEN are required when BOOTSTRAP_CREATE_REPO=true" >&2
-    exit 2
-  fi
-
-  FORGEJO_URL="${FORGEJO_URL%/}"
+  ensure_api_settings
+  ensure_target_owner
 
   echo "→ checking Forgejo repo $ACTION_OWNER/$ACTION_NAME"
   local code
