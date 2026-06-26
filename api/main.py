@@ -208,7 +208,7 @@ async def scenario_run(key: str, request: Request, user=Depends(get_current_user
         else:
             params[name] = form.get(name, p.get("default", ""))
 
-    run_id = run_engine.start_run(user.id, key, params)
+    run_id = await run_engine.start_run_async(user.id, key, params)
 
     resp = _render_run(request, user, run_id)
     resp.headers["HX-Trigger"] = "runStarted"
