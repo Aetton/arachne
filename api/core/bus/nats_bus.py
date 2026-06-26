@@ -37,7 +37,7 @@ class NatsBus(Bus):
     async def publish(self, subject: str, payload: dict) -> None:
         await self._nc.publish(subject, json.dumps(payload).encode())
 
-    async def subscribe(self, subject: str, handler: EventHandler) -> None:
+    async def subscribe(self, subject: str, handler: EventHandler):
         async def _cb(msg):
             data = json.loads(msg.data.decode() or "{}")
             res = handler(data)
@@ -45,6 +45,18 @@ class NatsBus(Bus):
                 await res
         sub = await self._nc.subscribe(subject, cb=_cb)
         self._subs.append(sub)
+        return sub
+
+    async def unsubscribe(self, subscription) -> None:
+        if not subscription:
+            return
+        try:
+            await subscription.unsubscribe()
+        finally:
+            try:
+                self._subs.remove(subscription)
+            except ValueError:
+                pass
 
     async def request(self, subject: str, payload: dict, timeout: float = 30.0) -> dict:
         try:
@@ -54,7 +66,7 @@ class NatsBus(Bus):
         except Exception as exc:  # noqa: BLE001  (nats.errors.NoRespondersError etc.)
             return {"error": str(exc), "subject": subject}
 
-    async def reply(self, subject: str, handler: ReplyHandler) -> None:
+    async def reply(self, subject: str, handler: ReplyHandler):
         async def _cb(msg):
             data = json.loads(msg.data.decode() or "{}")
             res = handler(data)
@@ -63,3 +75,4 @@ class NatsBus(Bus):
             await msg.respond(json.dumps(res or {}).encode())
         sub = await self._nc.subscribe(subject, cb=_cb)
         self._subs.append(sub)
+        return sub
