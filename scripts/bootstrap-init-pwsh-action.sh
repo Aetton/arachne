@@ -3,34 +3,164 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_DIR="${SOURCE_DIR:-$ROOT_DIR/hubs/forgejo/actions/init-pwsh}"
+
 ACTION_REPO="${ACTION_REPO:-}"
+ACTION_OWNER="${ACTION_OWNER:-arachne}"
+ACTION_NAME="${ACTION_NAME:-init-pwsh}"
 ACTION_BRANCH="${ACTION_BRANCH:-main}"
 ACTION_TAG="${ACTION_TAG:-v1}"
 COMMIT_MESSAGE="${COMMIT_MESSAGE:-Bootstrap Arachne init-pwsh action}"
 FORCE_PUSH="${FORCE_PUSH:-false}"
 
+BOOTSTRAP_CREATE_REPO="${BOOTSTRAP_CREATE_REPO:-false}"
+FORGEJO_URL="${FORGEJO_URL:-}"
+FORGEJO_TOKEN="${FORGEJO_TOKEN:-}"
+FORGEJO_REPO_PRIVATE="${FORGEJO_REPO_PRIVATE:-true}"
+FORGEJO_VERIFY_TLS="${FORGEJO_VERIFY_TLS:-true}"
+
 usage() {
   cat <<'EOF'
 Usage:
-  ACTION_REPO=ssh://git@git.redsoft.internal:2222/arachne/init-pwsh.git \
+  ACTION_REPO=ssh://git@git.example.internal:2222/arachne/init-pwsh.git \
+    make bootstrap-init-pwsh
+
+  BOOTSTRAP_CREATE_REPO=true \
+  FORGEJO_URL=https://git.example.internal \
+  FORGEJO_TOKEN=<token> \
+  ACTION_REPO=ssh://git@git.example.internal:2222/arachne/init-pwsh.git \
     make bootstrap-init-pwsh
 
 Environment:
-  ACTION_REPO      Target Forgejo git remote. Required.
-  ACTION_BRANCH    Branch to push. Default: main.
-  ACTION_TAG       Tag to create/update. Default: v1.
-  SOURCE_DIR       Action source directory. Default: hubs/forgejo/actions/init-pwsh.
-  FORCE_PUSH       Set true to force-push branch/tag. Default: false.
+  ACTION_REPO            Target Forgejo git remote. Required.
+  ACTION_OWNER           Forgejo org/user owner for API repo creation. Default: arachne.
+  ACTION_NAME            Action repository name. Default: init-pwsh.
+  ACTION_BRANCH          Branch to push. Default: main.
+  ACTION_TAG             Tag to create/update. Default: v1.
+  SOURCE_DIR             Action source directory. Default: hubs/forgejo/actions/init-pwsh.
+  FORCE_PUSH             Set true to force-push branch/tag. Default: false.
 
-The target repository must already exist in Forgejo. This script mirrors only the
-contents of the action directory, not the whole Arachne repository.
+  BOOTSTRAP_CREATE_REPO  Set true to create the target repo through Forgejo API.
+  FORGEJO_URL            Forgejo base URL, required when BOOTSTRAP_CREATE_REPO=true.
+  FORGEJO_TOKEN          Forgejo API token, required when BOOTSTRAP_CREATE_REPO=true.
+  FORGEJO_REPO_PRIVATE   Create private repo. Default: true.
+  FORGEJO_VERIFY_TLS     Set false to pass curl -k for internal/self-signed TLS.
 EOF
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "ERROR: missing required command: $1" >&2
+    exit 2
+  }
+}
+
+curl_tls_args() {
+  if [[ "$FORGEJO_VERIFY_TLS" == "false" ]]; then
+    printf '%s\n' "-k"
+  fi
+}
+
+api_get_repo_status() {
+  local tls_args=()
+  mapfile -t tls_args < <(curl_tls_args)
+
+  curl "${tls_args[@]}" -sS \
+    -o /tmp/arachne-bootstrap-repo.json \
+    -w '%{http_code}' \
+    -H "Authorization: token $FORGEJO_TOKEN" \
+    "$FORGEJO_URL/api/v1/repos/$ACTION_OWNER/$ACTION_NAME"
+}
+
+api_create_repo() {
+  local tls_args=()
+  mapfile -t tls_args < <(curl_tls_args)
+
+  local private_json="true"
+  if [[ "$FORGEJO_REPO_PRIVATE" == "false" ]]; then
+    private_json="false"
+  fi
+
+  local body
+  body="$(
+    cat <<EOF
+{
+  "name": "$ACTION_NAME",
+  "private": $private_json,
+  "auto_init": false,
+  "description": "Arachne Forgejo action hub for PowerShell telemetry"
+}
+EOF
+  )"
+
+  curl "${tls_args[@]}" -sS \
+    -o /tmp/arachne-bootstrap-create.json \
+    -w '%{http_code}' \
+    -X POST \
+    -H "Authorization: token $FORGEJO_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$body" \
+    "$FORGEJO_URL/api/v1/orgs/$ACTION_OWNER/repos"
+}
+
+ensure_target_repo() {
+  if [[ "$BOOTSTRAP_CREATE_REPO" != "true" ]]; then
+    return 0
+  fi
+
+  need curl
+
+  if [[ -z "$FORGEJO_URL" || -z "$FORGEJO_TOKEN" ]]; then
+    echo "ERROR: FORGEJO_URL and FORGEJO_TOKEN are required when BOOTSTRAP_CREATE_REPO=true" >&2
+    exit 2
+  fi
+
+  FORGEJO_URL="${FORGEJO_URL%/}"
+
+  echo "→ checking Forgejo repo $ACTION_OWNER/$ACTION_NAME"
+  local code
+  code="$(api_get_repo_status)"
+
+  case "$code" in
+    200)
+      echo "→ repo already exists: $ACTION_OWNER/$ACTION_NAME"
+      return 0
+      ;;
+    404)
+      echo "→ repo not found, creating: $ACTION_OWNER/$ACTION_NAME"
+      ;;
+    *)
+      echo "ERROR: repo check failed with HTTP $code" >&2
+      cat /tmp/arachne-bootstrap-repo.json >&2 || true
+      exit 2
+      ;;
+  esac
+
+  code="$(api_create_repo)"
+
+  case "$code" in
+    201)
+      echo "→ repo created: $ACTION_OWNER/$ACTION_NAME"
+      ;;
+    409|422)
+      echo "→ repo create returned HTTP $code, assuming it already exists or was created concurrently"
+      ;;
+    *)
+      echo "ERROR: repo create failed with HTTP $code" >&2
+      cat /tmp/arachne-bootstrap-create.json >&2 || true
+      exit 2
+      ;;
+  esac
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
   exit 0
 fi
+
+need git
+need rsync
+
+ensure_target_repo
 
 if [[ -z "$ACTION_REPO" ]]; then
   echo "ERROR: ACTION_REPO is required" >&2
@@ -70,6 +200,7 @@ rsync -a --delete \
   "$SOURCE_DIR/" "$WORKDIR/"
 
 cd "$WORKDIR"
+
 git init -q
 git checkout -B "$ACTION_BRANCH" >/dev/null 2>&1 || git checkout -b "$ACTION_BRANCH"
 git add .
@@ -96,10 +227,12 @@ cat <<EOF
 Arachne init-pwsh action published.
 
   repo:   $ACTION_REPO
+  owner:  $ACTION_OWNER
+  name:   $ACTION_NAME
   branch: $ACTION_BRANCH
   tag:    $ACTION_TAG
 
 Workflow usage:
 
-  - uses: arachne/init-pwsh@$ACTION_TAG
+  - uses: $ACTION_OWNER/$ACTION_NAME@$ACTION_TAG
 EOF
