@@ -10,17 +10,28 @@
 #   make up-pg     — + Postgres
 #   make up-nats   — + NATS  (also flips BUS_BACKEND for you)
 #   make up-full   — + Postgres + NATS
-#   make bootstrap-init-pwsh ACTION_REPO=ssh://git@git.redsoft.internal:2222/arachne/init-pwsh.git
-#   make bootstrap-init-pwsh-local ACTION_REPO=ssh://git@git.redsoft.internal:2222/arachne/init-pwsh.git
+#   make bootstrap-init-pwsh
+#   make bootstrap-init-pwsh-local
 #   make reset     — DANGER: stop and wipe the SQLite db + volumes
 #
 # Override the compose command if needed:  make up DC="docker-compose"
 
 DC ?= docker compose
 SERVICE ?= arachne
+CONTAINER_APP_DIR ?= /app
+
+ACTION_OWNER ?= arachne
+ACTION_NAME ?= init-pwsh
+ACTION_TAG ?= v1
+ACTION_BRANCH ?= main
+FORGEJO_SSH_USER ?= git
+FORGEJO_SSH_PORT ?= 2222
+BOOTSTRAP_CREATE_REPO ?= true
+FORGEJO_REPO_PRIVATE ?= false
+FORGEJO_VERIFY_TLS ?= false
 
 # Optional knobs for scripts/bootstrap-init-pwsh-action.sh.
-# These are passed into the container only when set for make.
+# FORGEJO_URL and FORGEJO_TOKEN are expected to already exist in the container env.
 BOOTSTRAP_ENV = \
 	ACTION_REPO='$(ACTION_REPO)' \
 	ACTION_OWNER='$(ACTION_OWNER)' \
@@ -31,7 +42,9 @@ BOOTSTRAP_ENV = \
 	FORCE_PUSH='$(FORCE_PUSH)' \
 	BOOTSTRAP_CREATE_REPO='$(BOOTSTRAP_CREATE_REPO)' \
 	FORGEJO_REPO_PRIVATE='$(FORGEJO_REPO_PRIVATE)' \
-	FORGEJO_VERIFY_TLS='$(FORGEJO_VERIFY_TLS)'
+	FORGEJO_VERIFY_TLS='$(FORGEJO_VERIFY_TLS)' \
+	FORGEJO_SSH_USER='$(FORGEJO_SSH_USER)' \
+	FORGEJO_SSH_PORT='$(FORGEJO_SSH_PORT)'
 
 # ---- guards -------------------------------------------------------------
 # .env must exist; data/ must exist before the volume mounts (else Docker
@@ -99,7 +112,17 @@ up-full: _preflight
 # ---- hub bootstrap ------------------------------------------------------
 .PHONY: bootstrap-init-pwsh
 bootstrap-init-pwsh:
-	@$(DC) exec -T $(SERVICE) bash -lc "cd /app && $(BOOTSTRAP_ENV) bash /app/scripts/bootstrap-init-pwsh-action.sh"
+	@$(DC) exec -T $(SERVICE) bash -lc 'cd $(CONTAINER_APP_DIR) && \
+		$(BOOTSTRAP_ENV) \
+		if [[ -z "$$ACTION_REPO" ]]; then \
+			base="$${FORGEJO_SSH_HOST:-$${FORGEJO_URL#http://}}"; \
+			base="$${base#https://}"; \
+			base="$${base%%/*}"; \
+			base="$${base%%:*}"; \
+			export ACTION_REPO="ssh://$${FORGEJO_SSH_USER:-git}@$${base}:$${FORGEJO_SSH_PORT:-2222}/$${ACTION_OWNER:-arachne}/$${ACTION_NAME:-init-pwsh}.git"; \
+		fi; \
+		echo "→ action remote: $$ACTION_REPO"; \
+		bash /app/scripts/bootstrap-init-pwsh-action.sh'
 
 .PHONY: bootstrap-init-pwsh-local
 bootstrap-init-pwsh-local:
