@@ -3,9 +3,11 @@
 Keeps a live in-memory log buffer (for SSE/polling), persists runs + artifacts
 to the DB, and exposes fire() as the single entrypoint every trigger uses.
 
-Public interface (unchanged for main.py):
+Public interface:
     start_run(user_id, scenario_key, params) -> run_id
-    fire(scenario_key, params, source) -> run_id      (trigger entrypoint)
+    start_run_async(user_id, scenario_key, params) -> run_id
+    fire(scenario_key, params, source) -> run_id
+    fire_async(scenario_key, params, source) -> run_id
     live_records(run_id) -> list[dict]
     live_lines(run_id) -> list[str]
     is_done(run_id) -> bool
@@ -51,7 +53,7 @@ def _wire_triggers():
             if not trig_cls:
                 print(f"[run_engine] unknown trigger '{ttype}' on scenario '{key}'")
                 continue
-            trig_cls(fire).setup(key, tcfg)
+            trig_cls(fire_async).setup(key, tcfg)
 
 
 def new_run_id() -> str:
@@ -105,31 +107,61 @@ def _log_sink(run_id: str, line: LogLine):
         _arts[run_id].append({"name": name, "type": typ, "download_url": url})
 
 
-def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
+def _prepare_params(params: dict, user_id: int | None = None) -> dict:
+    p = dict(params)
+    if user_id is not None:
+        p["__user_id__"] = user_id
+    return p
+
+
+def _get_scenario(scenario_key: str) -> dict:
     scenario = config_loader.get_scenario(scenario_key)
     if not scenario:
         raise KeyError(f"unknown scenario {scenario_key}")
+    return scenario
 
+
+def _start_task(run_id: str, scenario_key: str, scenario: dict, params: dict) -> None:
+    loop = asyncio.get_running_loop()
+    loop.create_task(_execute(run_id, scenario_key, scenario, params))
+
+
+async def fire_async(scenario_key: str, params: dict, source: str = "manual") -> str:
+    scenario = _get_scenario(scenario_key)
+    run_id = new_run_id()
+
+    await asyncio.to_thread(_create_run, run_id, scenario_key, params)
+
+    _live[run_id] = []
+    _done[run_id] = False
+    _arts[run_id] = []
+    _start_task(run_id, scenario_key, scenario, params)
+    return run_id
+
+
+def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
+    """Synchronous compatibility entrypoint.
+
+    Prefer fire_async() from FastAPI routes and async scheduler jobs. This function
+    still requires an active event loop because it schedules the scenario task.
+    """
+    scenario = _get_scenario(scenario_key)
     run_id = new_run_id()
     _create_run(run_id, scenario_key, params)
 
     _live[run_id] = []
     _done[run_id] = False
     _arts[run_id] = []
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError as exc:
-        raise RuntimeError("run_engine.fire() must be called from an active event loop") from exc
-
-    loop.create_task(_execute(run_id, scenario_key, scenario, params))
+    _start_task(run_id, scenario_key, scenario, params)
     return run_id
 
 
+async def start_run_async(user_id: int, scenario_key: str, params: dict) -> str:
+    return await fire_async(scenario_key, _prepare_params(params, user_id), source="manual")
+
+
 def start_run(user_id: int, scenario_key: str, params: dict) -> str:
-    p = dict(params)
-    p["__user_id__"] = user_id
-    return fire(scenario_key, p, source="manual")
+    return fire(scenario_key, _prepare_params(params, user_id), source="manual")
 
 
 async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict):
