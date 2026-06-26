@@ -39,8 +39,12 @@ class ScheduleTrigger(BaseTrigger):
             return
         params = cfg.get("params", {})
         trigger = CronTrigger.from_crontab(cron)
+
+        async def _job():
+            await self.fire(scenario_key, params, source="schedule")
+
         get_scheduler().add_job(
-            lambda: self.fire(scenario_key, params, source="schedule"),
+            _job,
             trigger=trigger,
             id=f"sched:{scenario_key}",
             replace_existing=True,
