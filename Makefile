@@ -10,6 +10,7 @@
 #   make up-pg     — + Postgres
 #   make up-nats   — + NATS  (also flips BUS_BACKEND for you)
 #   make up-full   — + Postgres + NATS
+#   make bootstrap-init-pwsh ACTION_REPO=ssh://git@git.redsoft.internal:2222/arachne/init-pwsh.git
 #   make reset     — DANGER: stop and wipe the SQLite db + volumes
 #
 # Override the compose command if needed:  make up DC="docker-compose"
@@ -79,6 +80,11 @@ up-nats: _preflight
 up-full: _preflight
 	@grep -q '^BUS_BACKEND=nats' .env || (sed -i.bak 's/^BUS_BACKEND=.*/BUS_BACKEND=nats/' .env 2>/dev/null || echo "BUS_BACKEND=nats" >> .env)
 	$(DC) --profile pg --profile nats up -d --build
+
+# ---- hub bootstrap ------------------------------------------------------
+.PHONY: bootstrap-init-pwsh
+bootstrap-init-pwsh:
+	@bash scripts/bootstrap-init-pwsh-action.sh
 
 # ---- maintenance --------------------------------------------------------
 .PHONY: reset
