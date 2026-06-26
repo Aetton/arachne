@@ -11,12 +11,14 @@ Swapping the bus (in-memory → NATS) and adding a thread are independent axes.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 # async handler(payload) -> None        (pub/sub)
 EventHandler = Callable[[dict], Awaitable[None] | None]
 # async handler(payload) -> dict        (request/reply)
 ReplyHandler = Callable[[dict], Awaitable[dict] | dict]
+# transport-specific subscription handle
+Subscription = Any
 
 
 class Bus(ABC):
@@ -27,7 +29,11 @@ class Bus(ABC):
         ...
 
     @abstractmethod
-    async def subscribe(self, subject: str, handler: EventHandler) -> None:
+    async def subscribe(self, subject: str, handler: EventHandler) -> Subscription:
+        ...
+
+    @abstractmethod
+    async def unsubscribe(self, subscription: Subscription) -> None:
         ...
 
     @abstractmethod
@@ -35,7 +41,7 @@ class Bus(ABC):
         ...
 
     @abstractmethod
-    async def reply(self, subject: str, handler: ReplyHandler) -> None:
+    async def reply(self, subject: str, handler: ReplyHandler) -> Subscription:
         ...
 
     async def start(self) -> None:
