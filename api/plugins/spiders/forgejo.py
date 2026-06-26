@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import time
 from typing import AsyncIterator
+from urllib.parse import quote
 
 import httpx
 
@@ -39,6 +40,7 @@ class ForgejoSpider(BuildSpider):
 
     # keys consumed by the spider itself — everything else flows to workflow inputs
     _CONTROL_KEYS = {"component", "repo", "workflow", "owner", "ref", "branch"}
+    _SECRET_INPUT_KEYS = {"arachne_token", "token", "password", "secret"}
 
     def __init__(self):
         self._runs: dict[str, dict] = {}
@@ -47,10 +49,25 @@ class ForgejoSpider(BuildSpider):
         return {"Authorization": f"token {FORGEJO_TOKEN}",
                 "Content-Type": "application/json"}
 
-    @staticmethod
-    def _http_error(exc: Exception, url: str, body: dict | None = None,
+    @classmethod
+    def _safe_body(cls, body: dict | None) -> dict | None:
+        if body is None:
+            return None
+        safe = dict(body)
+        inputs = safe.get("inputs")
+        if isinstance(inputs, dict):
+            masked_inputs = dict(inputs)
+            for key in list(masked_inputs):
+                if key.lower() in cls._SECRET_INPUT_KEYS:
+                    masked_inputs[key] = "***"
+            safe["inputs"] = masked_inputs
+        return safe
+
+    @classmethod
+    def _http_error(cls, exc: Exception, url: str, body: dict | None = None,
                     method: str = "POST") -> str:
         """Return an operator-readable backend error, including Forgejo's body."""
+        safe_body = cls._safe_body(body)
         if isinstance(exc, httpx.HTTPStatusError):
             resp = exc.response
             try:
@@ -58,8 +75,8 @@ class ForgejoSpider(BuildSpider):
             except ValueError:
                 detail = resp.text
             return (f"Forgejo API {resp.status_code} while {method} {url}: {detail!r}; "
-                    f"request={body!r}")
-        return f"{exc} (while {method} {url}; request={body!r})"
+                    f"request={safe_body!r}")
+        return f"{exc} (while {method} {url}; request={safe_body!r})"
 
     def healthcheck(self) -> bool:
         try:
@@ -68,6 +85,24 @@ class ForgejoSpider(BuildSpider):
             return r.status_code == 200
         except Exception:
             return False
+
+    @staticmethod
+    def _workflow_content_path(workflow: str) -> str:
+        if workflow.startswith(".forgejo/workflows/"):
+            return workflow
+        return f".forgejo/workflows/{workflow}"
+
+    def _preflight_workflow_ref(self, owner: str, repo: str, workflow: str, ref: str) -> str | None:
+        workflow_path = self._workflow_content_path(workflow)
+        encoded_path = quote(workflow_path, safe="/")
+        url = f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}/contents/{encoded_path}"
+        try:
+            r = httpx.get(url, headers=self._headers(), params={"ref": ref},
+                          timeout=10, verify=VERIFY_TLS)
+            r.raise_for_status()
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return self._http_error(exc, url, {"ref": ref}, method="GET")
 
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
         w = step.with_
@@ -108,6 +143,15 @@ class ForgejoSpider(BuildSpider):
             "forgejo_run_number": None,
             "forgejo_jobs": [],
         }
+
+        preflight_error = self._preflight_workflow_ref(owner, repo, wf, ref)
+        if preflight_error:
+            err = f"Forgejo preflight failed for {owner}/{repo}:{ref}/{wf}: {preflight_error}"
+            self._runs[build_id]["status"] = RunStatus.FAILED
+            self._runs[build_id]["error"] = err
+            metadata["error"] = err
+            return RunHandle(spider=self.NAME, external_id=build_id, metadata=metadata)
+
         try:
             r = httpx.post(url, headers=self._headers(), json=body,
                            timeout=10, verify=VERIFY_TLS)
@@ -165,16 +209,16 @@ class ForgejoSpider(BuildSpider):
         yield LogLine(f"plucked {st['comp']} → {st['repo']}/{st['wf']} "
                       f"@ {st.get('ref', 'main')} (build_id={bid})", "system")
 
+        if st["status"] == RunStatus.FAILED:
+            yield LogLine(f"dispatch failed: {st.get('error','unknown')}", "stderr")
+            switchboard.release(bid)
+            return
+
         if st.get("forgejo_run_id"):
             yield LogLine(f"Forgejo run_id={st['forgejo_run_id']} "
                           f"run_number={st.get('forgejo_run_number') or '-'}", "system")
         else:
             yield LogLine("Forgejo did not return run metadata; waiting for hub telemetry", "system")
-
-        if st["status"] == RunStatus.FAILED:
-            yield LogLine(f"dispatch failed: {st.get('error','unknown')}", "stderr")
-            switchboard.release(bid)
-            return
 
         yield LogLine("waiting for Arachne hub telemetry…", "system")
 
@@ -258,23 +302,12 @@ class ForgejoSpider(BuildSpider):
         return self._runs[handle.external_id]["artifacts"]
 
     def cancel(self, handle: RunHandle) -> bool:
-        """Cut the thread: ask Forgejo to cancel the run, release the switchboard."""
-        bid = handle.external_id
-        st = self._runs.get(bid, {})
-        owner = st.get("owner", FORGEJO_OWNER)
-        repo, ext_run = st.get("repo"), st.get("forgejo_run_id")
-        cancelled = False
-        if repo and ext_run:
-            try:
-                url = (f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}"
-                       f"/actions/runs/{ext_run}/cancel")
-                r = httpx.post(url, headers=self._headers(), timeout=10,
-                               verify=VERIFY_TLS)
-                cancelled = r.status_code in (200, 202, 204)
-            except Exception:  # noqa: BLE001
-                cancelled = False
-        switchboard.release(bid)
-        return cancelled
+        st = self._runs.get(handle.external_id)
+        if not st:
+            return False
+        st["status"] = RunStatus.CANCELLED
+        switchboard.release(handle.external_id)
+        return True
 
 
 register_spider(ForgejoSpider())
