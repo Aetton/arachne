@@ -6,6 +6,7 @@ to the DB, and exposes fire() as the single entrypoint every trigger uses.
 Public interface (unchanged for main.py):
     start_run(user_id, scenario_key, params) -> run_id
     fire(scenario_key, params, source) -> run_id      (trigger entrypoint)
+    live_records(run_id) -> list[dict]
     live_lines(run_id) -> list[str]
     is_done(run_id) -> bool
 """
@@ -57,6 +58,32 @@ def new_run_id() -> str:
     return str(uuid.uuid4())
 
 
+def _create_run(run_id: str, scenario_key: str, params: dict) -> None:
+    db = SessionLocal()
+    try:
+        db.add(Run(id=run_id, user_id=params.get("__user_id__", 0),
+                   scenario=scenario_key,
+                   params={k: v for k, v in params.items() if not k.startswith("__")},
+                   status="running"))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _persist_run(run_id: str, status, live: list[dict], artifacts: list[dict]) -> None:
+    db = SessionLocal()
+    try:
+        run = db.get(Run, run_id)
+        if run:
+            run.status = status.value if isinstance(status, RunStatus) else str(status)
+            run.completed_at = utcnow()
+            run.log = json.dumps(live, ensure_ascii=False)
+            run.artifacts = artifacts
+            db.commit()
+    finally:
+        db.close()
+
+
 def _log_sink(run_id: str, line: LogLine):
     """Store structured records so the UI can group by step_id with seq order."""
     _live[run_id].append({
@@ -73,8 +100,8 @@ def _log_sink(run_id: str, line: LogLine):
         url = None
         if "[" in body and "]" in body:
             typ = body.split("[", 1)[1].split("]", 1)[0]
-        if "\u2192" in body:
-            url = body.split("\u2192", 1)[1].strip()
+        if "→" in body:
+            url = body.split("→", 1)[1].strip()
         _arts[run_id].append({"name": name, "type": typ, "download_url": url})
 
 
@@ -84,18 +111,18 @@ def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
         raise KeyError(f"unknown scenario {scenario_key}")
 
     run_id = new_run_id()
-    db = SessionLocal()
-    db.add(Run(id=run_id, user_id=params.get("__user_id__", 0),
-               scenario=scenario_key,
-               params={k: v for k, v in params.items() if not k.startswith("__")},
-               status="running"))
-    db.commit()
-    db.close()
+    _create_run(run_id, scenario_key, params)
 
     _live[run_id] = []
     _done[run_id] = False
     _arts[run_id] = []
-    asyncio.create_task(_execute(run_id, scenario_key, scenario, params))
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError as exc:
+        raise RuntimeError("run_engine.fire() must be called from an active event loop") from exc
+
+    loop.create_task(_execute(run_id, scenario_key, scenario, params))
     return run_id
 
 
@@ -115,23 +142,24 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
                               "text": f"ARACHNE ERROR: {exc}"})
         status = RunStatus.FAILED
 
-    db = SessionLocal()
-    run = db.get(Run, run_id)
-    if run:
-        run.status = status.value if isinstance(status, RunStatus) else str(status)
-        run.completed_at = utcnow()
-        # persist structured log as JSON-able list of records
-        run.log = json.dumps(_live[run_id], ensure_ascii=False)
-        run.artifacts = _arts[run_id]
-        db.commit()
-    db.close()
-
+    await asyncio.to_thread(
+        _persist_run,
+        run_id,
+        status,
+        list(_live[run_id]),
+        list(_arts[run_id]),
+    )
     _done[run_id] = True
 
 
 def live_records(run_id: str) -> list[dict]:
     """Structured log records for the UI: [{step_id, seq, stream, text}]."""
     return _live.get(run_id, [])
+
+
+def live_lines(run_id: str) -> list[str]:
+    """Plain text log lines for the legacy SSE endpoint."""
+    return [rec.get("text", "") for rec in _live.get(run_id, [])]
 
 
 def is_done(run_id: str) -> bool:
