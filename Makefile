@@ -111,7 +111,7 @@ up-full: _preflight
 # ---- hub bootstrap ------------------------------------------------------
 .PHONY: bootstrap-init-pwsh
 bootstrap-init-pwsh:
-	@$(DC) exec -T $(SERVICE) bash -lc "$(BOOTSTRAP_ENV) bash /app/scripts/bootstrap-init-pwsh-wrapper.sh"
+	@$(DC) exec -T $(SERVICE) bash -lc "$(BOOTSTRAP_ENV) bash /app/scripts/bootstrap-init-pwsh-http.sh"
 
 .PHONY: bootstrap-init-pwsh-local
 bootstrap-init-pwsh-local:
