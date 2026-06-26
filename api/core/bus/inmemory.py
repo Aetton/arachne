@@ -11,8 +11,15 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections import defaultdict
+from dataclasses import dataclass
 
 from core.bus.base import Bus, EventHandler, ReplyHandler
+
+
+@dataclass(frozen=True)
+class InMemorySubscription:
+    subject: str
+    handler: EventHandler
 
 
 def _matches(pattern: str, subject: str) -> bool:
@@ -53,8 +60,20 @@ class InMemoryBus(Bus):
                     except Exception as exc:  # noqa: BLE001
                         print(f"[bus] subscriber error on {subject}: {exc}")
 
-    async def subscribe(self, subject: str, handler: EventHandler) -> None:
+    async def subscribe(self, subject: str, handler: EventHandler) -> InMemorySubscription:
         self._subs[subject].append(handler)
+        return InMemorySubscription(subject, handler)
+
+    async def unsubscribe(self, subscription: InMemorySubscription) -> None:
+        handlers = self._subs.get(subscription.subject)
+        if not handlers:
+            return
+        try:
+            handlers.remove(subscription.handler)
+        except ValueError:
+            return
+        if not handlers:
+            self._subs.pop(subscription.subject, None)
 
     async def request(self, subject: str, payload: dict, timeout: float = 30.0) -> dict:
         # find the reply handler whose subject matches
@@ -67,5 +86,6 @@ class InMemoryBus(Bus):
                     return {"error": "timeout", "subject": subject}
         return {"error": "no_responder", "subject": subject}
 
-    async def reply(self, subject: str, handler: ReplyHandler) -> None:
+    async def reply(self, subject: str, handler: ReplyHandler) -> InMemorySubscription:
         self._replies[subject] = handler
+        return InMemorySubscription(subject, handler)
