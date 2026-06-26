@@ -3,10 +3,10 @@ met. It calls orchestrator.fire(...) — injected at setup to avoid import cycle
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Awaitable, Callable
 
-# fire(scenario_key: str, params: dict, source: str) -> str(run_id)
-FireFn = Callable[[str, dict, str], str]
+# fire(scenario_key: str, params: dict, source: str) -> str(run_id) or awaitable str
+FireFn = Callable[[str, dict, str], str | Awaitable[str]]
 
 
 class BaseTrigger(ABC):
