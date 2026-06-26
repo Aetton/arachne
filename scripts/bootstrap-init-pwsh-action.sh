@@ -11,6 +11,10 @@ ACTION_BRANCH="${ACTION_BRANCH:-main}"
 ACTION_TAG="${ACTION_TAG:-v1}"
 COMMIT_MESSAGE="${COMMIT_MESSAGE:-Bootstrap Arachne init-pwsh action}"
 FORCE_PUSH="${FORCE_PUSH:-false}"
+GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-Arachne Bootstrap}"
+GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-arachne-bootstrap@localhost}"
+GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$GIT_AUTHOR_NAME}"
+GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$GIT_AUTHOR_EMAIL}"
 
 BOOTSTRAP_CREATE_OWNER="${BOOTSTRAP_CREATE_OWNER:-true}"
 BOOTSTRAP_CREATE_REPO="${BOOTSTRAP_CREATE_REPO:-false}"
@@ -32,6 +36,8 @@ Environment:
   ACTION_TAG              Tag to create/update. Default: v1.
   SOURCE_DIR              Action source directory. Default: hubs/forgejo/actions/init-pwsh.
   FORCE_PUSH              Set true to force-push branch/tag. Default: false.
+  GIT_AUTHOR_NAME         Commit author name. Default: Arachne Bootstrap.
+  GIT_AUTHOR_EMAIL        Commit author email. Default: arachne-bootstrap@localhost.
 
   BOOTSTRAP_CREATE_OWNER  Create missing Forgejo owner/org. Default: true.
   BOOTSTRAP_CREATE_REPO   Create the target repo through Forgejo API.
@@ -282,6 +288,8 @@ rsync -a --delete \
 cd "$WORKDIR"
 
 git init -q
+git config user.name "$GIT_AUTHOR_NAME"
+git config user.email "$GIT_AUTHOR_EMAIL"
 git checkout -B "$ACTION_BRANCH" >/dev/null 2>&1 || git checkout -b "$ACTION_BRANCH"
 git add .
 
