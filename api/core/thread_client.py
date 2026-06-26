@@ -7,7 +7,6 @@ adapter executes the whole lifecycle remotely.
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Callable
 
 from core.bus import get_bus
@@ -32,12 +31,13 @@ async def run_step(run_id: str, kind: str, spider_name: str, step_dict: dict,
         on_log(msg.get("text", ""), msg.get("stream", "stdout"),
                msg.get("seq", 0), msg.get("step_id", step_id))
 
-    await bus.subscribe(log_subject, _log_handler)
-
-    payload = {"run_id": run_id, "spider": spider_name, "step": step_dict}
-    result = await bus.request(subjects.run(kind, spider_name), payload,
-                               timeout=STEP_TIMEOUT)
-    await asyncio.sleep(0)   # let in-flight log publishes drain (NATS ordering)
+    subscription = await bus.subscribe(log_subject, _log_handler)
+    try:
+        payload = {"run_id": run_id, "spider": spider_name, "step": step_dict}
+        result = await bus.request(subjects.run(kind, spider_name), payload,
+                                   timeout=STEP_TIMEOUT)
+    finally:
+        await bus.unsubscribe(subscription)
 
     if result.get("error") and result.get("status") is None:
         # transport-level failure (no_responder/timeout from the bus itself)
