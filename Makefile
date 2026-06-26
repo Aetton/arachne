@@ -18,7 +18,6 @@
 
 DC ?= docker compose
 SERVICE ?= arachne
-CONTAINER_APP_DIR ?= /app
 
 ACTION_OWNER ?= arachne
 ACTION_NAME ?= init-pwsh
@@ -30,7 +29,7 @@ BOOTSTRAP_CREATE_REPO ?= true
 FORGEJO_REPO_PRIVATE ?= false
 FORGEJO_VERIFY_TLS ?= false
 
-# Optional knobs for scripts/bootstrap-init-pwsh-action.sh.
+# Optional knobs for scripts/bootstrap-init-pwsh-wrapper.sh.
 # FORGEJO_URL and FORGEJO_TOKEN are expected to already exist in the container env.
 BOOTSTRAP_ENV = \
 	ACTION_REPO='$(ACTION_REPO)' \
@@ -112,17 +111,7 @@ up-full: _preflight
 # ---- hub bootstrap ------------------------------------------------------
 .PHONY: bootstrap-init-pwsh
 bootstrap-init-pwsh:
-	@$(DC) exec -T $(SERVICE) bash -lc 'cd $(CONTAINER_APP_DIR) && \
-		$(BOOTSTRAP_ENV) \
-		if [[ -z "$$ACTION_REPO" ]]; then \
-			base="$${FORGEJO_SSH_HOST:-$${FORGEJO_URL#http://}}"; \
-			base="$${base#https://}"; \
-			base="$${base%%/*}"; \
-			base="$${base%%:*}"; \
-			export ACTION_REPO="ssh://$${FORGEJO_SSH_USER:-git}@$${base}:$${FORGEJO_SSH_PORT:-2222}/$${ACTION_OWNER:-arachne}/$${ACTION_NAME:-init-pwsh}.git"; \
-		fi; \
-		echo "→ action remote: $$ACTION_REPO"; \
-		bash /app/scripts/bootstrap-init-pwsh-action.sh'
+	@$(DC) exec -T $(SERVICE) bash -lc "$(BOOTSTRAP_ENV) bash /app/scripts/bootstrap-init-pwsh-wrapper.sh"
 
 .PHONY: bootstrap-init-pwsh-local
 bootstrap-init-pwsh-local:
