@@ -44,6 +44,7 @@ _UPLOADED_RE = re.compile(
     re.IGNORECASE,
 )
 _TRAILING_URL_JUNK = "`'\".,;:)]}"
+_UPLOAD_STEP_HINTS = ("upload", "publish", "artifact", "nexus")
 
 
 class ForgejoSpider(BuildSpider):
@@ -294,6 +295,12 @@ class ForgejoSpider(BuildSpider):
     def _artifact_name(path: str) -> str:
         return path.rsplit("/", 1)[-1] or "artifact"
 
+    @staticmethod
+    def _is_upload_block(block: dict) -> bool:
+        step = str(block.get("step") or "").lower()
+        output = str(block.get("output") or "").lower()
+        return any(hint in step for hint in _UPLOAD_STEP_HINTS) or "--upload-file" in output
+
     def _artifact_from_nexus_url(self, url: str, source_step: str = "") -> dict | None:
         cleaned = self._clean_artifact_path(url)
         parsed = urlparse(cleaned)
@@ -329,14 +336,7 @@ class ForgejoSpider(BuildSpider):
             "metadata": {"repo": repo, "path": path, "source_step": source_step},
         }
 
-    def _artifacts_from_blocks(self, thread) -> list[dict]:
-        """Recover Nexus artifacts from wrapper-captured upload logs.
-
-        Old workflows posted `artifacts` explicitly in the final status. The shell
-        wrapper settles the thread from a post hook, so forgotten artifact JSON
-        files used to make us fall back to a fake `<component>.tar.gz`. Instead,
-        read the mirrored upload output and recover Nexus links deterministically.
-        """
+    def _artifacts_from_block_list(self, blocks: list[dict]) -> list[dict]:
         found: list[dict] = []
         seen: set[str] = set()
 
@@ -349,7 +349,7 @@ class ForgejoSpider(BuildSpider):
             seen.add(key)
             found.append(artifact)
 
-        for block in getattr(thread, "blocks", []) or []:
+        for block in blocks:
             output = block.get("output", "") or ""
             source_step = str(block.get("step") or "")
             for match in _NEXUS_URL_RE.finditer(output):
@@ -358,6 +358,22 @@ class ForgejoSpider(BuildSpider):
                 add(self._artifact_from_uploaded_line(
                     match.group("repo"), match.group("path"), source_step))
         return found
+
+    def _artifacts_from_blocks(self, thread) -> list[dict]:
+        """Recover Nexus artifacts from wrapper-captured upload logs.
+
+        Old workflows posted `artifacts` explicitly in the final status. The shell
+        wrapper settles the thread from a post hook, so forgotten artifact JSON
+        files used to make us fall back to a fake `<component>.tar.gz`. Instead,
+        read the mirrored upload output and recover Nexus links deterministically.
+        """
+        blocks = list(getattr(thread, "blocks", []) or [])
+        upload_blocks = [block for block in blocks if self._is_upload_block(block)]
+        if upload_blocks:
+            artifacts = self._artifacts_from_block_list(upload_blocks)
+            if artifacts:
+                return artifacts
+        return self._artifacts_from_block_list(blocks)
 
     def _finish(self, handle: RunHandle, thread):
         st = self._runs[handle.external_id]
