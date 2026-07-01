@@ -1,8 +1,18 @@
 const fs = require('fs');
 const path = require('path');
 
+const DEFAULT_MAX_LOG_BYTES = 5 * 1024 * 1024;
+
 function state(name) {
   return process.env[`STATE_${name}`] || '';
+}
+
+function maxLogBytes() {
+  const raw = process.env.ARACHNE_MAX_LOG_BYTES || process.env.INPUT_MAX_LOG_BYTES || '';
+  const parsed = Number.parseInt(raw, 10);
+
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return DEFAULT_MAX_LOG_BYTES;
 }
 
 async function sendJson(url, token, payload) {
@@ -18,6 +28,29 @@ async function sendJson(url, token, payload) {
   if (!response.ok) {
     const text = await response.text();
     throw new Error(`Arachne callback failed ${response.status}: ${text}`);
+  }
+}
+
+function readTextFileLimited(filePath, limitBytes) {
+  const stat = fs.statSync(filePath);
+
+  if (stat.size <= limitBytes) {
+    return fs.readFileSync(filePath, 'utf8');
+  }
+
+  const fd = fs.openSync(filePath, 'r');
+
+  try {
+    const omittedBytes = stat.size - limitBytes;
+    const buffer = Buffer.allocUnsafe(limitBytes);
+    fs.readSync(fd, buffer, 0, limitBytes, 0);
+
+    return [
+      `[Arachne] log truncated after ${limitBytes} bytes; omitted ${omittedBytes} bytes.`,
+      buffer.toString('utf8'),
+    ].join('\n');
+  } finally {
+    fs.closeSync(fd);
   }
 }
 
@@ -58,7 +91,7 @@ function inferFinalStatus(stepBlocks, failedFile) {
   return 'success';
 }
 
-function collectStepBlocks(stepsDir) {
+function collectStepBlocks(stepsDir, limitBytes) {
   if (!stepsDir || !fs.existsSync(stepsDir)) return [];
 
   return fs
@@ -73,7 +106,7 @@ function collectStepBlocks(stepsDir) {
       return {
         step: base,
         status: readStatus(statusPath),
-        output: fs.readFileSync(logPath, 'utf8'),
+        output: readTextFileLimited(logPath, limitBytes),
       };
     });
 }
@@ -91,14 +124,15 @@ async function main() {
   const logFile = state('logFile');
   const failedFile = state('failedFile');
   const artifactsPath = state('artifactsPath') || '.arachne/artifacts.json';
+  const limitBytes = maxLogBytes();
 
-  let blocks = collectStepBlocks(stepsDir);
+  let blocks = collectStepBlocks(stepsDir, limitBytes);
 
   if (blocks.length === 0) {
     let output = '';
 
     if (logFile && fs.existsSync(logFile)) {
-      output = fs.readFileSync(logFile, 'utf8');
+      output = readTextFileLimited(logFile, limitBytes);
     } else {
       output = [
         '[Arachne] init-bash did not capture Bash output.',
@@ -131,7 +165,7 @@ async function main() {
     });
   }
 
-  console.log(`Arachne init-bash post: sent ${blocks.length} log block(s).`);
+  console.log(`Arachne init-bash post: sent ${blocks.length} log block(s), max log block size ${limitBytes} bytes.`);
 }
 
 main().catch((err) => {

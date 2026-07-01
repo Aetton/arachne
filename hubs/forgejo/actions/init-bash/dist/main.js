@@ -1,7 +1,6 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const child_process = require('child_process');
 
 function appendFileEnv(name, value) {
   const file = process.env[name];
@@ -37,29 +36,30 @@ function readEventInputs() {
   }
 }
 
-function whichAll(cmd) {
-  try {
-    const out = child_process.execFileSync('sh', ['-c', `command -v -a ${cmd} 2>/dev/null || which -a ${cmd} 2>/dev/null || true`], { encoding: 'utf8' });
-    return out
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-  } catch (_) {
-    return [];
-  }
+function pathCandidates(cmd) {
+  return (process.env.PATH || '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((dir) => path.join(dir, cmd));
 }
 
-function firstExisting(paths) {
+function firstExecutable(paths) {
   const seen = new Set();
+
   for (const p of paths) {
     if (!p || seen.has(p)) continue;
     seen.add(p);
+
     try {
-      if (fs.existsSync(p)) return p;
+      const stat = fs.statSync(p);
+      fs.accessSync(p, fs.constants.X_OK);
+
+      if (stat.isFile() || stat.isSymbolicLink()) return p;
     } catch (_) {
-      // ignore inaccessible paths
+      // ignore missing or non-executable paths
     }
   }
+
   return '';
 }
 
@@ -85,6 +85,12 @@ function writeShim(shimDir, name, realShell, wrapperScript, logFile, stepsDir, f
   const body = [
     '#!/bin/sh',
     'set -eu',
+    `real_shell=${shellSingleQuote(realShell)}`,
+    '',
+    'if [ "${ARACHNE_SHELL_WRAPPER_ACTIVE:-}" = "1" ]; then',
+    '  exec "$real_shell" "$@"',
+    'fi',
+    '',
     `export ARACHNE_REAL_SHELL=${shellSingleQuote(realShell)}`,
     `export ARACHNE_LOG_FILE=${shellSingleQuote(logFile)}`,
     `export ARACHNE_STEPS_DIR=${shellSingleQuote(stepsDir)}`,
@@ -122,7 +128,7 @@ function wrapperSource(bash) {
     '  fi',
     '}',
     '',
-    'next_step_index() {',
+    'next_step_id() {',
     '  local dir="$1"',
     '  local index_file="$dir/step-index.txt"',
     '  local lock_dir="$dir/step-index.lock"',
@@ -136,7 +142,8 @@ function wrapperSource(bash) {
     '    sleep 0.1',
     '    waited=$((waited + 1))',
     '    if (( waited > 100 )); then',
-    '      break',
+    '      printf \'%s-%s-%s\' "$(date +%s%N 2>/dev/null || date +%s)" "$$" "${RANDOM:-0}"',
+    '      return 0',
     '    fi',
     '  done',
     '',
@@ -149,12 +156,9 @@ function wrapperSource(bash) {
     '',
     '  next=$((current + 1))',
     '  printf \'%s\\n\' "$next" > "$index_file"',
+    '  rmdir "$lock_dir" 2>/dev/null || true',
     '',
-    '  if [[ -d "$lock_dir" ]]; then',
-    '    rmdir "$lock_dir" 2>/dev/null || true',
-    '  fi',
-    '',
-    '  printf \'%s\' "$next"',
+    '  printf \'%03d\' "$next"',
     '}',
     '',
     'write_status() {',
@@ -167,8 +171,8 @@ function wrapperSource(bash) {
     '',
     'STEP_PREFIX="$(sanitize_label "$STEP_PREFIX")"',
     'SHELL_LABEL="$(sanitize_label "$SHELL_LABEL")"',
-    'IDX="$(next_step_index "$STEPS_DIR")"',
-    'STEP_NAME="$(printf \'%03d-%s-%s\' "$IDX" "$STEP_PREFIX" "$SHELL_LABEL")"',
+    'STEP_ID="$(next_step_id "$STEPS_DIR")"',
+    'STEP_NAME="${STEP_ID}-${STEP_PREFIX}-${SHELL_LABEL}"',
     'STEP_LOG="$STEPS_DIR/$STEP_NAME.log"',
     'STEP_STATUS="$STEPS_DIR/$STEP_NAME.status"',
     '',
@@ -180,7 +184,7 @@ function wrapperSource(bash) {
     '  printf \' =====\\n\'',
     '} | tee -a "$LOG_FILE" "$STEP_LOG"',
     '',
-    '"$REAL_SHELL" "$@" > >(tee -a "$LOG_FILE" "$STEP_LOG") 2>&1',
+    'ARACHNE_SHELL_WRAPPER_ACTIVE=1 "$REAL_SHELL" "$@" > >(tee -a "$LOG_FILE" "$STEP_LOG") 2>&1',
     'CODE=$?',
     '',
     'if [[ "$CODE" -ne 0 ]]; then',
@@ -210,11 +214,6 @@ function main() {
     eventInputs.arachne_token ||
     '';
 
-  const buildId =
-    process.env.ARACHNE_BUILD_ID ||
-    eventInputs.build_id ||
-    '';
-
   const stepPrefix =
     getInput('step') ||
     process.env.ARACHNE_STEP ||
@@ -230,7 +229,6 @@ function main() {
   saveState('enabled', callback && token ? 'true' : 'false');
   saveState('callback', callback);
   saveState('token', token);
-  saveState('stepPrefix', stepPrefix);
   saveState('settle', settle ? 'true' : 'false');
   saveState('artifactsPath', artifactsPath);
 
@@ -251,7 +249,8 @@ function main() {
   const failedFile = path.join(workDir, 'failed');
   const wrapperScript = path.join(shimDir, 'arachne-shell-wrapper.sh');
 
-  const bash = firstExisting(whichAll('bash').concat([
+  const bash = firstExecutable(pathCandidates('bash').concat([
+    '/usr/local/bin/bash',
     '/usr/bin/bash',
     '/bin/bash',
   ]));
@@ -260,7 +259,8 @@ function main() {
     throw new Error('Arachne init-bash could not find bash for the wrapper runtime');
   }
 
-  const sh = firstExisting(whichAll('sh').concat([
+  const sh = firstExecutable(pathCandidates('sh').concat([
+    '/usr/local/bin/sh',
     '/usr/bin/sh',
     '/bin/sh',
   ]));
@@ -308,7 +308,6 @@ function main() {
   console.log(`Arachne init-bash enabled: logs will mirror to ${logFile}`);
   console.log(`Arachne init-bash step logs: ${stepsDir}`);
   console.log(`Arachne init-bash shim: ${shimDir}`);
-  if (buildId) console.log(`Arachne build id: ${buildId}`);
 }
 
 main();
