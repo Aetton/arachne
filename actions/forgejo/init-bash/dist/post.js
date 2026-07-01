@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULT_MAX_LOG_BYTES = 5 * 1024 * 1024;
+const NEXUS_URL_RE = /(https?:\/\/[^\s'"<>]+\/repository\/([^/\s'"<>]+)\/([^\s'"<>]+))/gi;
+const UPLOADED_URL_RE = /\bUploaded:\s*(https?:\/\/[^\s'"<>]+)/gi;
+const TRAILING_URL_JUNK = '`' + "'" + '".,;:)]}';
+const UPLOAD_STEP_HINTS = ['upload', 'publish', 'artifact', 'nexus'];
 
 function state(name) {
   return process.env[`STATE_${name}`] || '';
@@ -29,6 +33,108 @@ async function sendJson(url, token, payload) {
     const text = await response.text();
     throw new Error(`Arachne callback failed ${response.status}: ${text}`);
   }
+}
+
+function cleanUrl(value) {
+  return String(value || '').trim().replace(new RegExp(`[${TRAILING_URL_JUNK.replace(/[\\\]^]/g, '\\$&')}]+$`), '');
+}
+
+function artifactFromNexusUrl(rawUrl, sourceStep) {
+  const cleaned = cleanUrl(rawUrl);
+
+  let parsed;
+  try {
+    parsed = new URL(cleaned);
+  } catch (_) {
+    return null;
+  }
+
+  const marker = '/repository/';
+  const markerIndex = parsed.pathname.indexOf(marker);
+  if (markerIndex === -1) return null;
+
+  const repoPath = decodeURIComponent(parsed.pathname.slice(markerIndex + marker.length));
+  const sep = repoPath.indexOf('/');
+  if (sep === -1) return null;
+
+  const repo = repoPath.slice(0, sep);
+  const artifactPath = repoPath.slice(sep + 1);
+  if (!repo || !artifactPath) return null;
+
+  return {
+    name: artifactPath.split('/').pop() || 'artifact',
+    type: 'nexus',
+    location: `${repo}/${artifactPath}`,
+    download_url: cleaned,
+    metadata: {
+      repo,
+      path: artifactPath,
+      source_step: sourceStep || '',
+    },
+  };
+}
+
+function isUploadBlock(block) {
+  const step = String(block.step || '').toLowerCase();
+  const output = String(block.output || '').toLowerCase();
+  return UPLOAD_STEP_HINTS.some((hint) => step.includes(hint)) || output.includes('--upload-file');
+}
+
+function artifactsFromBlocks(blocks, mode) {
+  const artifacts = [];
+  const seen = new Set();
+
+  function add(artifact) {
+    if (!artifact) return;
+    const key = artifact.download_url || artifact.location || artifact.name;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    artifacts.push(artifact);
+  }
+
+  for (const block of blocks) {
+    const output = String(block.output || '');
+    const sourceStep = String(block.step || '');
+    const re = mode === 'uploaded' ? UPLOADED_URL_RE : NEXUS_URL_RE;
+    re.lastIndex = 0;
+
+    let match;
+    while ((match = re.exec(output)) !== null) {
+      add(artifactFromNexusUrl(match[1], sourceStep));
+    }
+  }
+
+  return artifacts;
+}
+
+function recoverArtifactsFromLogs(blocks) {
+  const uploadBlocks = blocks.filter(isUploadBlock);
+  const scopes = uploadBlocks.length > 0 ? [uploadBlocks, blocks] : [blocks];
+
+  for (const scopedBlocks of scopes) {
+    const explicitUploads = artifactsFromBlocks(scopedBlocks, 'uploaded');
+    if (explicitUploads.length > 0) return explicitUploads;
+
+    const nexusUrls = artifactsFromBlocks(scopedBlocks, 'nexus');
+    if (nexusUrls.length > 0) return nexusUrls;
+  }
+
+  return [];
+}
+
+function mergeArtifacts(primary, fallback) {
+  const result = [];
+  const seen = new Set();
+
+  for (const artifact of [...primary, ...fallback]) {
+    if (!artifact || typeof artifact !== 'object') continue;
+    const key = artifact.download_url || artifact.location || artifact.name;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(artifact);
+  }
+
+  return result;
 }
 
 function readTextFileLimited(filePath, limitBytes) {
@@ -157,7 +263,7 @@ async function main() {
 
   if (settle) {
     const status = inferFinalStatus(blocks, failedFile);
-    const artifacts = readArtifacts(artifactsPath);
+    const artifacts = mergeArtifacts(readArtifacts(artifactsPath), recoverArtifactsFromLogs(blocks));
 
     await sendJson(`${callback}/status`, token, {
       status,
