@@ -1,0 +1,111 @@
+name: Update Arachne build
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_dir:
+        description: "Persistent Arachne checkout on the remote runner"
+        required: true
+        default: "/opt/arachne"
+      ref:
+        description: "Git ref to deploy"
+        required: true
+        default: "main"
+      compose_command:
+        description: "Docker Compose command available on the runner"
+        required: true
+        default: "docker compose"
+      clean:
+        description: "Remove untracked files before rebuild"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arachne-remote-build
+  cancel-in-progress: false
+
+jobs:
+  update-build:
+    name: Update build on remote runner
+    runs-on:
+      - self-hosted
+      - arachne-build
+
+    env:
+      REPOSITORY: ${{ github.repository }}
+      DEPLOY_DIR: ${{ inputs.deploy_dir }}
+      DEPLOY_REF: ${{ inputs.ref }}
+      DC: ${{ inputs.compose_command }}
+      CLEAN: ${{ inputs.clean }}
+
+    steps:
+      - name: Update persistent checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
+
+          if [ ! -d "${DEPLOY_DIR}/.git" ]; then
+            echo "→ ${DEPLOY_DIR} is not a git checkout; cloning ${REPOSITORY}"
+            mkdir -p "$(dirname "${DEPLOY_DIR}")"
+            git clone --branch "${DEPLOY_REF}" "${repo_url}" "${DEPLOY_DIR}"
+          fi
+
+          cd "${DEPLOY_DIR}"
+
+          echo "→ fetching ${DEPLOY_REF}"
+          git remote set-url origin "${repo_url}"
+          git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
+
+          if git rev-parse --verify --quiet "origin/${DEPLOY_REF}" >/dev/null; then
+            target_ref="origin/${DEPLOY_REF}"
+          else
+            target_ref="${DEPLOY_REF}"
+          fi
+
+          echo "→ resetting checkout to ${target_ref}"
+          git checkout -B "deploy/${DEPLOY_REF//\//-}" "${target_ref}"
+          git reset --hard "${target_ref}"
+
+          if [ "${CLEAN}" = "true" ]; then
+            echo "→ removing untracked files"
+            git clean -fdx
+          fi
+
+      - name: Ensure runtime files exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${DEPLOY_DIR}"
+
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+            echo "→ created .env from .env.example"
+          fi
+
+          mkdir -p data certs config playbooks
+
+      - name: Rebuild and restart Arachne
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${DEPLOY_DIR}"
+
+          echo "→ running make update with DC='${DC}'"
+          make update DC="${DC}"
+
+      - name: Show service status
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          cd "${DEPLOY_DIR}"
+          make ps DC="${DC}"
