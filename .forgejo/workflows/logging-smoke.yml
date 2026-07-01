@@ -1,0 +1,97 @@
+# .forgejo/workflows/logging-smoke.yml
+#
+# Простая smoke-тестилка для Forgejo runners + минимальная обвязка Arachne.
+#
+# Запускается двумя способами:
+#   1. Arachne дёргает dispatch и подкладывает build_id/arachne_callback/arachne_token.
+#      -> arachne/init-bash сам подхватывает служебные inputs, зеркалит bash/sh-логи
+#         и закрывает thread в post-hook.
+#   2. Руками из Forgejo UI.
+#      -> служебные inputs пустые, arachne/init-bash работает как noop,
+#         smoke идёт как обычный Forgejo workflow.
+#
+# Вся callback-кухня живёт в action hub:
+#   uses: https://git.redsoft.internal/arachne/init-bash@v1
+#
+# Пользовательские steps не должны знать про JSON, токены, /signal и /status.
+
+name: logging-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        type: choice
+        description: "Forgejo runner label"
+        required: true
+        default: "redos8"
+        options: ["redos7", "redos8"]
+
+      # --- служебные: подставляет Arachne при dispatch, пусто при ручном запуске ---
+      build_id:
+        type: string
+        required: false
+        default: ""
+
+      arachne_callback:
+        type: string
+        required: false
+        default: ""
+
+      arachne_token:
+        type: string
+        required: false
+        default: ""
+
+jobs:
+  smoke:
+    runs-on: ${{ inputs.runner_label }}
+
+    steps:
+      # --- Arachne utility-belt ---
+      # Одна строка вместо ручных Bind/Signal/Settle.
+      # init-bash сам читает build_id/arachne_callback/arachne_token из event payload.
+      # При ручном запуске без callback/token тихо выключается.
+      - name: Init Arachne telemetry
+        uses: https://git.redsoft.internal/arachne/init-bash@v1
+        with:
+          step: ${{ inputs.runner_label }}-logging-smoke
+
+      - name: Show runner context
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "### Runner"
+          hostname
+          whoami
+          uname -a
+
+          echo "### OS"
+          if [ -r /etc/os-release ]; then
+            cat /etc/os-release
+          else
+            echo "/etc/os-release not found"
+          fi
+
+          echo "### Shells"
+          command -v bash || true
+          bash --version | head -n 1 || true
+          command -v sh || true
+          sh --version 2>/dev/null | head -n 1 || true
+
+      - name: Bash stdout stderr check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "bash stdout is visible"
+          echo "bash stderr is visible" >&2
+          bash -lc 'echo "nested bash is visible"'
+
+      - name: Sh stdout stderr check
+        shell: sh
+        run: |
+          echo "sh stdout is visible"
+          echo "sh stderr is visible" >&2
+          sh -c 'echo "nested sh is visible"'
