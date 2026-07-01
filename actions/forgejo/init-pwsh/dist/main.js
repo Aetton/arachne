@@ -169,6 +169,25 @@ function Get-NextStepIndex {
   return $next
 }
 
+function Get-ArachneStepName {
+  param(
+    [int]$Index,
+    [object[]]$Args
+  )
+
+  foreach ($arg in $Args) {
+    $value = [string]$arg
+    if ($value -match '\\.(ps1|psm1)$') {
+      $name = [System.IO.Path]::GetFileNameWithoutExtension($value)
+      if ($name -and ($name -notmatch '^\\d+$')) {
+        return $name
+      }
+    }
+  }
+
+  return ("{0:D3}-powershell" -f $Index)
+}
+
 function Write-Both {
   param(
     [string]$Text,
@@ -184,7 +203,7 @@ if (-not (Test-Path $StepsDir)) {
 }
 
 $idx = Get-NextStepIndex -Dir $StepsDir
-$stepName = "{0:D3}-powershell" -f $idx
+$stepName = Get-ArachneStepName -Index $idx -Args $ShellArgs
 $stepLog = Join-Path $StepsDir ($stepName + ".log")
 $stepStatus = Join-Path $StepsDir ($stepName + ".status")
 
