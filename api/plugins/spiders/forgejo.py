@@ -13,9 +13,10 @@ runner logs. Logs are mirrored by the Forgejo utility belt actions such as
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import AsyncIterator
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
@@ -33,6 +34,16 @@ VERIFY_TLS = os.getenv("FORGEJO_VERIFY_TLS", "true").lower() != "false"
 
 FORGEJO_DEADLINE = float(os.getenv("FORGEJO_DEADLINE", "3600"))
 FORGEJO_SILENCE = float(os.getenv("FORGEJO_SILENCE", "600"))
+
+_NEXUS_URL_RE = re.compile(
+    r"(?P<url>https?://[^\s'\"<>]+/repository/(?P<repo>[^/\s'\"<>]+)/(?P<path>[^\s'\"<>]+))",
+    re.IGNORECASE,
+)
+_UPLOADED_RE = re.compile(
+    r"uploaded\s+to\s+(?P<repo>[\w.-]+)\/(?P<path>[^\s'\"<>]+)",
+    re.IGNORECASE,
+)
+_TRAILING_URL_JUNK = "`'\".,;:)]}"
 
 
 class ForgejoSpider(BuildSpider):
@@ -275,25 +286,90 @@ class ForgejoSpider(BuildSpider):
                 switchboard.release(bid)
                 return
 
+    @staticmethod
+    def _clean_artifact_path(value: str) -> str:
+        return unquote(str(value or "").strip().rstrip(_TRAILING_URL_JUNK))
+
+    @staticmethod
+    def _artifact_name(path: str) -> str:
+        return path.rsplit("/", 1)[-1] or "artifact"
+
+    def _artifact_from_nexus_url(self, url: str, source_step: str = "") -> dict | None:
+        cleaned = self._clean_artifact_path(url)
+        parsed = urlparse(cleaned)
+        marker = "/repository/"
+        if marker not in parsed.path:
+            return None
+        repo_path = parsed.path.split(marker, 1)[1]
+        if "/" not in repo_path:
+            return None
+        repo, path = repo_path.split("/", 1)
+        repo = self._clean_artifact_path(repo)
+        path = self._clean_artifact_path(path)
+        if not repo or not path:
+            return None
+        return {
+            "name": self._artifact_name(path),
+            "type": "nexus",
+            "location": f"{repo}/{path}",
+            "download_url": cleaned,
+            "metadata": {"repo": repo, "path": path, "source_step": source_step},
+        }
+
+    def _artifact_from_uploaded_line(self, repo: str, path: str, source_step: str = "") -> dict | None:
+        repo = self._clean_artifact_path(repo)
+        path = self._clean_artifact_path(path)
+        if not repo or not path:
+            return None
+        return {
+            "name": self._artifact_name(path),
+            "type": "nexus",
+            "location": f"{repo}/{path}",
+            "download_url": f"{NEXUS_URL}/repository/{repo}/{path}",
+            "metadata": {"repo": repo, "path": path, "source_step": source_step},
+        }
+
+    def _artifacts_from_blocks(self, thread) -> list[dict]:
+        """Recover Nexus artifacts from wrapper-captured upload logs.
+
+        Old workflows posted `artifacts` explicitly in the final status. The shell
+        wrapper settles the thread from a post hook, so forgotten artifact JSON
+        files used to make us fall back to a fake `<component>.tar.gz`. Instead,
+        read the mirrored upload output and recover Nexus links deterministically.
+        """
+        found: list[dict] = []
+        seen: set[str] = set()
+
+        def add(artifact: dict | None) -> None:
+            if not artifact:
+                return
+            key = artifact.get("download_url") or artifact.get("location") or artifact.get("name")
+            if not key or key in seen:
+                return
+            seen.add(key)
+            found.append(artifact)
+
+        for block in getattr(thread, "blocks", []) or []:
+            output = block.get("output", "") or ""
+            source_step = str(block.get("step") or "")
+            for match in _NEXUS_URL_RE.finditer(output):
+                add(self._artifact_from_nexus_url(match.group("url"), source_step))
+            for match in _UPLOADED_RE.finditer(output):
+                add(self._artifact_from_uploaded_line(
+                    match.group("repo"), match.group("path"), source_step))
+        return found
+
     def _finish(self, handle: RunHandle, thread):
         st = self._runs[handle.external_id]
-        if thread.artifacts:
-            st["artifacts"] = [
-                Artifact(name=a.get("name", "artifact"),
-                         type=a.get("type", "nexus"),
-                         location=a.get("location", ""),
-                         download_url=a.get("download_url"),
-                         metadata=a.get("metadata", {}))
-                for a in thread.artifacts
-            ]
-        else:
-            comp, version = st["comp"], st["version"]
-            path = f"{comp}/{version}/{comp}-{version}.tar.gz"
-            st["artifacts"] = [Artifact(
-                name=f"{comp}-{version}.tar.gz", type="nexus",
-                location=f"dev-artifacts/{path}",
-                download_url=f"{NEXUS_URL}/repository/dev-artifacts/{path}",
-                metadata={"component": comp, "version": version})]
+        raw_artifacts = thread.artifacts or self._artifacts_from_blocks(thread)
+        st["artifacts"] = [
+            Artifact(name=a.get("name", "artifact"),
+                     type=a.get("type", "nexus"),
+                     location=a.get("location", ""),
+                     download_url=a.get("download_url"),
+                     metadata=a.get("metadata", {}))
+            for a in raw_artifacts
+        ]
 
     def get_status(self, handle: RunHandle) -> RunStatus:
         return self._runs[handle.external_id]["status"]
