@@ -4,14 +4,14 @@
 #
 # Запускается двумя способами:
 #   1. Arachne дёргает dispatch и подкладывает build_id/arachne_callback/arachne_token.
-#      -> arachne/init-bash сам подхватывает служебные inputs, зеркалит bash/sh-логи
-#         и закрывает thread в post-hook.
+#      -> arachne/actions/forgejo/init-bash сам подхватывает служебные inputs,
+#         зеркалит bash/sh-логи и закрывает thread в post-hook.
 #   2. Руками из Forgejo UI.
-#      -> служебные inputs пустые, arachne/init-bash работает как noop,
+#      -> служебные inputs пустые, arachne/actions/forgejo/init-bash работает как noop,
 #         smoke идёт как обычный Forgejo workflow.
 #
 # Вся callback-кухня живёт в action hub:
-#   uses: https://git.redsoft.internal/arachne/init-bash@v1
+#   uses: https://git.redsoft.internal/arachne/actions/forgejo/init-bash@v1
 #
 # Пользовательские steps не должны знать про JSON, токены, /signal и /status.
 
@@ -53,7 +53,7 @@ jobs:
       # init-bash сам читает build_id/arachne_callback/arachne_token из event payload.
       # При ручном запуске без callback/token тихо выключается.
       - name: Init Arachne telemetry
-        uses: https://git.redsoft.internal/arachne/init-bash@v1
+        uses: https://git.redsoft.internal/arachne/actions/forgejo/init-bash@v1
         with:
           step: ${{ inputs.runner_label }}-logging-smoke
 
