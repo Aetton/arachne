@@ -12,6 +12,8 @@
 #   make up-full   — + Postgres + NATS
 #   make bootstrap-init-pwsh
 #   make bootstrap-init-pwsh-local
+#   make bootstrap-init-bash
+#   make bootstrap-init-bash-local
 #   make reset     — DANGER: stop and wipe the SQLite db + volumes
 #
 # Override the compose command if needed:  make up DC="docker-compose"
@@ -29,7 +31,7 @@ BOOTSTRAP_CREATE_REPO ?= true
 FORGEJO_REPO_PRIVATE ?= false
 FORGEJO_VERIFY_TLS ?= false
 
-# Optional knobs for scripts/bootstrap-init-pwsh-wrapper.sh.
+# Optional knobs for scripts/bootstrap-init-*-wrapper.sh.
 # FORGEJO_URL and FORGEJO_TOKEN are expected to already exist in the container env.
 BOOTSTRAP_ENV = \
 	ACTION_REPO='$(ACTION_REPO)' \
@@ -116,6 +118,14 @@ bootstrap-init-pwsh:
 .PHONY: bootstrap-init-pwsh-local
 bootstrap-init-pwsh-local:
 	@bash scripts/bootstrap-init-pwsh-action.sh
+
+.PHONY: bootstrap-init-bash
+bootstrap-init-bash:
+	@$(DC) exec -T $(SERVICE) bash -lc "$(BOOTSTRAP_ENV) ACTION_NAME='init-bash' bash /app/scripts/bootstrap-init-bash-http.sh"
+
+.PHONY: bootstrap-init-bash-local
+bootstrap-init-bash-local:
+	@ACTION_NAME='init-bash' bash scripts/bootstrap-init-bash-action.sh
 
 # ---- maintenance --------------------------------------------------------
 .PHONY: reset
