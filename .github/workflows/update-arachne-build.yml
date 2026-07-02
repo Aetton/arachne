@@ -24,7 +24,7 @@ jobs:
     name: Update build on remote runner
     runs-on:
       - self-hosted
-      - arachne-build
+      - arachne
 
     env:
       DEPLOY_DIR: ${{ inputs.deploy_dir }}
