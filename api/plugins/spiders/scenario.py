@@ -47,6 +47,7 @@ class ScenarioSpider(BuildSpider):
             "child_run_id": None,
             "status": RunStatus.PENDING,
             "artifacts": [],
+            "error": None,
         }
         return RunHandle(
             spider=self.NAME,
@@ -64,11 +65,19 @@ class ScenarioSpider(BuildSpider):
         state["status"] = RunStatus.RUNNING
 
         yield LogLine(f"starting scenario '{scenario_key}'", "system")
-        child_run_id = await run_engine.fire_async(
-            scenario_key,
-            params,
-            source=f"scenario-spider:{handle.external_id}",
-        )
+        try:
+            child_run_id = await run_engine.fire_async(
+                scenario_key,
+                params,
+                source=f"scenario-spider:{handle.external_id}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            state["status"] = RunStatus.FAILED
+            state["error"] = str(exc)
+            handle.metadata["error"] = str(exc)
+            yield LogLine(f"cannot start scenario '{scenario_key}': {exc}", "stderr")
+            return
+
         state["child_run_id"] = child_run_id
         handle.metadata["child_run_id"] = child_run_id
 
@@ -78,8 +87,10 @@ class ScenarioSpider(BuildSpider):
             for record in records[offset:]:
                 child_step = record.get("step_id") or "scenario"
                 text = record.get("text", "")
-                yield LogLine(f"[{scenario_key}/{child_step}] {text}",
-                              record.get("stream", "stdout"))
+                yield LogLine(
+                    f"[{scenario_key}/{child_step}] {text}",
+                    record.get("stream", "stdout"),
+                )
             offset = len(records)
 
             if run_engine.is_done(child_run_id):
@@ -91,8 +102,10 @@ class ScenarioSpider(BuildSpider):
         for record in records[offset:]:
             child_step = record.get("step_id") or "scenario"
             text = record.get("text", "")
-            yield LogLine(f"[{scenario_key}/{child_step}] {text}",
-                          record.get("stream", "stdout"))
+            yield LogLine(
+                f"[{scenario_key}/{child_step}] {text}",
+                record.get("stream", "stdout"),
+            )
 
         state["status"] = run_engine.get_status(child_run_id)
         state["artifacts"] = [
