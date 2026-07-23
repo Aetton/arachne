@@ -1,22 +1,130 @@
 {% extends "base.html" %}
 {% block title %}Scenario editor · Admin{% endblock %}
 {% block content %}
-<form method="post" action="/admin/scenarios/save" class="space-y-5">
+<style>
+  .scenario-editor-shell {
+    margin-top: .25rem;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    background: var(--surface2);
+  }
+  .scenario-editor-shell:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .scenario-editor-shell .CodeMirror {
+    height: min(68vh, 760px);
+    min-height: 34rem;
+    font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+    font-size: .875rem;
+    line-height: 1.55;
+    background: var(--surface2);
+  }
+  .scenario-editor-shell .CodeMirror-gutters {
+    border-right: 1px solid var(--border);
+  }
+  .scenario-editor-shell .CodeMirror-linenumber {
+    color: var(--muted);
+  }
+  .scenario-editor-help {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    margin-top: .5rem;
+    font-size: .75rem;
+    color: var(--muted);
+  }
+  .scenario-editor-help kbd {
+    padding: .1rem .35rem;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: .25rem;
+    background: var(--surface2);
+    color: var(--fg);
+    font-family: inherit;
+  }
+  .scenario-editor-status {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-top: .6rem;
+    min-height: 1.4rem;
+    font-size: .78rem;
+    color: var(--muted);
+  }
+  .scenario-editor-status.is-ok { color: var(--ok-fg); }
+  .scenario-editor-status.is-error { color: var(--fail-fg); }
+  .scenario-editor-status .dot {
+    width: .5rem;
+    height: .5rem;
+    border-radius: 999px;
+    background: currentColor;
+  }
+  .scenario-save-status {
+    display: none;
+    margin-top: .75rem;
+    padding: .65rem .8rem;
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    white-space: pre-wrap;
+    font-size: .8rem;
+  }
+  .scenario-save-status.is-error {
+    display: block;
+    background: var(--fail-bg);
+    color: var(--fail-fg);
+  }
+  .dsl-reference {
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+  .dsl-reference code {
+    color: var(--accent);
+    font-size: .78rem;
+  }
+  .dsl-reference li {
+    margin-top: .35rem;
+    font-size: .78rem;
+    color: var(--muted);
+  }
+  .CodeMirror-lint-mark-error {
+    background: rgba(255, 70, 90, .16);
+    border-bottom: 2px wavy var(--fail-fg);
+  }
+  .CodeMirror-guttermarker-subtle {
+    color: var(--fail-fg);
+    font-weight: 700;
+  }
+</style>
+
+<form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-5">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold">{{ "Edit " ~ scenario.slug if scenario else "New scenario" }}</h1>
       <p class="muted text-sm">Saving validates the DSL, creates a version and publishes it atomically.</p>
     </div>
-    <button class="btn" type="submit"><i class="ti ti-device-floppy"></i> Validate & publish</button>
+    <button id="scenario-save-button" class="btn" type="submit"><i class="ti ti-device-floppy"></i> Validate & publish</button>
   </div>
   <div class="grid md:grid-cols-3 gap-4">
     <section class="surface rounded-xl p-4 md:col-span-2">
       <label class="block text-sm muted mb-1">Slug</label>
       <input name="slug" required value="{{ scenario.slug if scenario else '' }}"
              {% if scenario %}readonly{% endif %}>
-      <label class="block text-sm muted mt-4 mb-1">Scenario YAML</label>
-      <textarea name="definition" required rows="30"
-                class="font-mono text-sm">{{ yaml_text }}</textarea>
+      <label for="scenario-definition" class="block text-sm muted mt-4 mb-1">Scenario YAML</label>
+      <div class="scenario-editor-shell">
+        <textarea id="scenario-definition" name="definition" required rows="30">{{ yaml_text }}</textarea>
+      </div>
+      <div class="scenario-editor-help">
+        <span><kbd>Tab</kbd> indent</span>
+        <span><kbd>Shift</kbd> + <kbd>Tab</kbd> outdent</span>
+        <span><kbd>Ctrl</kbd> + <kbd>Space</kbd> DSL completion</span>
+        <span><kbd>Ctrl</kbd> + <kbd>S</kbd> validate & publish</span>
+      </div>
+      <div id="scenario-editor-status" class="scenario-editor-status" aria-live="polite">
+        <span class="dot"></span><span>Checking DSL…</span>
+      </div>
+      <div id="scenario-save-status" class="scenario-save-status" role="alert"></div>
       <label class="block text-sm muted mt-4 mb-1">Version comment</label>
       <input name="comment" placeholder="What changed">
     </section>
@@ -53,6 +161,16 @@
         </div>
       </div>
       {% endfor %}
+      <div class="dsl-reference">
+        <h2 class="font-semibold">DSL quick reference</h2>
+        <ul>
+          <li>Required root keys: <code>label</code>, <code>component</code>, <code>steps</code></li>
+          <li>Step keys: <code>id</code>, <code>spider</code>, <code>action</code>, <code>with</code>, <code>needs</code>, <code>kind</code></li>
+          <li>Param types: <code>string</code>, <code>choice</code>, <code>boolean</code></li>
+          <li>References: <code>${params.name}</code>, <code>${step_id.field}</code></li>
+          <li>Trigger types: <code>manual</code>, <code>schedule</code>, <code>chain</code></li>
+        </ul>
+      </div>
     </section>
   </div>
   {% if versions %}
@@ -78,4 +196,315 @@
   </section>
   {% endif %}
 </form>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.css">
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/yaml/yaml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+<script>
+  (function () {
+    var textarea = document.getElementById('scenario-definition');
+    var form = document.getElementById('scenario-form');
+    var saveButton = document.getElementById('scenario-save-button');
+    var saveStatus = document.getElementById('scenario-save-status');
+    var editorStatus = document.getElementById('scenario-editor-status');
+    if (!textarea || !form || !window.CodeMirror) return;
+
+    var ROOT_KEYS = ['label: ', 'component: ', 'icon: "ti-"', 'accent: ', 'triggers:\n  - type: manual', 'params:\n  - name: ', 'steps:\n  - id: '];
+    var STEP_KEYS = ['id: ', 'spider: ', 'action: ', 'kind: ', 'with: {}', 'needs: []'];
+    var PARAM_KEYS = ['name: ', 'label: ', 'type: ', 'required: true', 'default: ', 'options: []'];
+    var TRIGGER_KEYS = ['type: manual', 'type: schedule', 'type: chain'];
+    var PARAM_TYPES = ['string', 'choice', 'boolean'];
+    var SPIDERS = ['forgejo', 'ansible-local', 'tofu-proxmox'];
+
+    var editor = CodeMirror.fromTextArea(textarea, {
+      mode: 'yaml',
+      lineNumbers: true,
+      gutters: ['CodeMirror-linenumbers', 'dsl-errors'],
+      lineWrapping: false,
+      indentUnit: 2,
+      tabSize: 2,
+      indentWithTabs: false,
+      smartIndent: true,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      viewportMargin: 20,
+      extraKeys: {
+        Tab: function (cm) {
+          if (cm.somethingSelected()) cm.indentSelection('add');
+          else cm.replaceSelection('  ', 'end');
+        },
+        'Shift-Tab': function (cm) { cm.indentSelection('subtract'); },
+        'Ctrl-Space': function (cm) { cm.showHint({hint: dslHint, completeSingle: false}); },
+        'Ctrl-S': submitEditor,
+        'Cmd-S': submitEditor
+      }
+    });
+
+    var lintTimer = null;
+    var errorMarks = [];
+
+    function submitEditor(cm) {
+      cm.save();
+      if (form.requestSubmit) form.requestSubmit(saveButton);
+      else form.submit();
+    }
+
+    function syncTheme() {
+      var theme = document.documentElement.getAttribute('data-theme');
+      editor.setOption('theme', theme === 'light' ? 'default' : 'material-darker');
+    }
+
+    function showSaveError(message) {
+      saveStatus.textContent = message || 'Scenario validation failed.';
+      saveStatus.classList.add('is-error');
+    }
+
+    function currentSection(cm, lineNo) {
+      for (var i = lineNo; i >= 0; i--) {
+        var text = cm.getLine(i);
+        if (/^steps:\s*$/.test(text)) return 'steps';
+        if (/^params:\s*$/.test(text)) return 'params';
+        if (/^triggers:\s*$/.test(text)) return 'triggers';
+        if (/^\S/.test(text) && text.trim()) return 'root';
+      }
+      return 'root';
+    }
+
+    function dslHint(cm) {
+      var cursor = cm.getCursor();
+      var line = cm.getLine(cursor.line);
+      var token = cm.getTokenAt(cursor);
+      var start = token.start;
+      var end = cursor.ch;
+      var section = currentSection(cm, cursor.line);
+      var list = ROOT_KEYS;
+
+      if (section === 'steps') list = STEP_KEYS.concat(SPIDERS);
+      if (section === 'params') list = PARAM_KEYS.concat(PARAM_TYPES);
+      if (section === 'triggers') list = TRIGGER_KEYS;
+
+      if (/^\s*spider:\s*/.test(line)) {
+        list = SPIDERS;
+        start = line.indexOf(':') + 1;
+        while (line[start] === ' ') start++;
+      } else if (/^\s*type:\s*/.test(line) && section === 'params') {
+        list = PARAM_TYPES;
+        start = line.indexOf(':') + 1;
+        while (line[start] === ' ') start++;
+      } else if (/^\s*type:\s*/.test(line) && section === 'triggers') {
+        list = ['manual', 'schedule', 'chain'];
+        start = line.indexOf(':') + 1;
+        while (line[start] === ' ') start++;
+      }
+
+      var prefix = line.slice(start, end).trim();
+      list = list.filter(function (item) {
+        return !prefix || item.toLowerCase().indexOf(prefix.toLowerCase()) === 0;
+      });
+
+      return {
+        list: list.map(function (text) { return {text: text, displayText: text.replace(/\n/g, ' ↵ ')}; }),
+        from: CodeMirror.Pos(cursor.line, start),
+        to: CodeMirror.Pos(cursor.line, end)
+      };
+    }
+
+    function addError(errors, message, line) {
+      errors.push({message: message, line: Math.max(0, Number(line) || 0)});
+    }
+
+    function lineForKey(key, fromLine) {
+      var escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var rx = new RegExp('^\\s*(?:-\\s*)?' + escaped + '\\s*:');
+      for (var i = fromLine || 0; i < editor.lineCount(); i++) {
+        if (rx.test(editor.getLine(i))) return i;
+      }
+      return fromLine || 0;
+    }
+
+    function lintDsl(doc) {
+      var errors = [];
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        addError(errors, 'Scenario definition must be a mapping.', 0);
+        return errors;
+      }
+
+      ['label', 'component', 'steps'].forEach(function (field) {
+        if (!(field in doc)) addError(errors, 'Missing required field: ' + field, 0);
+      });
+
+      if (!Array.isArray(doc.steps) || !doc.steps.length) {
+        addError(errors, 'steps must be a non-empty list.', lineForKey('steps', 0));
+      }
+
+      var stepIds = {};
+      (Array.isArray(doc.steps) ? doc.steps : []).forEach(function (step, index) {
+        var approx = lineForKey('id', lineForKey('steps', 0) + index);
+        if (!step || typeof step !== 'object' || Array.isArray(step)) {
+          addError(errors, 'Each step must be a mapping.', approx);
+          return;
+        }
+        ['id', 'spider', 'action'].forEach(function (field) {
+          if (!step[field]) addError(errors, 'Step ' + (index + 1) + ' is missing: ' + field, approx);
+        });
+        if (step.id) {
+          if (stepIds[step.id] !== undefined) addError(errors, 'Duplicate step id: ' + step.id, approx);
+          stepIds[step.id] = index;
+        }
+        if (step.needs && !Array.isArray(step.needs)) addError(errors, 'needs must be a list.', approx);
+        if (step.with && (typeof step.with !== 'object' || Array.isArray(step.with))) {
+          addError(errors, 'with must be a mapping.', approx);
+        }
+      });
+
+      var params = {};
+      (Array.isArray(doc.params) ? doc.params : []).forEach(function (param, index) {
+        var approx = lineForKey('name', lineForKey('params', 0) + index);
+        if (!param || typeof param !== 'object' || Array.isArray(param)) {
+          addError(errors, 'Each param must be a mapping.', approx);
+          return;
+        }
+        if (!param.name) addError(errors, 'Param ' + (index + 1) + ' is missing: name', approx);
+        if (!param.type) addError(errors, 'Param ' + (index + 1) + ' is missing: type', approx);
+        if (param.type && PARAM_TYPES.indexOf(param.type) < 0) {
+          addError(errors, 'Unknown param type: ' + param.type, approx);
+        }
+        if (param.type === 'choice' && (!Array.isArray(param.options) || !param.options.length)) {
+          addError(errors, 'Choice param requires non-empty options.', approx);
+        }
+        if (param.name) params[param.name] = true;
+      });
+
+      var text = editor.getValue();
+      var refRx = /\$\{([^}]+)\}/g;
+      var match;
+      while ((match = refRx.exec(text))) {
+        var ref = match[1];
+        var line = editor.posFromIndex(match.index).line;
+        if (ref.indexOf('params.') === 0) {
+          var paramName = ref.slice(7).split('.')[0];
+          if (!params[paramName]) addError(errors, 'Unknown parameter reference: ' + ref, line);
+        } else {
+          var stepName = ref.split('.')[0];
+          if (stepIds[stepName] === undefined) addError(errors, 'Unknown step reference: ' + ref, line);
+        }
+      }
+
+      return errors;
+    }
+
+    function clearErrors() {
+      errorMarks.forEach(function (mark) { mark.clear(); });
+      errorMarks = [];
+      editor.clearGutter('dsl-errors');
+    }
+
+    function renderErrors(errors) {
+      clearErrors();
+      errors.forEach(function (error) {
+        var line = Math.min(error.line, editor.lineCount() - 1);
+        var marker = document.createElement('span');
+        marker.className = 'CodeMirror-guttermarker-subtle';
+        marker.textContent = '×';
+        marker.title = error.message;
+        editor.setGutterMarker(line, 'dsl-errors', marker);
+        errorMarks.push(editor.markText(
+          CodeMirror.Pos(line, 0),
+          CodeMirror.Pos(line, editor.getLine(line).length),
+          {className: 'CodeMirror-lint-mark-error', title: error.message}
+        ));
+      });
+
+      editorStatus.classList.remove('is-ok', 'is-error');
+      if (errors.length) {
+        editorStatus.classList.add('is-error');
+        editorStatus.querySelector('span:last-child').textContent =
+          errors.length + ' DSL error' + (errors.length === 1 ? '' : 's') + ': ' + errors[0].message;
+      } else {
+        editorStatus.classList.add('is-ok');
+        editorStatus.querySelector('span:last-child').textContent =
+          'Valid YAML and Arachne DSL · ' + editor.lineCount() + ' lines';
+      }
+    }
+
+    function validateEditor() {
+      var errors = [];
+      try {
+        var doc = window.jsyaml.load(editor.getValue());
+        errors = lintDsl(doc);
+      } catch (error) {
+        var line = error && error.mark ? error.mark.line : 0;
+        addError(errors, error.reason || error.message || 'Invalid YAML.', line);
+      }
+      renderErrors(errors);
+      return errors;
+    }
+
+    syncTheme();
+    new MutationObserver(syncTheme).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme']
+    });
+
+    editor.on('change', function () {
+      window.clearTimeout(lintTimer);
+      lintTimer = window.setTimeout(validateEditor, 250);
+    });
+    validateEditor();
+
+    form.addEventListener('submit', async function (event) {
+      editor.save();
+
+      var submitter = event.submitter;
+      var targetAction = submitter && submitter.formAction ? submitter.formAction : form.action;
+      if (!targetAction.endsWith('/admin/scenarios/save')) return;
+
+      event.preventDefault();
+      saveStatus.classList.remove('is-error');
+      saveStatus.textContent = '';
+
+      var errors = validateEditor();
+      if (errors.length) {
+        showSaveError('Fix DSL errors before publishing.\n' + errors.map(function (e) {
+          return 'Line ' + (e.line + 1) + ': ' + e.message;
+        }).join('\n'));
+        editor.setCursor(errors[0].line, 0);
+        editor.focus();
+        return;
+      }
+
+      saveButton.disabled = true;
+      saveButton.style.filter = 'grayscale(.35)';
+
+      try {
+        var response = await fetch(form.action, {
+          method: 'POST',
+          body: new FormData(form),
+          credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+          showSaveError(await response.text());
+          return;
+        }
+
+        var slug = String(new FormData(form).get('slug') || '').trim();
+        window.location.assign('/admin/scenarios/' + encodeURIComponent(slug) + '/edit');
+      } catch (error) {
+        showSaveError(error && error.message ? error.message : String(error));
+      } finally {
+        saveButton.disabled = false;
+        saveButton.style.filter = '';
+      }
+    });
+  })();
+</script>
 {% endblock %}
