@@ -182,6 +182,40 @@
   .scenario-check input:focus-visible + .scenario-check-box {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
   }
+  .scenario-versions {
+    padding: 1rem;
+  }
+  .scenario-version-list {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: .55rem;
+  }
+  .scenario-version-row {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    min-height: 2.75rem;
+    padding: .5rem .7rem;
+    background: var(--surface2);
+  }
+  .scenario-version-row + .scenario-version-row {
+    border-top: 1px solid var(--border);
+  }
+  .scenario-version-number {
+    flex: 0 0 2rem;
+  }
+  .scenario-version-comment {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scenario-version-restore {
+    flex: 0 0 auto;
+    padding: .35rem .55rem;
+    white-space: nowrap;
+  }
   .dsl-reference {
     padding-bottom: .25rem;
   }
@@ -261,7 +295,7 @@
           {% for role in roles %}
           <label class="scenario-check text-sm">
             <input type="checkbox" name="{{ action }}_roles" value="{{ role.slug }}"
-              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "role")|selectattr("subject_key", "equalto", role.slug)|list %}checked{% endif %}>
+              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "role")|selectattr("subject_key", "equalto", role.slug)|list or (not scenario and role.slug in default_acl_roles) %}checked{% endif %}>
             <span class="scenario-check-box" aria-hidden="true"></span>
             <span>{{ role.name }}</span>
           </label>
@@ -272,7 +306,7 @@
           {% for team in teams %}
           <label class="scenario-check text-sm">
             <input type="checkbox" name="{{ action }}_teams" value="{{ team.id }}"
-              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "team")|selectattr("subject_key", "equalto", team.id|string)|list %}checked{% endif %}>
+              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "team")|selectattr("subject_key", "equalto", team.id|string)|list or (not scenario and team.id in default_acl_teams) %}checked{% endif %}>
             <span class="scenario-check-box" aria-hidden="true"></span>
             <span>{{ team.name }}</span>
           </label>
@@ -283,20 +317,18 @@
     </section>
   </div>
   {% if versions %}
-  <section class="surface rounded-xl p-4">
-    <h2 class="font-semibold mb-3">Version history</h2>
-    <div class="space-y-2">
+  <section class="scenario-versions surface rounded-xl">
+    <h2 class="font-semibold mb-2">Version history</h2>
+    <div class="scenario-version-list">
       {% for version in versions %}
-      <div class="surface-2 rounded p-3 flex items-center justify-between">
-        <div>
-          <span class="font-medium">v{{ version.version }}</span>
-          <span class="pill pill-pending ml-2">{{ version.status }}</span>
-          <span class="muted text-sm ml-2">{{ version.comment or "No comment" }}</span>
-        </div>
+      <div class="scenario-version-row">
+        <span class="scenario-version-number font-medium">v{{ version.version }}</span>
+        <span class="pill pill-pending">{{ version.status }}</span>
+        <span class="scenario-version-comment muted text-sm" title="{{ version.comment or 'No comment' }}">{{ version.comment or "No comment" }}</span>
         {% if version.id != scenario.current_version_id %}
-        <button class="btn-ghost text-xs" type="submit"
+        <button class="scenario-version-restore btn-ghost text-xs" type="submit"
                 formaction="/admin/scenarios/{{ scenario.slug }}/versions/{{ version.id }}/restore">
-          Restore as new version
+          Restore
         </button>
         {% endif %}
       </div>
