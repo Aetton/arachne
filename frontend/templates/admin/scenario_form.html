@@ -389,13 +389,13 @@
       monaco.languages.setMonarchTokensProvider("yaml", {
         tokenizer: {
           root: [
-            [/^\\s*#.*$/, "comment"],
-            [/\\$\\{[^}]+\\}/, "variable"],
-            [/"([^"\\\\]|\\\\.)*"|'([^'\\\\]|\\\\.)*'/, "string"],
-            [/\\b(?:true|false|null|yes|no|on|off)\\b/, "keyword"],
-            [/-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b/, "number"],
-            [/^(\\s*-?\\s*)([A-Za-z_][\\w.-]*)(\\s*:)/, ["", "key", ""]],
-            [/[{}\\[\\],&*!|>?%@]/, "tag"]
+            [/^\s*#.*$/, "comment"],
+            [/\$\{[^}]+\}/, "variable"],
+            [/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/, "string"],
+            [/\b(?:true|false|null|yes|no|on|off)\b/, "keyword"],
+            [/-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\b/, "number"],
+            [/^(\s*-?\s*)([A-Za-z_][\w.-]*)(\s*:)/, ["", "key", ""]],
+            [/[{}\[\],&*!|>?%@]/, "tag"]
           ]
         }
       });
@@ -443,7 +443,7 @@
         fontSize: 14,
         fontWeight: "normal",
         fontLigatures: false,
-        letterSpacing: 0,
+        letterSpacing: 0.4,
         lineHeight: 0,
         lineNumbers: "on",
         minimap: { enabled: false },
@@ -453,7 +453,7 @@
         detectIndentation: false,
         automaticLayout: true,
         scrollBeyondLastLine: false,
-        renderWhitespace: "selection",
+        renderWhitespace: "all",
         bracketPairColorization: { enabled: true },
         guides: { bracketPairs: true, indentation: true },
         suggest: { showWords: false },
