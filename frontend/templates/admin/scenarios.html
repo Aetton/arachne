@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Scenarios · Admin{% endblock %}
 {% block content %}
+<style>
+  .scenario-row {
+    cursor: pointer;
+    transition: background-color .15s ease;
+  }
+  .scenario-row:hover,
+  .scenario-row:focus-visible {
+    background: var(--surface2);
+    outline: none;
+  }
+</style>
 <div class="flex items-center justify-between mb-5">
   <div>
     <h1 class="text-xl font-semibold">Scenario management</h1>
@@ -59,7 +70,11 @@
     </tr></thead>
     <tbody>
     {% for s in scenarios %}
-      <tr style="border-top:1px solid var(--border)">
+      <tr class="scenario-row" style="border-top:1px solid var(--border)"
+          data-href="/admin/scenarios/{{ s.slug }}/edit"
+          role="link" tabindex="0" aria-label="Edit scenario {{ s.label }}"
+          onclick="if (!event.target.closest('a, button, input, select, textarea')) window.location.href = this.dataset.href"
+          onkeydown="if (event.key === 'Enter') window.location.href = this.dataset.href">
         <td class="px-4 py-2.5 font-mono">{{ s.slug }}</td>
         <td class="px-4 py-2.5">{{ s.label }}</td>
         <td class="px-4 py-2.5 muted">{{ s.component }}</td>
