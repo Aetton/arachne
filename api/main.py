@@ -512,6 +512,23 @@ async def admin_component_save(request: Request, user=Depends(require_role("admi
     return RedirectResponse("/admin/scenarios", status_code=303)
 
 
+@app.post("/admin/components/{slug}/delete")
+def admin_component_delete(slug: str, user=Depends(require_role("admin")),
+                           db: Session = Depends(get_db)):
+    component = db.get(Component, slug)
+    if not component:
+        raise HTTPException(404, "Component not found")
+    scenario_count = db.query(Scenario).filter(Scenario.component == slug).count()
+    if scenario_count:
+        raise HTTPException(
+            409,
+            f"Component '{slug}' is used by {scenario_count} scenario(s)",
+        )
+    db.delete(component)
+    db.commit()
+    return RedirectResponse("/admin/scenarios", status_code=303)
+
+
 @app.post("/admin/scenarios/{slug}/versions/{version_id}/restore")
 def admin_scenario_restore(slug: str, version_id: int,
                            user=Depends(require_role("admin")),
