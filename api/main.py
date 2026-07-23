@@ -398,6 +398,8 @@ def admin_scenario_new(request: Request, user=Depends(require_role("admin")),
         request, "admin/scenario_form.html", user=user, scenario=None,
         yaml_text="label: New scenario\ncomponent: backend\ntriggers:\n  - type: manual\nsteps:\n  - id: build\n    spider: forgejo\n    action: build\n    with: {}\n",
         roles=roles, teams=teams, acl=[],
+        default_acl_roles=set(user.roles or []),
+        default_acl_teams={int(team_id) for team_id in (user.teams or [])},
     )
 
 
@@ -430,6 +432,7 @@ async def admin_scenario_save(request: Request, user=Depends(require_role("admin
     if not slug:
         raise HTTPException(400, "Scenario slug is required")
     try:
+        is_new = db.query(Scenario).filter(Scenario.slug == slug).first() is None
         definition = yaml.safe_load(form.get("definition", "")) or {}
         version = scenario_store.save_draft(
             db, slug, definition, user.id, str(form.get("comment", "")),
@@ -438,13 +441,23 @@ async def admin_scenario_save(request: Request, user=Depends(require_role("admin
         scenario_store.publish(db, scenario, version)
         entries = []
         mode = str(form.get("match_mode", "all"))
+        submitted_subjects = any(
+            form.getlist(f"{action}_{subject_type}")
+            for action in ("view", "run", "edit", "manage")
+            for subject_type in ("roles", "teams")
+        )
         for action in ("view", "run", "edit", "manage"):
-            for role_slug in form.getlist(f"{action}_roles"):
+            role_slugs = form.getlist(f"{action}_roles")
+            team_ids = form.getlist(f"{action}_teams")
+            if is_new and not submitted_subjects:
+                role_slugs = [str(role) for role in (user.roles or [])]
+                team_ids = [str(team_id) for team_id in (user.teams or [])]
+            for role_slug in role_slugs:
                 entries.append({
                     "subject_type": "role", "subject_key": role_slug,
                     "permission": action, "effect": "allow", "match_mode": mode,
                 })
-            for team_id in form.getlist(f"{action}_teams"):
+            for team_id in team_ids:
                 entries.append({
                     "subject_type": "team", "subject_key": team_id,
                     "permission": action, "effect": "allow", "match_mode": mode,

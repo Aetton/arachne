@@ -86,13 +86,30 @@
   .scenario-form-panel {
     padding: 1.5rem;
   }
+  .scenario-field-label {
+    display: block;
+    margin-bottom: .5rem;
+  }
+  .scenario-field-label:not(:first-child) {
+    margin-top: 1.25rem;
+  }
+  input[name="slug"],
+  select[name="match_mode"] {
+    text-indent: 8px;
+  }
   .scenario-acl {
     display: grid;
     gap: 1.5rem;
+    padding: 1.5rem;
   }
   .scenario-acl-header {
     padding-bottom: 1.25rem;
     border-bottom: 1px solid var(--border);
+  }
+  .scenario-acl-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.5rem;
   }
   .scenario-acl-header p {
     margin-top: .35rem;
@@ -105,6 +122,16 @@
   }
   .scenario-acl-action h3 {
     letter-spacing: .08em;
+  }
+  @media (max-width: 1100px) {
+    .scenario-acl-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 680px) {
+    .scenario-acl-actions {
+      grid-template-columns: 1fr;
+    }
   }
   .scenario-acl-group {
     display: grid;
@@ -169,9 +196,42 @@
   .scenario-check input:focus-visible + .scenario-check-box {
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
   }
-  .dsl-reference {
+  .scenario-versions {
+    padding: 1rem;
+  }
+  .scenario-version-list {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: .55rem;
+  }
+  .scenario-version-row {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    min-height: 2.75rem;
+    padding: .5rem .7rem;
+    background: var(--surface2);
+  }
+  .scenario-version-row + .scenario-version-row {
     border-top: 1px solid var(--border);
-    padding-top: 1.25rem;
+  }
+  .scenario-version-number {
+    flex: 0 0 2rem;
+  }
+  .scenario-version-comment {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scenario-version-restore {
+    flex: 0 0 auto;
+    padding: .35rem .55rem;
+    white-space: nowrap;
+  }
+  .dsl-reference {
+    padding-bottom: .25rem;
   }
   .dsl-reference code {
     color: var(--accent);
@@ -202,10 +262,10 @@
   </div>
   <div class="scenario-form-grid grid md:grid-cols-3">
     <section class="scenario-form-panel surface rounded-xl md:col-span-2">
-      <label class="block text-sm muted mb-1">Slug</label>
+      <label class="scenario-field-label text-sm muted">Slug</label>
       <input name="slug" required value="{{ scenario.slug if scenario else '' }}"
              {% if scenario %}readonly{% endif %}>
-      <label for="scenario-definition" class="block text-sm muted mt-4 mb-1">Scenario YAML</label>
+      <label for="scenario-definition" class="scenario-field-label text-sm muted">Scenario YAML</label>
       <div class="scenario-editor-shell">
         <textarea id="scenario-definition" name="definition" required rows="30">{{ yaml_text }}</textarea>
       </div>
@@ -219,45 +279,10 @@
         <span class="dot"></span><span>Checking DSL…</span>
       </div>
       <div id="scenario-save-status" class="scenario-save-status" role="alert"></div>
-      <label class="block text-sm muted mt-4 mb-1">Version comment</label>
+      <label class="scenario-field-label text-sm muted">Version comment</label>
       <input name="comment" placeholder="What changed">
     </section>
-    <section class="scenario-form-panel scenario-acl surface rounded-xl">
-      <div class="scenario-acl-header">
-        <h2 class="font-semibold">ACL matching</h2>
-        <p class="muted text-xs">Choose how roles and teams combine for every action.</p>
-        <select name="match_mode" class="mt-2">
-          <option value="all" {% if not acl or acl[0].match_mode == "all" %}selected{% endif %}>role AND team</option>
-          <option value="any" {% if acl and acl[0].match_mode == "any" %}selected{% endif %}>role OR team</option>
-        </select>
-      </div>
-      {% for action in ["view", "run", "edit", "manage"] %}
-      <div class="scenario-acl-action">
-        <h3 class="text-sm font-semibold uppercase">{{ action }}</h3>
-        <div class="scenario-acl-group">
-          <p class="scenario-acl-group-title muted text-xs">Roles</p>
-          {% for role in roles %}
-          <label class="scenario-check text-sm">
-            <input type="checkbox" name="{{ action }}_roles" value="{{ role.slug }}"
-              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "role")|selectattr("subject_key", "equalto", role.slug)|list %}checked{% endif %}>
-            <span class="scenario-check-box" aria-hidden="true"></span>
-            <span>{{ role.name }}</span>
-          </label>
-          {% endfor %}
-        </div>
-        <div class="scenario-acl-group">
-          <p class="scenario-acl-group-title muted text-xs">Teams</p>
-          {% for team in teams %}
-          <label class="scenario-check text-sm">
-            <input type="checkbox" name="{{ action }}_teams" value="{{ team.id }}"
-              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "team")|selectattr("subject_key", "equalto", team.id|string)|list %}checked{% endif %}>
-            <span class="scenario-check-box" aria-hidden="true"></span>
-            <span>{{ team.name }}</span>
-          </label>
-          {% else %}<p class="muted text-xs">Create teams in Access first.</p>{% endfor %}
-        </div>
-      </div>
-      {% endfor %}
+    <aside class="scenario-form-panel surface rounded-xl">
       <div class="dsl-reference">
         <h2 class="font-semibold">DSL quick reference</h2>
         <ul>
@@ -268,23 +293,60 @@
           <li>Trigger types: <code>manual</code>, <code>schedule</code>, <code>chain</code></li>
         </ul>
       </div>
-    </section>
+    </aside>
   </div>
-  {% if versions %}
-  <section class="surface rounded-xl p-4">
-    <h2 class="font-semibold mb-3">Version history</h2>
-    <div class="space-y-2">
-      {% for version in versions %}
-      <div class="surface-2 rounded p-3 flex items-center justify-between">
-        <div>
-          <span class="font-medium">v{{ version.version }}</span>
-          <span class="pill pill-pending ml-2">{{ version.status }}</span>
-          <span class="muted text-sm ml-2">{{ version.comment or "No comment" }}</span>
+  <section class="scenario-acl surface rounded-xl">
+    <div class="scenario-acl-header">
+        <h2 class="font-semibold">ACL matching</h2>
+        <p class="muted text-xs">Choose how roles and teams combine for every action.</p>
+        <select name="match_mode" class="mt-2">
+          <option value="all" {% if not acl or acl[0].match_mode == "all" %}selected{% endif %}>role AND team</option>
+          <option value="any" {% if acl and acl[0].match_mode == "any" %}selected{% endif %}>role OR team</option>
+        </select>
+      </div>
+    <div class="scenario-acl-actions">
+      {% for action in ["view", "run", "edit", "manage"] %}
+      <div class="scenario-acl-action">
+        <h3 class="text-sm font-semibold uppercase">{{ action }}</h3>
+        <div class="scenario-acl-group">
+          <p class="scenario-acl-group-title muted text-xs">Roles</p>
+          {% for role in roles %}
+          <label class="scenario-check text-sm">
+            <input type="checkbox" name="{{ action }}_roles" value="{{ role.slug }}"
+              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "role")|selectattr("subject_key", "equalto", role.slug)|list or (not scenario and role.slug in default_acl_roles) %}checked{% endif %}>
+            <span class="scenario-check-box" aria-hidden="true"></span>
+            <span>{{ role.name }}</span>
+          </label>
+          {% endfor %}
         </div>
+        <div class="scenario-acl-group">
+          <p class="scenario-acl-group-title muted text-xs">Teams</p>
+          {% for team in teams %}
+          <label class="scenario-check text-sm">
+            <input type="checkbox" name="{{ action }}_teams" value="{{ team.id }}"
+              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "team")|selectattr("subject_key", "equalto", team.id|string)|list or (not scenario and team.id in default_acl_teams) %}checked{% endif %}>
+            <span class="scenario-check-box" aria-hidden="true"></span>
+            <span>{{ team.name }}</span>
+          </label>
+          {% else %}<p class="muted text-xs">Create teams in Access first.</p>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% if versions %}
+  <section class="scenario-versions surface rounded-xl">
+    <h2 class="font-semibold mb-2">Version history</h2>
+    <div class="scenario-version-list">
+      {% for version in versions %}
+      <div class="scenario-version-row">
+        <span class="scenario-version-number font-medium">v{{ version.version }}</span>
+        <span class="pill pill-pending">{{ version.status }}</span>
+        <span class="scenario-version-comment muted text-sm" title="{{ version.comment or 'No comment' }}">{{ version.comment or "No comment" }}</span>
         {% if version.id != scenario.current_version_id %}
-        <button class="btn-ghost text-xs" type="submit"
+        <button class="scenario-version-restore btn-ghost text-xs" type="submit"
                 formaction="/admin/scenarios/{{ scenario.slug }}/versions/{{ version.id }}/restore">
-          Restore as new version
+          Restore
         </button>
         {% endif %}
       </div>
