@@ -3,7 +3,7 @@
 {% block content %}
 <style>
   .scenario-card {
-    --scenario-accent: var(--accent);
+    --scenario-accent: #6366f1;
     box-shadow: inset 3px 0 0 var(--scenario-accent);
   }
   .scenario-card .scenario-icon { color: var(--scenario-accent); }
@@ -14,6 +14,7 @@
   .scenario-accent-teal { --scenario-accent: #4fd6be; }
   .scenario-accent-cyan { --scenario-accent: #8be9fd; }
   .scenario-accent-blue { --scenario-accent: #6ea8fe; }
+  .scenario-accent-indigo { --scenario-accent: #6366f1; }
   .scenario-accent-purple { --scenario-accent: #bd93f9; }
   .scenario-accent-pink { --scenario-accent: #ff79c6; }
 </style>
@@ -24,7 +25,7 @@
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-10">
   {% for key, s in scenarios.items() %}
   <button hx-get="/scenarios/{{ key }}/form" hx-target="#panel" hx-swap="innerHTML"
-          class="scenario-card scenario-accent-{{ s.accent or 'purple' }} surface rounded-xl p-4 text-left hover:brightness-110 transition"
+          class="scenario-card scenario-accent-{{ s.accent or 'indigo' }} surface rounded-xl p-4 text-left hover:brightness-110 transition"
           style="border-color: var(--border);">
     <div class="flex items-center gap-2 mb-1.5">
       <i class="ti {{ s.icon or 'ti-box' }} text-lg scenario-icon"></i>
