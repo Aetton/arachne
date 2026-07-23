@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Scenario editor · Admin{% endblock %}
+{% block content %}
+<form method="post" action="/admin/scenarios/save" class="space-y-5">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold">{{ "Edit " ~ scenario.slug if scenario else "New scenario" }}</h1>
+      <p class="muted text-sm">Saving validates the DSL, creates a version and publishes it atomically.</p>
+    </div>
+    <button class="btn" type="submit"><i class="ti ti-device-floppy"></i> Validate & publish</button>
+  </div>
+  <div class="grid md:grid-cols-3 gap-4">
+    <section class="surface rounded-xl p-4 md:col-span-2">
+      <label class="block text-sm muted mb-1">Slug</label>
+      <input name="slug" required value="{{ scenario.slug if scenario else '' }}"
+             {% if scenario %}readonly{% endif %}>
+      <label class="block text-sm muted mt-4 mb-1">Scenario YAML</label>
+      <textarea name="definition" required rows="30"
+                class="font-mono text-sm">{{ yaml_text }}</textarea>
+      <label class="block text-sm muted mt-4 mb-1">Version comment</label>
+      <input name="comment" placeholder="What changed">
+    </section>
+    <section class="surface rounded-xl p-4 space-y-5">
+      <div>
+        <h2 class="font-semibold">ACL matching</h2>
+        <select name="match_mode" class="mt-2">
+          <option value="all" {% if not acl or acl[0].match_mode == "all" %}selected{% endif %}>role AND team</option>
+          <option value="any" {% if acl and acl[0].match_mode == "any" %}selected{% endif %}>role OR team</option>
+        </select>
+      </div>
+      {% for action in ["view", "run", "edit", "manage"] %}
+      <div>
+        <h3 class="text-sm font-semibold uppercase">{{ action }}</h3>
+        <div class="mt-2">
+          <p class="muted text-xs mb-1">Roles</p>
+          {% for role in roles %}
+          <label class="flex gap-2 text-sm py-1">
+            <input type="checkbox" style="width:auto" name="{{ action }}_roles" value="{{ role.slug }}"
+              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "role")|selectattr("subject_key", "equalto", role.slug)|list %}checked{% endif %}>
+            {{ role.name }}
+          </label>
+          {% endfor %}
+        </div>
+        <div class="mt-2">
+          <p class="muted text-xs mb-1">Teams</p>
+          {% for team in teams %}
+          <label class="flex gap-2 text-sm py-1">
+            <input type="checkbox" style="width:auto" name="{{ action }}_teams" value="{{ team.id }}"
+              {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "team")|selectattr("subject_key", "equalto", team.id|string)|list %}checked{% endif %}>
+            {{ team.name }}
+          </label>
+          {% else %}<p class="muted text-xs">Create teams in Access first.</p>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+  </div>
+  {% if versions %}
+  <section class="surface rounded-xl p-4">
+    <h2 class="font-semibold mb-3">Version history</h2>
+    <div class="space-y-2">
+      {% for version in versions %}
+      <div class="surface-2 rounded p-3 flex items-center justify-between">
+        <div>
+          <span class="font-medium">v{{ version.version }}</span>
+          <span class="pill pill-pending ml-2">{{ version.status }}</span>
+          <span class="muted text-sm ml-2">{{ version.comment or "No comment" }}</span>
+        </div>
+        {% if version.id != scenario.current_version_id %}
+        <button class="btn-ghost text-xs" type="submit"
+                formaction="/admin/scenarios/{{ scenario.slug }}/versions/{{ version.id }}/restore">
+          Restore as new version
+        </button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</form>
+{% endblock %}

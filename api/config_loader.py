@@ -1,6 +1,8 @@
-"""Loads scenario/component config from YAML. Hot-reloadable via reload()."""
+"""Compatibility facade for database-backed scenarios and YAML components."""
 import os
 import yaml
+from database import SessionLocal
+import scenario_store
 
 CONFIG_PATH = os.getenv("SCENARIOS_CONFIG", "../config/scenarios.yaml")
 
@@ -22,8 +24,11 @@ def _resolve_path() -> str:
 
 def reload():
     global _cache
-    with open(_resolve_path(), "r", encoding="utf-8") as f:
-        _cache = yaml.safe_load(f) or {}
+    try:
+        with open(_resolve_path(), "r", encoding="utf-8") as f:
+            _cache = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        _cache = {}
     return _cache
 
 
@@ -34,7 +39,8 @@ def _data():
 
 
 def all_scenarios() -> dict:
-    return _data().get("scenarios", {})
+    with SessionLocal() as db:
+        return scenario_store.all_published(db)
 
 
 def all_components() -> dict:
@@ -42,7 +48,9 @@ def all_components() -> dict:
 
 
 def get_scenario(key: str) -> dict | None:
-    return all_scenarios().get(key)
+    with SessionLocal() as db:
+        item = scenario_store.get_published(db, key)
+        return dict(item[1].definition) if item else None
 
 
 def scenarios_for_components(components: list[str]) -> dict:

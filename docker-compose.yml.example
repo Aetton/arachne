@@ -1,7 +1,6 @@
 # Arachne — Docker Compose
 #
-#   docker compose up -d                # SQLite, single container
-#   docker compose --profile pg up -d   # Postgres-backed (when the dept grows)
+#   docker compose up -d
 #
 # On first boot an 'admin' user is seeded. Override the password:
 #   ADMIN_PASSWORD=... docker compose up -d
@@ -16,37 +15,40 @@ services:
     env_file:
       - .env
     environment:
-      JWT_SECRET: "${JWT_SECRET:-change-me-in-prod}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-admin}"
+      DATABASE_URL: "postgresql+psycopg://arachne:${POSTGRES_PASSWORD}@db:5432/arachne"
+      JWT_SECRET: "${JWT_SECRET}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD}"
       NEXUS_URL: "${NEXUS_URL:-https://nexus.example.internal}"
-      # SQLite by default; uncomment to use the postgres profile below:
-      # DATABASE_URL: "postgresql+psycopg://arachne:arachne@db/arachne"
       ANSIBLE_PLAYBOOKS_DIR: /app/playbooks
       SCENARIOS_CONFIG: /app/config/scenarios.yaml
       SSL_CERT_FILE: /etc/ssl/certs/ca.crt
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca.crt
     volumes:
-      # persist the SQLite db + let you edit config/playbooks without rebuild
-      - ./data:/app/api/data
       - ./config:/app/config:ro
       - ./playbooks:/app/playbooks:ro
       - ./certs/:/etc/ssl/certs/:ro
       # mount your ssh key if playbooks provision remote VMs
       # - ~/.ssh/arachne_id_ed25519:/root/.ssh/id_ed25519:ro
-    # depends_on:
-    #   - db          # enable with the pg profile
+    depends_on:
+      db:
+        condition: service_healthy
 
   db:
     image: postgres:16-alpine
     container_name: arachne-db
-    profiles: ["pg"]
     restart: unless-stopped
     environment:
       POSTGRES_USER: arachne
-      POSTGRES_PASSWORD: arachne
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       POSTGRES_DB: arachne
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arachne -d arachne"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   nats:
     image: nats:2-alpine

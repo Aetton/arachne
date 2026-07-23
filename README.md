@@ -13,12 +13,12 @@ core code.
 
 ## Features
 
-- Scenario-driven orchestration from YAML.
+- Database-backed, versioned scenarios with YAML import/export.
 - Driver plugin model for build, provision, and deploy backends.
 - Live log streaming through the Arachne UI.
 - Artifact link collection.
-- Local users, roles, teams, and scenario visibility.
-- SQLite by default, PostgreSQL profile available.
+- Composable roles, teams, permissions, and per-scenario ACLs.
+- PostgreSQL by default; SQLite is supported as a migration source.
 - In-memory bus by default, NATS profile available.
 
 ## Quick start
@@ -66,7 +66,12 @@ files.
 
 ## Scenario model
 
-Scenarios live in `config/scenarios.yaml` and describe:
+Published scenarios live in PostgreSQL. `config/scenarios.yaml` is a bootstrap
+seed: a slug is imported only when it does not already exist in the database.
+The admin UI provides a validated raw-YAML editor, version history in the data
+model, ACL editing, and YAML export.
+
+Scenario definitions describe:
 
 - form parameters;
 - manual, schedule, or chain triggers;
@@ -74,12 +79,51 @@ Scenarios live in `config/scenarios.yaml` and describe:
 - driver name;
 - backend-specific inputs.
 
-Environment-specific scenarios can be kept in ignored local files. The core
-should remain generic.
+Access is explicit and combines capabilities with product scope:
+
+```yaml
+access:
+  view:
+    match: all
+    roles: [developer]
+    teams: [backend]
+  run:
+    match: all
+    roles: [developer, release-engineer]
+    teams: [backend]
+```
+
+`all` requires a matching role and team. `any` accepts either axis. Admin is a
+system bypass. The same ACL is enforced by the dashboard, form, and run API.
+
+## Database migration
+
+New deployments use PostgreSQL through `docker-compose.yml.example`:
+
+```bash
+cp docker-compose.yml.example docker-compose.yml
+cp .env.example .env
+docker compose up -d
+```
+
+To move an existing SQLite deployment, stop Arachne, back up the database,
+start only PostgreSQL, and copy the data into the empty target:
+
+```bash
+docker compose up -d db
+python scripts/migrate_sqlite_to_postgres.py \
+  --sqlite ./data/arachne.db \
+  --postgres postgresql+psycopg://arachne:password@localhost/arachne
+docker compose up -d
+```
+
+The container applies Alembic migrations before starting Uvicorn. Each run
+stores both the scenario version id and an immutable definition snapshot, so
+later edits cannot rewrite run history.
 
 ## Extension model
 
-- Add a scenario by editing scenario YAML.
+- Add or edit a scenario in the admin UI, or bootstrap/import YAML.
 - Add a build or provision backend by implementing a spider plugin.
 - Add a trigger by implementing a trigger plugin.
 - Add a bus backend by implementing the bus contract.

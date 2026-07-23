@@ -16,12 +16,17 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 import database
-from database import SessionLocal, User, Team, Run, utcnow
+from database import (
+    SessionLocal, User, Team, Role, Permission, RolePermission, Run, Scenario,
+    ScenarioACL, ScenarioVersion, utcnow,
+)
 from auth.security import hash_password, verify_password, create_token
 from auth.deps import (
     get_db, get_current_user, get_optional_user, require_role, COOKIE_NAME,
 )
 import config_loader
+import scenario_store
+import access
 import run_engine
 import runview
 from core import switchboard
@@ -31,14 +36,16 @@ BASE_DIR = os.path.dirname(__file__)
 TEMPLATES_DIR = os.path.join(BASE_DIR, "..", "frontend", "templates")
 STATIC_DIR = os.path.join(BASE_DIR, "..", "frontend", "static")
 
-ALL_ROLES = ["admin", "developer", "tester"]
-
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
+    db = SessionLocal()
+    access.seed_rbac(db)
+    scenario_store.bootstrap_from_yaml(db)
+    db.close()
     config_loader.reload()
     from core.bus import start_bus
     from core import events as _events
@@ -171,22 +178,21 @@ def logout():
 def dashboard(request: Request, user=Depends(get_optional_user), db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse("/login", status_code=302)
-    # which scenarios this user can see (via team components; admin = all)
-    if "admin" in (user.roles or []):
-        scns = config_loader.all_scenarios()
-    else:
-        comps: list[str] = []
-        for tid in (user.teams or []):
-            t = db.get(Team, tid)
-            if t:
-                comps += t.components or []
-        scns = config_loader.scenarios_for_components(comps)
+    scns = {}
+    for scenario in db.query(Scenario).filter(Scenario.enabled.is_(True)).all():
+        definition = scenario_store.published_definition(db, scenario)
+        if definition and access.can_access_scenario(db, user, scenario, "view"):
+            scns[scenario.slug] = definition
     return render(request, "dashboard.html", user=user, scenarios=scns)
 
 
 # ---------- scenarios ----------
 @app.get("/scenarios/{key}/form", response_class=HTMLResponse)
-def scenario_form(key: str, request: Request, user=Depends(get_current_user)):
+def scenario_form(key: str, request: Request, user=Depends(get_current_user),
+                  db: Session = Depends(get_db)):
+    stored = db.query(Scenario).filter(Scenario.slug == key).first()
+    if not stored or not access.can_access_scenario(db, user, stored, "view"):
+        raise HTTPException(404, "Unknown scenario")
     s = config_loader.get_scenario(key)
     if not s:
         raise HTTPException(404, "Unknown scenario")
@@ -194,7 +200,11 @@ def scenario_form(key: str, request: Request, user=Depends(get_current_user)):
 
 
 @app.post("/scenarios/{key}/run", response_class=HTMLResponse)
-async def scenario_run(key: str, request: Request, user=Depends(get_current_user)):
+async def scenario_run(key: str, request: Request, user=Depends(get_current_user),
+                       db: Session = Depends(get_db)):
+    stored = db.query(Scenario).filter(Scenario.slug == key).first()
+    if not stored or not access.can_access_scenario(db, user, stored, "run"):
+        raise HTTPException(403, "Scenario run is not allowed")
     s = config_loader.get_scenario(key)
     if not s:
         raise HTTPException(404, "Unknown scenario")
@@ -310,8 +320,9 @@ def admin_users(request: Request, user=Depends(require_role("admin")), db: Sessi
 @app.get("/admin/users/new", response_class=HTMLResponse)
 def admin_user_new(request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)):
     teams = db.query(Team).all()
+    roles = db.query(Role).order_by(Role.slug).all()
     return render(request, "admin/user_form.html", user=user, edit=False, u=None,
-                  all_roles=ALL_ROLES, all_teams=teams, action="/admin/users")
+                  all_roles=roles, all_teams=teams, action="/admin/users")
 
 
 @app.get("/admin/users/{uid}/edit", response_class=HTMLResponse)
@@ -321,8 +332,9 @@ def admin_user_edit(uid: int, request: Request, user=Depends(require_role("admin
     if not u:
         raise HTTPException(404)
     teams = db.query(Team).all()
+    roles = db.query(Role).order_by(Role.slug).all()
     return render(request, "admin/user_form.html", user=user, edit=True, u=u,
-                  all_roles=ALL_ROLES, all_teams=teams, action=f"/admin/users/{uid}")
+                  all_roles=roles, all_teams=teams, action=f"/admin/users/{uid}")
 
 
 @app.post("/admin/users")
@@ -367,3 +379,165 @@ def admin_user_delete(uid: int, user=Depends(require_role("admin")), db: Session
         db.delete(u)
         db.commit()
     return Response("")
+
+
+# ---------- scenario administration ----------
+@app.get("/admin/scenarios", response_class=HTMLResponse)
+def admin_scenarios(request: Request, user=Depends(require_role("admin")),
+                    db: Session = Depends(get_db)):
+    scenarios = db.query(Scenario).order_by(Scenario.slug).all()
+    return render(request, "admin/scenarios.html", user=user, scenarios=scenarios)
+
+
+@app.get("/admin/scenarios/new", response_class=HTMLResponse)
+def admin_scenario_new(request: Request, user=Depends(require_role("admin")),
+                       db: Session = Depends(get_db)):
+    roles = db.query(Role).order_by(Role.slug).all()
+    teams = db.query(Team).order_by(Team.name).all()
+    return render(
+        request, "admin/scenario_form.html", user=user, scenario=None,
+        yaml_text="label: New scenario\ncomponent: backend\ntriggers:\n  - type: manual\nsteps:\n  - id: build\n    spider: forgejo\n    action: build\n    with: {}\n",
+        roles=roles, teams=teams, acl=[],
+    )
+
+
+@app.get("/admin/scenarios/{slug}/edit", response_class=HTMLResponse)
+def admin_scenario_edit(slug: str, request: Request, user=Depends(require_role("admin")),
+                        db: Session = Depends(get_db)):
+    import yaml
+    scenario = db.query(Scenario).filter(Scenario.slug == slug).first()
+    if not scenario:
+        raise HTTPException(404)
+    definition = scenario_store.published_definition(db, scenario) or {}
+    return render(
+        request, "admin/scenario_form.html", user=user, scenario=scenario,
+        yaml_text=yaml.safe_dump(definition, allow_unicode=True, sort_keys=False),
+        roles=db.query(Role).order_by(Role.slug).all(),
+        teams=db.query(Team).order_by(Team.name).all(),
+        acl=db.query(ScenarioACL).filter(ScenarioACL.scenario_id == scenario.id).all(),
+        versions=db.query(ScenarioVersion).filter(
+            ScenarioVersion.scenario_id == scenario.id,
+        ).order_by(ScenarioVersion.version.desc()).all(),
+    )
+
+
+@app.post("/admin/scenarios/save")
+async def admin_scenario_save(request: Request, user=Depends(require_role("admin")),
+                              db: Session = Depends(get_db)):
+    import yaml
+    form = await request.form()
+    slug = str(form.get("slug", "")).strip()
+    if not slug:
+        raise HTTPException(400, "Scenario slug is required")
+    try:
+        definition = yaml.safe_load(form.get("definition", "")) or {}
+        version = scenario_store.save_draft(
+            db, slug, definition, user.id, str(form.get("comment", "")),
+        )
+        scenario = db.query(Scenario).filter(Scenario.slug == slug).one()
+        scenario_store.publish(db, scenario, version)
+        entries = []
+        mode = str(form.get("match_mode", "all"))
+        for action in ("view", "run", "edit", "manage"):
+            for role_slug in form.getlist(f"{action}_roles"):
+                entries.append({
+                    "subject_type": "role", "subject_key": role_slug,
+                    "permission": action, "effect": "allow", "match_mode": mode,
+                })
+            for team_id in form.getlist(f"{action}_teams"):
+                entries.append({
+                    "subject_type": "team", "subject_key": team_id,
+                    "permission": action, "effect": "allow", "match_mode": mode,
+                })
+        scenario_store.replace_acl(db, scenario.id, entries)
+    except (ValueError, yaml.YAMLError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return RedirectResponse("/admin/scenarios", status_code=303)
+
+
+@app.post("/admin/scenarios/{slug}/versions/{version_id}/restore")
+def admin_scenario_restore(slug: str, version_id: int,
+                           user=Depends(require_role("admin")),
+                           db: Session = Depends(get_db)):
+    scenario = db.query(Scenario).filter(Scenario.slug == slug).first()
+    version = db.get(ScenarioVersion, version_id)
+    if not scenario or not version or version.scenario_id != scenario.id:
+        raise HTTPException(404)
+    restored = scenario_store.save_draft(
+        db, slug, dict(version.definition), user.id,
+        f"Restored from version {version.version}",
+    )
+    scenario_store.publish(db, scenario, restored)
+    return RedirectResponse(f"/admin/scenarios/{slug}/edit", status_code=303)
+
+
+@app.get("/admin/scenarios-export.yaml")
+def admin_scenarios_export(user=Depends(require_role("admin")),
+                           db: Session = Depends(get_db)):
+    return Response(
+        scenario_store.export_yaml(db),
+        media_type="application/yaml",
+        headers={"Content-Disposition": "attachment; filename=scenarios.yaml"},
+    )
+
+
+# ---------- RBAC administration ----------
+@app.get("/admin/rbac", response_class=HTMLResponse)
+def admin_rbac(request: Request, user=Depends(require_role("admin")),
+               db: Session = Depends(get_db)):
+    roles = db.query(Role).order_by(Role.slug).all()
+    teams = db.query(Team).order_by(Team.name).all()
+    permissions = db.query(Permission).order_by(Permission.slug).all()
+    role_permissions = {
+        role.id: {
+            row.permission.slug
+            for row in db.query(RolePermission).filter(RolePermission.role_id == role.id)
+        }
+        for role in roles
+    }
+    return render(
+        request, "admin/rbac.html", user=user, roles=roles, teams=teams,
+        permissions=permissions, role_permissions=role_permissions,
+    )
+
+
+@app.post("/admin/roles")
+async def admin_role_save(request: Request, user=Depends(require_role("admin")),
+                          db: Session = Depends(get_db)):
+    form = await request.form()
+    slug = str(form.get("slug", "")).strip()
+    if not slug:
+        raise HTTPException(400, "Role slug is required")
+    role = db.query(Role).filter(Role.slug == slug).first()
+    if not role:
+        role = Role(slug=slug, name=form.get("name") or slug)
+        db.add(role)
+        db.flush()
+    role.name = form.get("name") or slug
+    role.description = form.get("description", "")
+    role.inherits = form.getlist("inherits")
+    db.query(RolePermission).filter(RolePermission.role_id == role.id).delete()
+    for permission_id in form.getlist("permissions"):
+        db.add(RolePermission(role_id=role.id, permission_id=int(permission_id)))
+    db.commit()
+    return RedirectResponse("/admin/rbac", status_code=303)
+
+
+@app.post("/admin/teams")
+async def admin_team_save(request: Request, user=Depends(require_role("admin")),
+                          db: Session = Depends(get_db)):
+    form = await request.form()
+    slug = str(form.get("slug", "")).strip()
+    if not slug:
+        raise HTTPException(400, "Team slug is required")
+    team = db.query(Team).filter(Team.slug == slug).first()
+    if not team:
+        team = Team(slug=slug, name=form.get("name") or slug)
+        db.add(team)
+    team.name = form.get("name") or slug
+    team.components = [
+        value.strip() for value in str(form.get("components", "")).split(",")
+        if value.strip()
+    ]
+    db.commit()
+    return RedirectResponse("/admin/rbac", status_code=303)
