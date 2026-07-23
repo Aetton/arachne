@@ -24,10 +24,20 @@
           class="grid grid-cols-12 gap-2 items-center">
       <input type="hidden" name="slug" value="{{ component.slug }}">
       <span class="col-span-2 font-mono text-sm">{{ component.slug }}</span>
-      <input class="col-span-4" name="label" value="{{ component.label }}" aria-label="Component label">
-      <input class="col-span-3" name="icon" value="{{ component.icon }}" aria-label="Component icon">
+      <input class="col-span-3" name="label" value="{{ component.label }}" aria-label="Component label">
+      <input class="col-span-2" name="icon" value="{{ component.icon }}" aria-label="Component icon">
       <input class="col-span-1" name="sort_order" type="number" value="{{ component.sort_order }}" aria-label="Sort order">
       <button class="btn-ghost col-span-2" type="submit">Save</button>
+      {% set scenario_count = component.scenarios|length %}
+      <button class="btn-ghost col-span-2" type="submit"
+              formaction="/admin/components/{{ component.slug }}/delete"
+              {% if scenario_count %}
+              disabled title="Used by {{ scenario_count }} scenario(s)"
+              {% else %}
+              onclick="return confirm('Delete this component?')"
+              {% endif %}>
+        Delete{% if scenario_count %} · {{ scenario_count }}{% endif %}
+      </button>
     </form>
     {% endfor %}
   </div>
