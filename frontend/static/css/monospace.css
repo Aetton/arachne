@@ -24,61 +24,6 @@ samp,
   font-variant-ligatures: none;
 }
 
-/* CodeMirror is configured as material-darker by the editor script. Override
-   that class with the canonical Dracula palette so theme switching remains
-   backwards-compatible without coupling the editor to another CDN theme. */
-[data-theme="dracula"] .cm-s-material-darker.CodeMirror {
-  background: #282a36;
-  color: #f8f8f2;
-  caret-color: #f8f8f2;
-}
-
-[data-theme="dracula"] .cm-s-material-darker .CodeMirror-gutters {
-  background: #21222c;
-  border-right-color: #44475a;
-}
-
-[data-theme="dracula"] .cm-s-material-darker .CodeMirror-linenumber {
-  color: #6272a4;
-}
-
-[data-theme="dracula"] .cm-s-material-darker .CodeMirror-cursor {
-  border-left-color: #f8f8f2;
-}
-
-[data-theme="dracula"] .cm-s-material-darker .CodeMirror-selected,
-[data-theme="dracula"] .cm-s-material-darker.CodeMirror-focused .CodeMirror-selected {
-  background: #44475a;
-}
-
-[data-theme="dracula"] .cm-s-material-darker .CodeMirror-activeline-background {
-  background: #2f3140;
-}
-
-[data-theme="dracula"] .cm-s-material-darker .CodeMirror-matchingbracket {
-  color: #50fa7b !important;
-  background: rgba(80, 250, 123, .12);
-  outline: 1px solid rgba(80, 250, 123, .45);
-}
-
-[data-theme="dracula"] .cm-s-material-darker .cm-comment { color: #6272a4; }
-[data-theme="dracula"] .cm-s-material-darker .cm-atom,
-[data-theme="dracula"] .cm-s-material-darker .cm-number { color: #bd93f9; }
-[data-theme="dracula"] .cm-s-material-darker .cm-property,
-[data-theme="dracula"] .cm-s-material-darker .cm-attribute,
-[data-theme="dracula"] .cm-s-material-darker .cm-variable-2,
-[data-theme="dracula"] .cm-s-material-darker .cm-variable-3 { color: #50fa7b; }
-[data-theme="dracula"] .cm-s-material-darker .cm-keyword,
-[data-theme="dracula"] .cm-s-material-darker .cm-builtin,
-[data-theme="dracula"] .cm-s-material-darker .cm-tag { color: #ff79c6; }
-[data-theme="dracula"] .cm-s-material-darker .cm-string,
-[data-theme="dracula"] .cm-s-material-darker .cm-string-2 { color: #f1fa8c; }
-[data-theme="dracula"] .cm-s-material-darker .cm-variable,
-[data-theme="dracula"] .cm-s-material-darker .cm-def { color: #8be9fd; }
-[data-theme="dracula"] .cm-s-material-darker .cm-meta,
-[data-theme="dracula"] .cm-s-material-darker .cm-qualifier { color: #ffb86c; }
-[data-theme="dracula"] .cm-s-material-darker .cm-error { color: #ff5555; }
-
 [data-theme="dracula"] .CodeMirror-hints {
   background: #21222c;
   border-color: #44475a;
@@ -88,4 +33,28 @@ samp,
 [data-theme="dracula"] li.CodeMirror-hint-active {
   background: #44475a;
   color: #f8f8f2;
+}
+
+[data-theme="nord"] .CodeMirror-hints {
+  background: #2e3440;
+  border-color: #4c566a;
+  color: #d8dee9;
+}
+
+[data-theme="nord"] li.CodeMirror-hint-active {
+  background: #434c5e;
+  color: #eceff4;
+}
+
+[data-theme="white"] .CodeMirror-hints,
+[data-theme="light"] .CodeMirror-hints {
+  background: #ffffff;
+  border-color: #d6d6db;
+  color: #1c1c1e;
+}
+
+[data-theme="white"] li.CodeMirror-hint-active,
+[data-theme="light"] li.CodeMirror-hint-active {
+  background: #ececef;
+  color: #1c1c1e;
 }
