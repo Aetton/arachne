@@ -1,0 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700&display=swap');
+
+:root {
+  --font-mono: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+code,
+pre,
+kbd,
+samp,
+.font-mono,
+.log,
+.CodeMirror,
+.CodeMirror-hints {
+  font-family: var(--font-mono) !important;
+}
+
+code,
+kbd,
+samp,
+.CodeMirror,
+.CodeMirror-hints {
+  font-variant-ligatures: none;
+}
+
+[data-theme="dracula"] .CodeMirror-hints {
+  background: #21222c;
+  border-color: #44475a;
+  color: #f8f8f2;
+}
+
+[data-theme="dracula"] li.CodeMirror-hint-active {
+  background: #44475a;
+  color: #f8f8f2;
+}
+
+[data-theme="nord"] .CodeMirror-hints {
+  background: #2e3440;
+  border-color: #4c566a;
+  color: #d8dee9;
+}
+
+[data-theme="nord"] li.CodeMirror-hint-active {
+  background: #434c5e;
+  color: #eceff4;
+}
+
+[data-theme="white"] .CodeMirror-hints,
+[data-theme="light"] .CodeMirror-hints {
+  background: #ffffff;
+  border-color: #d6d6db;
+  color: #1c1c1e;
+}
+
+[data-theme="white"] li.CodeMirror-hint-active,
+[data-theme="light"] li.CodeMirror-hint-active {
+  background: #ececef;
+  color: #1c1c1e;
+}

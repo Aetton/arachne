@@ -6,8 +6,37 @@
   var editor = wrapper && wrapper.CodeMirror;
   if (!editor) return;
 
+  var form = document.getElementById('scenario-form');
+  var saveButton = document.getElementById('scenario-save-button');
   var metadata = null;
   var spidersByName = {};
+
+  function submitEditor() {
+    editor.save();
+    if (form && form.requestSubmit) form.requestSubmit(saveButton || undefined);
+    else if (form) form.submit();
+  }
+
+  function applyEditorTheme() {
+    var theme = document.documentElement.getAttribute('data-theme');
+    var editorTheme = 'default';
+    if (theme === 'dracula') editorTheme = 'dracula';
+    else if (theme === 'nord') editorTheme = 'nord';
+    editor.setOption('theme', editorTheme);
+  }
+
+  applyEditorTheme();
+  new MutationObserver(applyEditorTheme).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme']
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.key.toLowerCase() !== 's') return;
+    event.preventDefault();
+    event.stopPropagation();
+    submitEditor();
+  }, true);
 
   function currentSection(cm, lineNo) {
     for (var i = lineNo; i >= 0; i--) {
@@ -24,7 +53,7 @@
     for (var i = lineNo; i >= 0; i--) {
       var line = cm.getLine(i);
       var match = line.match(/^\s*spider:\s*([^\s#]+)/);
-      if (match) return match[1].replace(/^['"]|['"]$/g, '');
+      if (match) return match[1].replace(/^[\'"]|[\'"]$/g, '');
       if (/^\s*-\s+id:\s*/.test(line) && i !== lineNo) break;
       if (/^\S/.test(line) && !/^steps:\s*$/.test(line)) break;
     }
@@ -134,6 +163,11 @@
     });
   }
 
+  var extraKeys = Object.assign({}, editor.getOption('extraKeys') || {});
+  extraKeys['Ctrl-S'] = submitEditor;
+  extraKeys['Cmd-S'] = submitEditor;
+  editor.setOption('extraKeys', extraKeys);
+
   fetch('/api/admin/scenario-dsl', {credentials: 'same-origin'})
     .then(function (response) {
       if (!response.ok) throw new Error('DSL metadata request failed: ' + response.status);
@@ -143,11 +177,11 @@
       metadata = payload;
       payload.spiders.forEach(function (spider) { spidersByName[spider.name] = spider; });
 
-      var extraKeys = Object.assign({}, editor.getOption('extraKeys') || {});
-      extraKeys['Ctrl-Space'] = function (cm) {
+      var dynamicKeys = Object.assign({}, editor.getOption('extraKeys') || {});
+      dynamicKeys['Ctrl-Space'] = function (cm) {
         cm.showHint({hint: dynamicHint, completeSingle: false});
       };
-      editor.setOption('extraKeys', extraKeys);
+      editor.setOption('extraKeys', dynamicKeys);
       renderCatalog();
     })
     .catch(function (error) {

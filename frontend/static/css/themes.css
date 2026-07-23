@@ -15,6 +15,7 @@
   --run-bg:  #3d3a1c; --run-fg:  #f1fa8c;
 }
 
+[data-theme="white"],
 [data-theme="light"] {
   --bg:        #f5f5f7;
   --surface:   #ffffff;
