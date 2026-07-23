@@ -12,6 +12,8 @@ COPY api/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/ ./api/
+COPY alembic.ini ./alembic.ini
+COPY migrations/ ./migrations/
 COPY frontend/ ./frontend/
 COPY config/ ./config/
 COPY playbooks/ ./playbooks/
@@ -24,10 +26,10 @@ RUN chmod +x api/runners/demo_play.sh \
 WORKDIR /app/api
 
 ENV PYTHONUNBUFFERED=1 \
-    DATABASE_URL=sqlite:///./data/arachne.db \
+    DATABASE_URL=postgresql+psycopg://arachne:arachne@db:5432/arachne \
     ANSIBLE_PLAYBOOKS_DIR=/app/playbooks \
     SCENARIOS_CONFIG=/app/config/scenarios.yaml
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic -c ../alembic.ini upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 8000"]

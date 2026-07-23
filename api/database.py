@@ -1,20 +1,21 @@
-"""
-Database layer. SQLite by default, swap DATABASE_URL for Postgres later.
+"""Database models.
 
-    sqlite:  sqlite:///./data/arachne.db
-    postgres: postgresql+psycopg://user:pass@host/arachne
-
-JSON columns work on both backends (SQLAlchemy emits JSON on PG, TEXT-JSON on SQLite).
+PostgreSQL is the production default. SQLite remains supported for development
+and for the one-shot migration utility.
 """
 import os
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Boolean, JSON, DateTime, ForeignKey, Text,
+    create_engine, Column, Integer, String, Boolean, JSON, DateTime, ForeignKey,
+    Text, UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/arachne.db")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg://arachne:arachne@db:5432/arachne",
+)
 
 # check_same_thread only matters for SQLite; ignored elsewhere.
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -53,12 +54,102 @@ class Team(Base):
     artifact_repo = Column(String(64), default="dev-artifacts")
 
 
+class Role(Base):
+    __tablename__ = "roles"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(64), unique=True, index=True, nullable=False)
+    name = Column(String(128), nullable=False)
+    description = Column(Text, default="")
+    inherits = Column(JSON, default=list)
+    is_system = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class Permission(Base):
+    __tablename__ = "permissions"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(96), unique=True, index=True, nullable=False)
+    description = Column(Text, default="")
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (UniqueConstraint("role_id", "permission_id"),)
+
+    id = Column(Integer, primary_key=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    permission_id = Column(Integer, ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+
+    role = relationship("Role")
+    permission = relationship("Permission")
+
+
+class Scenario(Base):
+    __tablename__ = "scenarios"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(96), unique=True, index=True, nullable=False)
+    label = Column(String(160), nullable=False)
+    component = Column(String(96), nullable=False)
+    enabled = Column(Boolean, default=True)
+    current_version_id = Column(Integer, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    versions = relationship(
+        "ScenarioVersion",
+        back_populates="scenario",
+        foreign_keys="ScenarioVersion.scenario_id",
+        cascade="all, delete-orphan",
+    )
+
+
+class ScenarioVersion(Base):
+    __tablename__ = "scenario_versions"
+    __table_args__ = (UniqueConstraint("scenario_id", "version"),)
+
+    id = Column(Integer, primary_key=True)
+    scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False)
+    version = Column(Integer, nullable=False)
+    definition = Column(JSON, nullable=False)
+    status = Column(String(16), default="draft")  # draft|published|archived
+    comment = Column(Text, default="")
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    scenario = relationship("Scenario", back_populates="versions", foreign_keys=[scenario_id])
+
+
+class ScenarioACL(Base):
+    __tablename__ = "scenario_acl"
+    __table_args__ = (
+        UniqueConstraint(
+            "scenario_id", "subject_type", "subject_key", "permission", "effect",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True)
+    scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False)
+    subject_type = Column(String(16), nullable=False)  # role|team
+    subject_key = Column(String(96), nullable=False)  # role slug or team id
+    permission = Column(String(16), nullable=False)   # view|run|edit|manage
+    effect = Column(String(8), default="allow")       # allow|deny
+    match_mode = Column(String(8), default="all")     # all|any
+
+
 class Run(Base):
     __tablename__ = "runs"
 
     id = Column(String(36), primary_key=True)   # uuid4 str
     user_id = Column(Integer, ForeignKey("users.id"))
     scenario = Column(String(64), nullable=False)
+    scenario_version_id = Column(
+        Integer, ForeignKey("scenario_versions.id"), nullable=True,
+    )
+    scenario_snapshot = Column(JSON, nullable=True)
     params = Column(JSON, default=dict)
     status = Column(String(16), default="running")   # running|success|failed|cancelled
     created_at = Column(DateTime, default=utcnow)
@@ -70,5 +161,6 @@ class Run(Base):
 
 
 def init_db():
-    os.makedirs("./data", exist_ok=True)
+    if DATABASE_URL.startswith("sqlite"):
+        os.makedirs("./data", exist_ok=True)
     Base.metadata.create_all(bind=engine)

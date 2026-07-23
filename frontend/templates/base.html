@@ -30,11 +30,11 @@
     .pill-fail    { background: var(--fail-bg); color: var(--fail-fg); }
     .pill-run     { background: var(--run-bg);  color: var(--run-fg); }
     .pill-pending { background: var(--surface2); color: var(--muted); }
-    input, select {
+    input, select, textarea {
       background: var(--surface2); border: 1px solid var(--border);
       color: var(--fg); border-radius: .5rem; padding: .5rem .75rem; width: 100%;
     }
-    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
     .log { font-family: ui-monospace, "JetBrains Mono", monospace; font-size: .8rem; line-height: 1.55; }
     a.link { color: var(--accent); }
     a.link:hover { filter: brightness(1.15); }
@@ -50,7 +50,9 @@
       <div class="flex gap-1 text-sm">
         <a href="/" class="px-3 py-1.5 rounded hover:surface-2">Dashboard</a>
         {% if "admin" in (user.roles or []) %}
-        <a href="/admin/users" class="px-3 py-1.5 rounded hover:surface-2">Admin</a>
+        <a href="/admin/users" class="px-3 py-1.5 rounded hover:surface-2">Users</a>
+        <a href="/admin/scenarios" class="px-3 py-1.5 rounded hover:surface-2">Scenarios</a>
+        <a href="/admin/rbac" class="px-3 py-1.5 rounded hover:surface-2">Access</a>
         {% endif %}
       </div>
     </div>

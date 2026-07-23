@@ -21,6 +21,7 @@ from collections import defaultdict
 
 from database import SessionLocal, Run, utcnow
 import config_loader
+import scenario_store
 
 from core.registry import load_plugins, all_triggers
 from core import orchestrator
@@ -60,11 +61,14 @@ def new_run_id() -> str:
     return str(uuid.uuid4())
 
 
-def _create_run(run_id: str, scenario_key: str, params: dict) -> None:
+def _create_run(run_id: str, scenario_key: str, scenario: dict, params: dict) -> None:
     db = SessionLocal()
     try:
+        stored = scenario_store.get_published(db, scenario_key)
         db.add(Run(id=run_id, user_id=params.get("__user_id__", 0),
                    scenario=scenario_key,
+                   scenario_version_id=stored[1].id if stored else None,
+                   scenario_snapshot=scenario,
                    params={k: v for k, v in params.items() if not k.startswith("__")},
                    status="running"))
         db.commit()
@@ -130,7 +134,7 @@ async def fire_async(scenario_key: str, params: dict, source: str = "manual") ->
     scenario = _get_scenario(scenario_key)
     run_id = new_run_id()
 
-    await asyncio.to_thread(_create_run, run_id, scenario_key, params)
+    await asyncio.to_thread(_create_run, run_id, scenario_key, scenario, params)
 
     _live[run_id] = []
     _done[run_id] = False
@@ -147,7 +151,7 @@ def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
     """
     scenario = _get_scenario(scenario_key)
     run_id = new_run_id()
-    _create_run(run_id, scenario_key, params)
+    _create_run(run_id, scenario_key, scenario, params)
 
     _live[run_id] = []
     _done[run_id] = False

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Access · Admin{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-1">Roles and teams</h1>
+<p class="muted text-sm mb-5">Roles compose capabilities; teams define product scope. Scenario ACLs join both axes.</p>
+<div class="grid lg:grid-cols-2 gap-4">
+  <section class="surface rounded-xl p-5">
+    <h2 class="font-semibold mb-4">Create or update role</h2>
+    <form method="post" action="/admin/roles" class="space-y-3">
+      <div class="grid grid-cols-2 gap-3"><input name="slug" required placeholder="release-engineer"><input name="name" required placeholder="Release engineer"></div>
+      <input name="description" placeholder="Description">
+      <div><p class="muted text-xs mb-1">Inherits</p>
+        <div class="flex flex-wrap gap-3">{% for role in roles %}<label class="text-sm"><input style="width:auto" type="checkbox" name="inherits" value="{{ role.slug }}"> {{ role.name }}</label>{% endfor %}</div>
+      </div>
+      <div><p class="muted text-xs mb-1">Permissions</p>
+        {% for p in permissions %}<label class="flex gap-2 text-sm py-1"><input style="width:auto" type="checkbox" name="permissions" value="{{ p.id }}"> {{ p.slug }}</label>{% endfor %}
+      </div>
+      <button class="btn" type="submit">Save role</button>
+    </form>
+    <div class="mt-6 space-y-2">
+      {% for role in roles %}<div class="surface-2 rounded p-3"><b>{{ role.name }}</b> <span class="muted text-xs">{{ role.slug }}</span><div class="muted text-xs mt-1">{{ role_permissions[role.id]|sort|join(", ") }}</div></div>{% endfor %}
+    </div>
+  </section>
+  <section class="surface rounded-xl p-5">
+    <h2 class="font-semibold mb-4">Create or update team</h2>
+    <form method="post" action="/admin/teams" class="space-y-3">
+      <div class="grid grid-cols-2 gap-3"><input name="slug" required placeholder="backend"><input name="name" required placeholder="Backend"></div>
+      <input name="components" placeholder="backend, rpm-modern, rpm-el7">
+      <button class="btn" type="submit">Save team</button>
+    </form>
+    <div class="mt-6 space-y-2">
+      {% for team in teams %}<div class="surface-2 rounded p-3"><b>{{ team.name }}</b> <span class="muted text-xs">{{ team.slug }}</span><div class="muted text-xs mt-1">{{ (team.components or [])|join(", ") }}</div></div>{% else %}<p class="muted text-sm">No teams yet.</p>{% endfor %}
+    </div>
+  </section>
+</div>
+{% endblock %}

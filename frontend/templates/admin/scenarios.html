@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Scenarios · Admin{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-5">
+  <div>
+    <h1 class="text-xl font-semibold">Scenario management</h1>
+    <p class="muted text-sm">Published definitions live in the database. YAML is import/export.</p>
+  </div>
+  <div class="flex gap-2">
+    <a class="btn-ghost" href="/admin/scenarios-export.yaml"><i class="ti ti-download"></i> Export YAML</a>
+    <a class="btn" href="/admin/scenarios/new"><i class="ti ti-plus"></i> New scenario</a>
+  </div>
+</div>
+<div class="surface rounded-xl overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="surface-2"><tr class="text-left muted">
+      <th class="px-4 py-2.5">Slug</th><th class="px-4 py-2.5">Label</th>
+      <th class="px-4 py-2.5">Component</th><th class="px-4 py-2.5">Published version</th>
+      <th class="px-4 py-2.5"></th>
+    </tr></thead>
+    <tbody>
+    {% for s in scenarios %}
+      <tr style="border-top:1px solid var(--border)">
+        <td class="px-4 py-2.5 font-mono">{{ s.slug }}</td>
+        <td class="px-4 py-2.5">{{ s.label }}</td>
+        <td class="px-4 py-2.5 muted">{{ s.component }}</td>
+        <td class="px-4 py-2.5">{{ s.current_version_id or "draft" }}</td>
+        <td class="px-4 py-2.5 text-right"><a class="link" href="/admin/scenarios/{{ s.slug }}/edit">Edit</a></td>
+      </tr>
+    {% else %}
+      <tr><td class="px-4 py-8 muted text-center" colspan="5">No scenarios yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

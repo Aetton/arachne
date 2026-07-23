@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from database import SessionLocal, User
 from auth.security import verify_token
+import access
 
 COOKIE_NAME = "arachne_session"
 
@@ -50,6 +51,18 @@ def require_role(*allowed: str):
     def _check(user: User = Depends(get_current_user)) -> User:
         roles = set(user.roles or [])
         if "admin" in roles or roles.intersection(allowed):
+            return user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions",
+        )
+    return _check
+
+
+def require_permission(permission: str):
+    def _check(user: User = Depends(get_current_user),
+               db: Session = Depends(get_db)) -> User:
+        if access.has_permission(db, user, permission):
             return user
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

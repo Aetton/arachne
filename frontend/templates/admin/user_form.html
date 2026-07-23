@@ -30,9 +30,9 @@
     <div class="flex flex-wrap gap-3">
       {% for r in all_roles %}
       <label class="flex items-center gap-1.5 text-sm cursor-pointer">
-        <input type="checkbox" name="roles" value="{{ r }}" style="width:auto;"
-               {% if edit and r in u.roles %}checked{% endif %}>
-        {{ r }}
+        <input type="checkbox" name="roles" value="{{ r.slug }}" style="width:auto;"
+               {% if edit and r.slug in u.roles %}checked{% endif %}>
+        {{ r.name }}
       </label>
       {% endfor %}
     </div>
