@@ -1,7 +1,52 @@
 {% extends "base.html" %}
 {% block title %}Scenario editor · Admin{% endblock %}
 {% block content %}
-<form method="post" action="/admin/scenarios/save" class="space-y-5">
+<style>
+  .scenario-editor-shell {
+    margin-top: .25rem;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    background: var(--surface2);
+  }
+  .scenario-editor-shell:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .scenario-editor-shell .CodeMirror {
+    height: min(68vh, 760px);
+    min-height: 34rem;
+    font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+    font-size: .875rem;
+    line-height: 1.55;
+    background: var(--surface2);
+  }
+  .scenario-editor-shell .CodeMirror-gutters {
+    border-right: 1px solid var(--border);
+  }
+  .scenario-editor-shell .CodeMirror-linenumber {
+    color: var(--muted);
+  }
+  .scenario-editor-help {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    margin-top: .5rem;
+    font-size: .75rem;
+    color: var(--muted);
+  }
+  .scenario-editor-help kbd {
+    padding: .1rem .35rem;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: .25rem;
+    background: var(--surface2);
+    color: var(--fg);
+    font-family: inherit;
+  }
+</style>
+
+<form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-5">
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold">{{ "Edit " ~ scenario.slug if scenario else "New scenario" }}</h1>
@@ -14,9 +59,15 @@
       <label class="block text-sm muted mb-1">Slug</label>
       <input name="slug" required value="{{ scenario.slug if scenario else '' }}"
              {% if scenario %}readonly{% endif %}>
-      <label class="block text-sm muted mt-4 mb-1">Scenario YAML</label>
-      <textarea name="definition" required rows="30"
-                class="font-mono text-sm">{{ yaml_text }}</textarea>
+      <label for="scenario-definition" class="block text-sm muted mt-4 mb-1">Scenario YAML</label>
+      <div class="scenario-editor-shell">
+        <textarea id="scenario-definition" name="definition" required rows="30">{{ yaml_text }}</textarea>
+      </div>
+      <div class="scenario-editor-help">
+        <span><kbd>Tab</kbd> indent</span>
+        <span><kbd>Shift</kbd> + <kbd>Tab</kbd> outdent</span>
+        <span><kbd>Ctrl</kbd> + <kbd>S</kbd> validate & publish</span>
+      </div>
       <label class="block text-sm muted mt-4 mb-1">Version comment</label>
       <input name="comment" placeholder="What changed">
     </section>
@@ -78,4 +129,63 @@
   </section>
   {% endif %}
 </form>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material-darker.min.css">
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/yaml/yaml.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.min.js"></script>
+<script>
+  (function () {
+    var textarea = document.getElementById('scenario-definition');
+    var form = document.getElementById('scenario-form');
+    if (!textarea || !window.CodeMirror) return;
+
+    var editor = CodeMirror.fromTextArea(textarea, {
+      mode: 'yaml',
+      lineNumbers: true,
+      lineWrapping: false,
+      indentUnit: 2,
+      tabSize: 2,
+      indentWithTabs: false,
+      smartIndent: true,
+      matchBrackets: true,
+      autoCloseBrackets: true,
+      viewportMargin: 20,
+      extraKeys: {
+        Tab: function (cm) {
+          if (cm.somethingSelected()) cm.indentSelection('add');
+          else cm.replaceSelection('  ', 'end');
+        },
+        'Shift-Tab': function (cm) { cm.indentSelection('subtract'); },
+        'Ctrl-S': function (cm) {
+          cm.save();
+          if (form.requestSubmit) form.requestSubmit();
+          else form.submit();
+        },
+        'Cmd-S': function (cm) {
+          cm.save();
+          if (form.requestSubmit) form.requestSubmit();
+          else form.submit();
+        }
+      }
+    });
+
+    function syncTheme() {
+      var theme = document.documentElement.getAttribute('data-theme');
+      editor.setOption('theme', theme === 'light' ? 'default' : 'material-darker');
+    }
+
+    syncTheme();
+    new MutationObserver(syncTheme).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme']
+    });
+
+    form.addEventListener('submit', function () { editor.save(); });
+  })();
+</script>
 {% endblock %}
