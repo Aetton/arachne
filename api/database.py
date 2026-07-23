@@ -86,13 +86,31 @@ class RolePermission(Base):
     permission = relationship("Permission")
 
 
+class Component(Base):
+    __tablename__ = "components"
+
+    slug = Column(String(96), primary_key=True)
+    label = Column(String(160), nullable=False)
+    icon = Column(String(64), default="ti-box", nullable=False)
+    sort_order = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    scenarios = relationship("Scenario", back_populates="component_ref")
+
+
 class Scenario(Base):
     __tablename__ = "scenarios"
 
     id = Column(Integer, primary_key=True)
     slug = Column(String(96), unique=True, index=True, nullable=False)
     label = Column(String(160), nullable=False)
-    component = Column(String(96), nullable=False)
+    component = Column(
+        String(96),
+        ForeignKey("components.slug", ondelete="RESTRICT", onupdate="CASCADE"),
+        index=True,
+        nullable=False,
+    )
     enabled = Column(Boolean, default=True)
     current_version_id = Column(Integer, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -105,6 +123,7 @@ class Scenario(Base):
         foreign_keys="ScenarioVersion.scenario_id",
         cascade="all, delete-orphan",
     )
+    component_ref = relationship("Component", back_populates="scenarios")
 
 
 class ScenarioVersion(Base):

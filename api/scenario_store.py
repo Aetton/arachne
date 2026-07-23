@@ -8,7 +8,7 @@ import yaml
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database import Scenario, ScenarioACL, ScenarioVersion
+from database import Component, Scenario, ScenarioACL, ScenarioVersion
 
 
 def validate_definition(definition: dict) -> None:
@@ -65,6 +65,11 @@ def save_draft(
     comment: str = "",
 ) -> ScenarioVersion:
     validate_definition(definition)
+    component_slug = str(definition["component"]).strip()
+    if not db.get(Component, component_slug):
+        raise ValueError(f"unknown component: {component_slug}")
+    definition = dict(definition)
+    definition["component"] = component_slug
     scenario = db.query(Scenario).filter(Scenario.slug == slug).first()
     if not scenario:
         scenario = Scenario(
@@ -129,14 +134,26 @@ def export_yaml(db: Session) -> str:
             )
         scenarios[scenario.slug]["access"] = access
     return yaml.safe_dump(
-        {"scenarios": scenarios},
+        {
+            "components": {
+                component.slug: {
+                    "label": component.label,
+                    "icon": component.icon,
+                    "sort_order": component.sort_order,
+                }
+                for component in db.query(Component).order_by(
+                    Component.sort_order, Component.label,
+                )
+            },
+            "scenarios": scenarios,
+        },
         allow_unicode=True,
         sort_keys=False,
     )
 
 
 def bootstrap_from_yaml(db: Session) -> int:
-    """Import YAML only when its scenario slug is absent. Never overwrite UI edits."""
+    """Seed absent components and scenarios. Never overwrite database edits."""
     raw_path = os.getenv("SCENARIOS_CONFIG", "/app/config/scenarios.yaml")
     candidates = [
         Path(raw_path),
@@ -147,6 +164,24 @@ def bootstrap_from_yaml(db: Session) -> int:
     if not path:
         return 0
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    for index, (slug, spec) in enumerate((payload.get("components") or {}).items()):
+        component = db.get(Component, slug)
+        if component:
+            fallback_label = slug.replace("-", " ").title()
+            if component.label == fallback_label and component.icon == "ti-box":
+                component.label = spec.get("label") or component.label
+                component.icon = spec.get("icon") or component.icon
+                component.sort_order = int(spec.get("sort_order", index))
+            continue
+        spec = spec or {}
+        db.add(Component(
+            slug=slug,
+            label=spec.get("label") or slug,
+            icon=spec.get("icon") or "ti-box",
+            sort_order=int(spec.get("sort_order", index)),
+        ))
+    db.commit()
+
     imported = 0
     for slug, definition in (payload.get("scenarios") or {}).items():
         if db.query(Scenario).filter(Scenario.slug == slug).first():
