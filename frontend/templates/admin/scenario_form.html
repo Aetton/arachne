@@ -44,6 +44,20 @@
     color: var(--fg);
     font-family: inherit;
   }
+  .scenario-save-status {
+    display: none;
+    margin-top: .75rem;
+    padding: .65rem .8rem;
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    white-space: pre-wrap;
+    font-size: .8rem;
+  }
+  .scenario-save-status.is-error {
+    display: block;
+    background: var(--fail-bg);
+    color: var(--fail-fg);
+  }
 </style>
 
 <form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-5">
@@ -52,7 +66,7 @@
       <h1 class="text-xl font-semibold">{{ "Edit " ~ scenario.slug if scenario else "New scenario" }}</h1>
       <p class="muted text-sm">Saving validates the DSL, creates a version and publishes it atomically.</p>
     </div>
-    <button class="btn" type="submit"><i class="ti ti-device-floppy"></i> Validate & publish</button>
+    <button id="scenario-save-button" class="btn" type="submit"><i class="ti ti-device-floppy"></i> Validate & publish</button>
   </div>
   <div class="grid md:grid-cols-3 gap-4">
     <section class="surface rounded-xl p-4 md:col-span-2">
@@ -68,6 +82,7 @@
         <span><kbd>Shift</kbd> + <kbd>Tab</kbd> outdent</span>
         <span><kbd>Ctrl</kbd> + <kbd>S</kbd> validate & publish</span>
       </div>
+      <div id="scenario-save-status" class="scenario-save-status" role="alert"></div>
       <label class="block text-sm muted mt-4 mb-1">Version comment</label>
       <input name="comment" placeholder="What changed">
     </section>
@@ -142,7 +157,9 @@
   (function () {
     var textarea = document.getElementById('scenario-definition');
     var form = document.getElementById('scenario-form');
-    if (!textarea || !window.CodeMirror) return;
+    var saveButton = document.getElementById('scenario-save-button');
+    var saveStatus = document.getElementById('scenario-save-status');
+    if (!textarea || !form || !window.CodeMirror) return;
 
     var editor = CodeMirror.fromTextArea(textarea, {
       mode: 'yaml',
@@ -163,12 +180,12 @@
         'Shift-Tab': function (cm) { cm.indentSelection('subtract'); },
         'Ctrl-S': function (cm) {
           cm.save();
-          if (form.requestSubmit) form.requestSubmit();
+          if (form.requestSubmit) form.requestSubmit(saveButton);
           else form.submit();
         },
         'Cmd-S': function (cm) {
           cm.save();
-          if (form.requestSubmit) form.requestSubmit();
+          if (form.requestSubmit) form.requestSubmit(saveButton);
           else form.submit();
         }
       }
@@ -179,13 +196,51 @@
       editor.setOption('theme', theme === 'light' ? 'default' : 'material-darker');
     }
 
+    function showSaveError(message) {
+      saveStatus.textContent = message || 'Scenario validation failed.';
+      saveStatus.classList.add('is-error');
+    }
+
     syncTheme();
     new MutationObserver(syncTheme).observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme']
     });
 
-    form.addEventListener('submit', function () { editor.save(); });
+    form.addEventListener('submit', async function (event) {
+      editor.save();
+
+      var submitter = event.submitter;
+      var targetAction = submitter && submitter.formAction ? submitter.formAction : form.action;
+      if (!targetAction.endsWith('/admin/scenarios/save')) return;
+
+      event.preventDefault();
+      saveStatus.classList.remove('is-error');
+      saveStatus.textContent = '';
+      saveButton.disabled = true;
+      saveButton.style.filter = 'grayscale(.35)';
+
+      try {
+        var response = await fetch(form.action, {
+          method: 'POST',
+          body: new FormData(form),
+          credentials: 'same-origin'
+        });
+
+        if (!response.ok) {
+          showSaveError(await response.text());
+          return;
+        }
+
+        var slug = String(new FormData(form).get('slug') || '').trim();
+        window.location.assign('/admin/scenarios/' + encodeURIComponent(slug) + '/edit');
+      } catch (error) {
+        showSaveError(error && error.message ? error.message : String(error));
+      } finally {
+        saveButton.disabled = false;
+        saveButton.style.filter = '';
+      }
+    });
   })();
 </script>
 {% endblock %}
