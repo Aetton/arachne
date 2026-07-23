@@ -37,6 +37,10 @@
       background: var(--surface2); border: 1px solid var(--border);
       color: var(--fg); border-radius: .5rem; padding: .5rem .75rem; width: 100%;
     }
+    input:not([type]), input:is(
+      [type="text"], [type="search"], [type="email"], [type="url"],
+      [type="tel"], [type="password"], [type="number"]
+    ) { text-indent: 8px; }
     input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
     .form-card { padding: 1.5rem; }
     .form-stack { display: grid; gap: 1rem; }
