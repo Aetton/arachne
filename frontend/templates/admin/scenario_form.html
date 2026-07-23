@@ -75,9 +75,103 @@
     background: var(--fail-bg);
     color: var(--fail-fg);
   }
+  .scenario-form-header {
+    gap: 1.5rem;
+    padding: .5rem 0 .25rem;
+  }
+  .scenario-form-grid {
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .scenario-form-panel {
+    padding: 1.5rem;
+  }
+  .scenario-acl {
+    display: grid;
+    gap: 1.5rem;
+  }
+  .scenario-acl-header {
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .scenario-acl-header p {
+    margin-top: .35rem;
+  }
+  .scenario-acl-action {
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: .65rem;
+    background: color-mix(in srgb, var(--surface2) 55%, transparent);
+  }
+  .scenario-acl-action h3 {
+    letter-spacing: .08em;
+  }
+  .scenario-acl-group {
+    display: grid;
+    gap: .35rem;
+    margin-top: 1rem;
+  }
+  .scenario-acl-group-title {
+    margin-bottom: .15rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .scenario-check {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    min-height: 2rem;
+    padding: .3rem .45rem;
+    margin: 0 -.45rem;
+    border-radius: .45rem;
+    color: var(--fg);
+    cursor: pointer;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .scenario-check:hover {
+    background: var(--surface);
+  }
+  .scenario-check input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .scenario-check-box {
+    display: grid;
+    flex: 0 0 1.15rem;
+    width: 1.15rem;
+    height: 1.15rem;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--muted) 75%, transparent);
+    border-radius: .3rem;
+    background: var(--surface2);
+    color: transparent;
+    transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+  }
+  .scenario-check-box::after {
+    content: "";
+    width: .55rem;
+    height: .3rem;
+    border-left: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-.06rem) rotate(-45deg);
+  }
+  .scenario-check input:checked + .scenario-check-box {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .scenario-check input:focus-visible + .scenario-check-box {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
   .dsl-reference {
     border-top: 1px solid var(--border);
-    padding-top: 1rem;
+    padding-top: 1.25rem;
   }
   .dsl-reference code {
     color: var(--accent);
@@ -98,16 +192,16 @@
   }
 </style>
 
-<form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-5">
-  <div class="flex items-center justify-between">
+<form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-6">
+  <div class="scenario-form-header flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold">{{ "Edit " ~ scenario.slug if scenario else "New scenario" }}</h1>
       <p class="muted text-sm">Saving validates the DSL, creates a version and publishes it atomically.</p>
     </div>
     <button id="scenario-save-button" class="btn" type="submit"><i class="ti ti-device-floppy"></i> Validate & publish</button>
   </div>
-  <div class="grid md:grid-cols-3 gap-4">
-    <section class="surface rounded-xl p-4 md:col-span-2">
+  <div class="scenario-form-grid grid md:grid-cols-3">
+    <section class="scenario-form-panel surface rounded-xl md:col-span-2">
       <label class="block text-sm muted mb-1">Slug</label>
       <input name="slug" required value="{{ scenario.slug if scenario else '' }}"
              {% if scenario %}readonly{% endif %}>
@@ -128,34 +222,37 @@
       <label class="block text-sm muted mt-4 mb-1">Version comment</label>
       <input name="comment" placeholder="What changed">
     </section>
-    <section class="surface rounded-xl p-4 space-y-5">
-      <div>
+    <section class="scenario-form-panel scenario-acl surface rounded-xl">
+      <div class="scenario-acl-header">
         <h2 class="font-semibold">ACL matching</h2>
+        <p class="muted text-xs">Choose how roles and teams combine for every action.</p>
         <select name="match_mode" class="mt-2">
           <option value="all" {% if not acl or acl[0].match_mode == "all" %}selected{% endif %}>role AND team</option>
           <option value="any" {% if acl and acl[0].match_mode == "any" %}selected{% endif %}>role OR team</option>
         </select>
       </div>
       {% for action in ["view", "run", "edit", "manage"] %}
-      <div>
+      <div class="scenario-acl-action">
         <h3 class="text-sm font-semibold uppercase">{{ action }}</h3>
-        <div class="mt-2">
-          <p class="muted text-xs mb-1">Roles</p>
+        <div class="scenario-acl-group">
+          <p class="scenario-acl-group-title muted text-xs">Roles</p>
           {% for role in roles %}
-          <label class="flex gap-2 text-sm py-1">
-            <input type="checkbox" style="width:auto" name="{{ action }}_roles" value="{{ role.slug }}"
+          <label class="scenario-check text-sm">
+            <input type="checkbox" name="{{ action }}_roles" value="{{ role.slug }}"
               {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "role")|selectattr("subject_key", "equalto", role.slug)|list %}checked{% endif %}>
-            {{ role.name }}
+            <span class="scenario-check-box" aria-hidden="true"></span>
+            <span>{{ role.name }}</span>
           </label>
           {% endfor %}
         </div>
-        <div class="mt-2">
-          <p class="muted text-xs mb-1">Teams</p>
+        <div class="scenario-acl-group">
+          <p class="scenario-acl-group-title muted text-xs">Teams</p>
           {% for team in teams %}
-          <label class="flex gap-2 text-sm py-1">
-            <input type="checkbox" style="width:auto" name="{{ action }}_teams" value="{{ team.id }}"
+          <label class="scenario-check text-sm">
+            <input type="checkbox" name="{{ action }}_teams" value="{{ team.id }}"
               {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "team")|selectattr("subject_key", "equalto", team.id|string)|list %}checked{% endif %}>
-            {{ team.name }}
+            <span class="scenario-check-box" aria-hidden="true"></span>
+            <span>{{ team.name }}</span>
           </label>
           {% else %}<p class="muted text-xs">Create teams in Access first.</p>{% endfor %}
         </div>
