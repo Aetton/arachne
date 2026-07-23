@@ -41,6 +41,11 @@
       [type="text"], [type="search"], [type="email"], [type="url"],
       [type="tel"], [type="password"], [type="number"]
     ) { text-indent: 8px; }
+    select { text-indent: 8px; }
+    select option {
+      padding-inline-start: 8px;
+      text-indent: 8px;
+    }
     input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
     .form-card { padding: 1.5rem; }
     .form-stack { display: grid; gap: 1rem; }
