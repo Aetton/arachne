@@ -1,41 +1,6 @@
-"""Compatibility facade for database-backed scenarios and YAML components."""
-import os
-import yaml
-from database import SessionLocal
+"""Compatibility facade for database-backed scenario configuration."""
+from database import Component, SessionLocal
 import scenario_store
-
-CONFIG_PATH = os.getenv("SCENARIOS_CONFIG", "../config/scenarios.yaml")
-
-_cache = {}
-
-
-def _resolve_path() -> str:
-    # Allow running from repo root or from api/
-    candidates = [
-        CONFIG_PATH,
-        os.path.join(os.path.dirname(__file__), "..", "config", "scenarios.yaml"),
-        "config/scenarios.yaml",
-    ]
-    for c in candidates:
-        if os.path.exists(c):
-            return c
-    raise FileNotFoundError(f"scenarios.yaml not found; tried {candidates}")
-
-
-def reload():
-    global _cache
-    try:
-        with open(_resolve_path(), "r", encoding="utf-8") as f:
-            _cache = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        _cache = {}
-    return _cache
-
-
-def _data():
-    if not _cache:
-        reload()
-    return _cache
 
 
 def all_scenarios() -> dict:
@@ -44,7 +9,17 @@ def all_scenarios() -> dict:
 
 
 def all_components() -> dict:
-    return _data().get("components", {})
+    with SessionLocal() as db:
+        return {
+            component.slug: {
+                "label": component.label,
+                "icon": component.icon,
+                "sort_order": component.sort_order,
+            }
+            for component in db.query(Component).order_by(
+                Component.sort_order, Component.label,
+            )
+        }
 
 
 def get_scenario(key: str) -> dict | None:

@@ -266,6 +266,12 @@
       <input name="slug" required value="{{ scenario.slug if scenario else '' }}"
              {% if scenario %}readonly{% endif %}>
       <label for="scenario-definition" class="scenario-field-label text-sm muted">Scenario YAML</label>
+      <p class="muted text-xs mb-2">
+        Component must be one of:
+        {% for component in components %}
+          <code>{{ component.slug }}</code>{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </p>
       <div class="scenario-editor-shell">
         <textarea id="scenario-definition" name="definition" required rows="30">{{ yaml_text }}</textarea>
       </div>

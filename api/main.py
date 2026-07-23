@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 import database
 from database import (
-    SessionLocal, User, Team, Role, Permission, RolePermission, Run, Scenario,
+    SessionLocal, User, Team, Role, Permission, RolePermission, Run, Component, Scenario,
     ScenarioACL, ScenarioVersion, utcnow,
 )
 from auth.security import hash_password, verify_password, create_token
@@ -46,7 +46,6 @@ async def lifespan(app: FastAPI):
     access.seed_rbac(db)
     scenario_store.bootstrap_from_yaml(db)
     db.close()
-    config_loader.reload()
     from core.bus import start_bus
     from core import events as _events
     await start_bus()                       # bring the bus up first
@@ -178,12 +177,23 @@ def logout():
 def dashboard(request: Request, user=Depends(get_optional_user), db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse("/login", status_code=302)
-    scns = {}
-    for scenario in db.query(Scenario).filter(Scenario.enabled.is_(True)).all():
-        definition = scenario_store.published_definition(db, scenario)
-        if definition and access.can_access_scenario(db, user, scenario, "view"):
-            scns[scenario.slug] = definition
-    return render(request, "dashboard.html", user=user, scenarios=scns)
+    groups = []
+    components = db.query(Component).order_by(
+        Component.sort_order, Component.label,
+    ).all()
+    for component in components:
+        items = []
+        scenarios = db.query(Scenario).filter(
+            Scenario.enabled.is_(True),
+            Scenario.component == component.slug,
+        ).order_by(Scenario.label).all()
+        for scenario in scenarios:
+            definition = scenario_store.published_definition(db, scenario)
+            if definition and access.can_access_scenario(db, user, scenario, "view"):
+                items.append({"slug": scenario.slug, "definition": definition})
+        if items:
+            groups.append({"component": component, "scenarios": items})
+    return render(request, "dashboard.html", user=user, scenario_groups=groups)
 
 
 # ---------- scenarios ----------
@@ -386,7 +396,13 @@ def admin_user_delete(uid: int, user=Depends(require_role("admin")), db: Session
 def admin_scenarios(request: Request, user=Depends(require_role("admin")),
                     db: Session = Depends(get_db)):
     scenarios = db.query(Scenario).order_by(Scenario.slug).all()
-    return render(request, "admin/scenarios.html", user=user, scenarios=scenarios)
+    components = db.query(Component).order_by(
+        Component.sort_order, Component.label,
+    ).all()
+    return render(
+        request, "admin/scenarios.html", user=user,
+        scenarios=scenarios, components=components,
+    )
 
 
 @app.get("/admin/scenarios/new", response_class=HTMLResponse)
@@ -394,10 +410,14 @@ def admin_scenario_new(request: Request, user=Depends(require_role("admin")),
                        db: Session = Depends(get_db)):
     roles = db.query(Role).order_by(Role.slug).all()
     teams = db.query(Team).order_by(Team.name).all()
+    components = db.query(Component).order_by(
+        Component.sort_order, Component.label,
+    ).all()
+    default_component = components[0].slug if components else ""
     return render(
         request, "admin/scenario_form.html", user=user, scenario=None,
-        yaml_text="label: New scenario\ncomponent: backend\ntriggers:\n  - type: manual\nsteps:\n  - id: build\n    spider: forgejo\n    action: build\n    with: {}\n",
-        roles=roles, teams=teams, acl=[],
+        yaml_text=f"label: New scenario\ncomponent: {default_component}\ntriggers:\n  - type: manual\nsteps:\n  - id: build\n    spider: forgejo\n    action: build\n    with: {{}}\n",
+        roles=roles, teams=teams, components=components, acl=[],
         default_acl_roles=set(user.roles or []),
         default_acl_teams={int(team_id) for team_id in (user.teams or [])},
     )
@@ -416,6 +436,9 @@ def admin_scenario_edit(slug: str, request: Request, user=Depends(require_role("
         yaml_text=yaml.safe_dump(definition, allow_unicode=True, sort_keys=False),
         roles=db.query(Role).order_by(Role.slug).all(),
         teams=db.query(Team).order_by(Team.name).all(),
+        components=db.query(Component).order_by(
+            Component.sort_order, Component.label,
+        ).all(),
         acl=db.query(ScenarioACL).filter(ScenarioACL.scenario_id == scenario.id).all(),
         versions=db.query(ScenarioVersion).filter(
             ScenarioVersion.scenario_id == scenario.id,
@@ -465,6 +488,27 @@ async def admin_scenario_save(request: Request, user=Depends(require_role("admin
         scenario_store.replace_acl(db, scenario.id, entries)
     except (ValueError, yaml.YAMLError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    return RedirectResponse("/admin/scenarios", status_code=303)
+
+
+@app.post("/admin/components")
+async def admin_component_save(request: Request, user=Depends(require_role("admin")),
+                               db: Session = Depends(get_db)):
+    form = await request.form()
+    slug = str(form.get("slug", "")).strip()
+    if not slug:
+        raise HTTPException(400, "Component slug is required")
+    component = db.get(Component, slug)
+    if not component:
+        component = Component(slug=slug, label=slug)
+        db.add(component)
+    component.label = str(form.get("label") or slug).strip()
+    component.icon = str(form.get("icon") or "ti-box").strip()
+    try:
+        component.sort_order = int(form.get("sort_order") or 0)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, "Component order must be an integer") from exc
+    db.commit()
     return RedirectResponse("/admin/scenarios", status_code=303)
 
 

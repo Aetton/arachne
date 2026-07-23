@@ -17,14 +17,38 @@
   .scenario-accent-indigo { --scenario-accent: #6366f1; }
   .scenario-accent-purple { --scenario-accent: #bd93f9; }
   .scenario-accent-pink { --scenario-accent: #ff79c6; }
+  .scenario-group summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  .scenario-group summary::-webkit-details-marker { display: none; }
+  .scenario-group-chevron { transition: transform .15s ease; }
+  .scenario-group[open] .scenario-group-chevron { transform: rotate(90deg); }
 </style>
 
-<h1 class="text-xl font-semibold mb-1">Scenarios</h1>
-<p class="muted text-sm mb-5">Pick a build or deployment scenario to run.</p>
+<div class="flex items-end justify-between gap-4 mb-5">
+  <div>
+    <h1 class="text-xl font-semibold mb-1">Scenarios</h1>
+    <p class="muted text-sm">Pick a build or deployment scenario to run.</p>
+  </div>
+  <input id="scenario-search" type="search" placeholder="Search scenarios…"
+         aria-label="Search scenarios" style="max-width:20rem">
+</div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-10">
-  {% for key, s in scenarios.items() %}
+{% for group in scenario_groups %}
+<details class="scenario-group mb-6" data-component="{{ group.component.slug }}" open>
+  <summary class="flex items-center gap-2 mb-3">
+    <i class="ti ti-chevron-right scenario-group-chevron muted"></i>
+    <i class="ti {{ group.component.icon or 'ti-box' }} accent"></i>
+    <h2 class="text-lg font-semibold">{{ group.component.label }}</h2>
+    <span class="muted text-xs">· <span class="scenario-group-count">{{ group.scenarios|length }}</span></span>
+  </summary>
+  <div class="scenario-group-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+  {% for item in group.scenarios %}
+  {% set key = item.slug %}
+  {% set s = item.definition %}
   <button hx-get="/scenarios/{{ key }}/form" hx-target="#panel" hx-swap="innerHTML"
+          data-search="{{ key }} {{ s.label }} {{ group.component.slug }} {{ group.component.label }}"
           class="scenario-card scenario-accent-{{ s.accent or 'indigo' }} surface rounded-xl p-4 text-left hover:brightness-110 transition"
           style="border-color: var(--border);">
     <div class="flex items-center gap-2 mb-1.5">
@@ -34,7 +58,11 @@
     <p class="muted text-xs">{{ s.component }}</p>
   </button>
   {% endfor %}
-</div>
+  </div>
+</details>
+{% else %}
+<p class="muted text-sm mb-10">No scenarios are available.</p>
+{% endfor %}
 
 <div id="panel"></div>
 
@@ -47,4 +75,36 @@
 <div id="history" hx-get="/runs/history" hx-trigger="load, runStarted from:body delay:500ms">
 </div>
 
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    var groups = Array.from(document.querySelectorAll('.scenario-group'));
+    groups.forEach(function (group) {
+      var key = 'arachne-component-open:' + group.dataset.component;
+      try {
+        var saved = localStorage.getItem(key);
+        if (saved !== null) group.open = saved === 'true';
+      } catch (e) {}
+      group.addEventListener('toggle', function () {
+        try { localStorage.setItem(key, String(group.open)); } catch (e) {}
+      });
+    });
+
+    document.getElementById('scenario-search').addEventListener('input', function (event) {
+      var query = event.target.value.trim().toLocaleLowerCase();
+      groups.forEach(function (group) {
+        var visible = 0;
+        group.querySelectorAll('.scenario-card').forEach(function (card) {
+          var matches = !query || card.dataset.search.toLocaleLowerCase().includes(query);
+          card.hidden = !matches;
+          if (matches) visible += 1;
+        });
+        group.hidden = visible === 0;
+        group.querySelector('.scenario-group-count').textContent = visible;
+        if (query && visible) group.open = true;
+      });
+    });
+  })();
+</script>
 {% endblock %}

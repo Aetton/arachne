@@ -11,6 +11,35 @@
     <a class="btn" href="/admin/scenarios/new"><i class="ti ti-plus"></i> New scenario</a>
   </div>
 </div>
+<div class="surface rounded-xl p-4 mb-5">
+  <div class="flex items-center justify-between mb-3">
+    <div>
+      <h2 class="font-semibold">Components</h2>
+      <p class="muted text-xs">Database-backed scenario groups.</p>
+    </div>
+  </div>
+  <div class="grid gap-2 mb-4">
+    {% for component in components %}
+    <form method="post" action="/admin/components"
+          class="grid grid-cols-12 gap-2 items-center">
+      <input type="hidden" name="slug" value="{{ component.slug }}">
+      <span class="col-span-2 font-mono text-sm">{{ component.slug }}</span>
+      <input class="col-span-4" name="label" value="{{ component.label }}" aria-label="Component label">
+      <input class="col-span-3" name="icon" value="{{ component.icon }}" aria-label="Component icon">
+      <input class="col-span-1" name="sort_order" type="number" value="{{ component.sort_order }}" aria-label="Sort order">
+      <button class="btn-ghost col-span-2" type="submit">Save</button>
+    </form>
+    {% endfor %}
+  </div>
+  <form method="post" action="/admin/components"
+        class="grid grid-cols-12 gap-2 items-center pt-3" style="border-top:1px solid var(--border)">
+    <input class="col-span-2" name="slug" required placeholder="slug">
+    <input class="col-span-4" name="label" required placeholder="Label">
+    <input class="col-span-3" name="icon" value="ti-box" placeholder="ti-box">
+    <input class="col-span-1" name="sort_order" type="number" value="0">
+    <button class="btn col-span-2" type="submit">Add</button>
+  </form>
+</div>
 <div class="surface rounded-xl overflow-hidden">
   <table class="w-full text-sm">
     <thead class="surface-2"><tr class="text-left muted">
