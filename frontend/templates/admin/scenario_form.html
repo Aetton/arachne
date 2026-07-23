@@ -100,12 +100,16 @@
   .scenario-acl {
     display: grid;
     gap: 1.5rem;
+    padding: 1.5rem;
   }
   .scenario-acl-header {
-    padding-top: 1.25rem;
     padding-bottom: 1.25rem;
-    border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
+  }
+  .scenario-acl-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.5rem;
   }
   .scenario-acl-header p {
     margin-top: .35rem;
@@ -118,6 +122,16 @@
   }
   .scenario-acl-action h3 {
     letter-spacing: .08em;
+  }
+  @media (max-width: 1100px) {
+    .scenario-acl-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 680px) {
+    .scenario-acl-actions {
+      grid-template-columns: 1fr;
+    }
   }
   .scenario-acl-group {
     display: grid;
@@ -268,7 +282,7 @@
       <label class="scenario-field-label text-sm muted">Version comment</label>
       <input name="comment" placeholder="What changed">
     </section>
-    <section class="scenario-form-panel scenario-acl surface rounded-xl">
+    <aside class="scenario-form-panel surface rounded-xl">
       <div class="dsl-reference">
         <h2 class="font-semibold">DSL quick reference</h2>
         <ul>
@@ -279,7 +293,10 @@
           <li>Trigger types: <code>manual</code>, <code>schedule</code>, <code>chain</code></li>
         </ul>
       </div>
-      <div class="scenario-acl-header">
+    </aside>
+  </div>
+  <section class="scenario-acl surface rounded-xl">
+    <div class="scenario-acl-header">
         <h2 class="font-semibold">ACL matching</h2>
         <p class="muted text-xs">Choose how roles and teams combine for every action.</p>
         <select name="match_mode" class="mt-2">
@@ -287,6 +304,7 @@
           <option value="any" {% if acl and acl[0].match_mode == "any" %}selected{% endif %}>role OR team</option>
         </select>
       </div>
+    <div class="scenario-acl-actions">
       {% for action in ["view", "run", "edit", "manage"] %}
       <div class="scenario-acl-action">
         <h3 class="text-sm font-semibold uppercase">{{ action }}</h3>
@@ -314,8 +332,8 @@
         </div>
       </div>
       {% endfor %}
-    </section>
-  </div>
+    </div>
+  </section>
   {% if versions %}
   <section class="scenario-versions surface rounded-xl">
     <h2 class="font-semibold mb-2">Version history</h2>
