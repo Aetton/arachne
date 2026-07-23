@@ -38,6 +38,46 @@
       color: var(--fg); border-radius: .5rem; padding: .5rem .75rem; width: 100%;
     }
     input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .form-card { padding: 1.5rem; }
+    .form-stack { display: grid; gap: 1rem; }
+    .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+    .form-section { display: grid; gap: .5rem; }
+    .form-section-title {
+      color: var(--muted); font-size: .75rem; letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .check-control {
+      display: flex; align-items: center; gap: .7rem; min-height: 2rem;
+      padding: .3rem .45rem; margin: 0 -.45rem; border-radius: .45rem;
+      color: var(--fg); cursor: pointer;
+      transition: background-color .15s ease, color .15s ease;
+    }
+    .check-control:hover { background: var(--surface2); }
+    .check-control input {
+      position: absolute; width: 1px; height: 1px; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .check-control-box {
+      display: grid; flex: 0 0 1.15rem; width: 1.15rem; height: 1.15rem;
+      place-items: center; border: 1px solid color-mix(in srgb, var(--muted) 75%, transparent);
+      border-radius: .3rem; background: var(--surface2); color: transparent;
+      transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+    }
+    .check-control-box::after {
+      content: ""; width: .55rem; height: .3rem;
+      border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
+      transform: translateY(-.06rem) rotate(-45deg);
+    }
+    .check-control input:checked + .check-control-box {
+      border-color: var(--accent); background: var(--accent); color: var(--bg);
+    }
+    .check-control input:focus-visible + .check-control-box {
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+    }
+    .record-list { display: grid; gap: .5rem; }
+    .record-card { padding: .75rem; border-radius: .5rem; background: var(--surface2); }
+    @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
     .log { font-family: var(--font-mono); font-size: .8rem; line-height: 1.55; }
     a.link { color: var(--accent); }
     a.link:hover { filter: brightness(1.15); }
