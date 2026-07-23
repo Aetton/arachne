@@ -390,12 +390,32 @@
         tokenizer: {
           root: [
             [/^\s*#.*$/, "comment"],
+            [/^(\s*(?:-\s+)?)([A-Za-z_][\w.-]*)(\s*:)/, ["", "key", ""]],
+            [/"/, "string.quote", "@doubleQuotedString"],
+            [/'/, "string.quote", "@singleQuotedString"],
             [/\$\{[^}]+\}/, "variable"],
-            [/"([^"\\]|\\.)*"|'([^'\\]|\\.)*'/, "string"],
-            [/\b(?:true|false|null|yes|no|on|off)\b/, "keyword"],
-            [/-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\b/, "number"],
-            [/^(\s*-?\s*)([A-Za-z_][\w.-]*)(\s*:)/, ["", "key", ""]],
+            [/\b(?:true|false|null)\b(?=\s*(?:#.*)?$|[\],}])/i, "keyword"],
+            [/~(?=\s*(?:#.*)?$|[\],}])/, "keyword"],
+            [/-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?(?=\s*(?:#.*)?$|[\],}])/, "number"],
+            [/#.*$/, "comment"],
             [/[{}\[\],&*!|>?%@]/, "tag"]
+          ],
+
+          doubleQuotedString: [
+            [/\$\{[^}]+\}/, "variable"],
+            [/\\(?:0|a|b|t|n|v|f|r|e| |"|\/|\\|N|_|L|P|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})/, "string.escape"],
+            [/\\./, "invalid"],
+            [/"/, "string.quote", "@pop"],
+            [/[^\\$"]+/, "string"],
+            [/./, "string"]
+          ],
+
+          singleQuotedString: [
+            [/\$\{[^}]+\}/, "variable"],
+            [/''/, "string.escape"],
+            [/'/, "string.quote", "@pop"],
+            [/[^'$]+/, "string"],
+            [/./, "string"]
           ]
         }
       });
