@@ -7,6 +7,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/dracula.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/nord.min.css">
   <link rel="stylesheet" href="/static/css/themes.css">
   <link rel="stylesheet" href="/static/css/monospace.css">
   <style>
@@ -36,7 +38,7 @@
       color: var(--fg); border-radius: .5rem; padding: .5rem .75rem; width: 100%;
     }
     input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-    .log { font-size: .8rem; line-height: 1.55; }
+    .log { font-family: var(--font-mono); font-size: .8rem; line-height: 1.55; }
     a.link { color: var(--accent); }
     a.link:hover { filter: brightness(1.15); }
   </style>
@@ -61,8 +63,8 @@
       <select id="theme-select" onchange="setTheme(this.value)"
               style="width:auto; padding:.3rem .5rem;" class="text-xs">
         <option value="dracula">Dracula</option>
-        <option value="light">Light</option>
         <option value="nord">Nord</option>
+        <option value="white">White</option>
       </select>
       <span class="muted">{{ user.full_name or user.username }}</span>
       <a href="/logout" class="link">Logout</a>
@@ -75,13 +77,17 @@
   </main>
 
   <script>
+    function normalizeTheme(name) {
+      return name === 'light' ? 'white' : name;
+    }
     function setTheme(name) {
+      name = normalizeTheme(name);
       document.documentElement.setAttribute('data-theme', name);
       try { localStorage.setItem('arachne-theme', name); } catch (e) {}
     }
     (function () {
       let t = 'dracula';
-      try { t = localStorage.getItem('arachne-theme') || 'dracula'; } catch (e) {}
+      try { t = normalizeTheme(localStorage.getItem('arachne-theme') || 'dracula'); } catch (e) {}
       document.documentElement.setAttribute('data-theme', t);
       var sel = document.getElementById('theme-select');
       if (sel) sel.value = t;
