@@ -16,16 +16,71 @@
   .scenario-editor-shell .CodeMirror {
     height: min(68vh, 760px);
     min-height: 34rem;
-    font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
-    font-size: .875rem;
-    line-height: 1.55;
-    background: var(--surface2);
+    font-family: "Inconsolata", monospace;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: normal;
+    letter-spacing: 0;
+    font-variant-ligatures: none;
+    background: #282a36;
+    color: #f8f8f2;
   }
   .scenario-editor-shell .CodeMirror-gutters {
-    border-right: 1px solid var(--border);
+    border-right: 1px solid #191a21;
+    background: #282a36;
   }
   .scenario-editor-shell .CodeMirror-linenumber {
-    color: var(--muted);
+    color: #6272a4;
+  }
+  .scenario-editor-shell .CodeMirror-activeline .CodeMirror-linenumber {
+    color: #f8f8f2;
+  }
+  .scenario-editor-shell .CodeMirror-cursor {
+    border-left-color: #f8f8f0;
+  }
+  .scenario-editor-shell .CodeMirror-selected {
+    background: #44475a;
+  }
+  .scenario-editor-shell .CodeMirror-focused .CodeMirror-selected {
+    background: #44475a;
+  }
+  .scenario-editor-shell .CodeMirror-activeline-background {
+    background: rgba(68, 71, 90, .46);
+  }
+  .scenario-editor-shell .CodeMirror-matchingbracket {
+    color: #50fa7b;
+    outline: 1px solid #6272a4;
+  }
+  .scenario-editor-shell .cm-comment { color: #6272a4; }
+  .scenario-editor-shell .cm-atom,
+  .scenario-editor-shell .cm-number { color: #bd93f9; }
+  .scenario-editor-shell .cm-attribute,
+  .scenario-editor-shell .cm-property { color: #8be9fd; }
+  .scenario-editor-shell .cm-keyword,
+  .scenario-editor-shell .cm-operator,
+  .scenario-editor-shell .cm-tag { color: #ff79c6; }
+  .scenario-editor-shell .cm-def { color: #50fa7b; }
+  .scenario-editor-shell .cm-string,
+  .scenario-editor-shell .cm-string-2 { color: #f1fa8c; }
+  .scenario-editor-shell .cm-variable,
+  .scenario-editor-shell .cm-variable-3,
+  .scenario-editor-shell .cm-bracket { color: #f8f8f2; }
+  .scenario-editor-shell .cm-variable-2 { color: #8be9fd; }
+  .scenario-editor-shell .cm-meta { color: #f8f8f2; }
+  .scenario-editor-shell .cm-error { color: #ff5555; }
+  .scenario-editor-shell .CodeMirror-hints {
+    border-color: #191a21;
+    background: #343746;
+    color: #f8f8f2;
+    font-family: "Inconsolata", monospace;
+    font-size: 14px;
+  }
+  .scenario-editor-shell .CodeMirror-hint {
+    color: #f8f8f2;
+  }
+  .scenario-editor-shell li.CodeMirror-hint-active {
+    background: #44475a;
+    color: #f8f8f2;
   }
   .scenario-editor-help {
     display: flex;
@@ -367,13 +422,14 @@
 {% endblock %}
 
 {% block scripts %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inconsolata@5.2.8/400.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material-darker.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.css">
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/yaml/yaml.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/selection/active-line.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
 <script>
@@ -403,6 +459,7 @@
       smartIndent: true,
       matchBrackets: true,
       autoCloseBrackets: true,
+      styleActiveLine: true,
       viewportMargin: 20,
       extraKeys: {
         Tab: function (cm) {
@@ -426,8 +483,7 @@
     }
 
     function syncTheme() {
-      var theme = document.documentElement.getAttribute('data-theme');
-      editor.setOption('theme', theme === 'light' ? 'default' : 'material-darker');
+      editor.setOption('theme', 'default');
     }
 
     function showSaveError(message) {
