@@ -253,6 +253,7 @@
 </style>
 
 <form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-6">
+  <input type="hidden" name="original_slug" value="{{ scenario.slug if scenario else '' }}">
   <div class="scenario-form-header flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold">{{ "Edit " ~ scenario.slug if scenario else "New scenario" }}</h1>
@@ -263,8 +264,10 @@
   <div class="scenario-form-grid grid md:grid-cols-3">
     <section class="scenario-form-panel surface rounded-xl md:col-span-2">
       <label class="scenario-field-label text-sm muted">Slug</label>
-      <input name="slug" required value="{{ scenario.slug if scenario else '' }}"
-             {% if scenario %}readonly{% endif %}>
+      <input name="slug" required maxlength="64"
+             pattern="[a-z0-9][a-z0-9._-]{0,63}"
+             title="Lowercase letters, digits, dots, underscores, and hyphens"
+             value="{{ scenario.slug if scenario else '' }}">
       <label for="scenario-definition" class="scenario-field-label text-sm muted">Scenario YAML</label>
       <p class="muted text-xs mb-2">
         Component must be one of:

@@ -5,6 +5,7 @@ Seeds an 'admin/admin' user on first boot (change immediately).
 """
 import os
 import json
+import re
 from datetime import datetime, timezone
 
 from contextlib import asynccontextmanager
@@ -452,11 +453,40 @@ async def admin_scenario_save(request: Request, user=Depends(require_role("admin
     import yaml
     form = await request.form()
     slug = str(form.get("slug", "")).strip()
+    original_slug = str(form.get("original_slug", "")).strip()
     if not slug:
         raise HTTPException(400, "Scenario slug is required")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", slug):
+        raise HTTPException(
+            400,
+            "Scenario slug must start with a lowercase letter or digit and contain "
+            "only lowercase letters, digits, dots, underscores, and hyphens "
+            "(64 characters maximum)",
+        )
     try:
-        is_new = db.query(Scenario).filter(Scenario.slug == slug).first() is None
+        scenario = None
+        is_new = not original_slug
+        if original_slug:
+            scenario = db.query(Scenario).filter(Scenario.slug == original_slug).first()
+            if not scenario:
+                raise HTTPException(404, "Scenario not found")
+            conflict = db.query(Scenario).filter(
+                Scenario.slug == slug,
+                Scenario.id != scenario.id,
+            ).first()
+            if conflict:
+                raise HTTPException(409, f"Scenario slug '{slug}' already exists")
+        elif db.query(Scenario).filter(Scenario.slug == slug).first():
+            raise HTTPException(409, f"Scenario slug '{slug}' already exists")
+
         definition = yaml.safe_load(form.get("definition", "")) or {}
+        if scenario and slug != original_slug:
+            scenario.slug = slug
+            db.query(Run).filter(Run.scenario == original_slug).update(
+                {Run.scenario: slug},
+                synchronize_session=False,
+            )
+            db.flush()
         version = scenario_store.save_draft(
             db, slug, definition, user.id, str(form.get("comment", "")),
         )
