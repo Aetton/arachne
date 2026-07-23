@@ -86,12 +86,25 @@
   .scenario-form-panel {
     padding: 1.5rem;
   }
+  .scenario-field-label {
+    display: block;
+    margin-bottom: .5rem;
+  }
+  .scenario-field-label:not(:first-child) {
+    margin-top: 1.25rem;
+  }
+  input[name="slug"],
+  select[name="match_mode"] {
+    text-indent: 8px;
+  }
   .scenario-acl {
     display: grid;
     gap: 1.5rem;
   }
   .scenario-acl-header {
+    padding-top: 1.25rem;
     padding-bottom: 1.25rem;
+    border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
   }
   .scenario-acl-header p {
@@ -170,8 +183,7 @@
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
   }
   .dsl-reference {
-    border-top: 1px solid var(--border);
-    padding-top: 1.25rem;
+    padding-bottom: .25rem;
   }
   .dsl-reference code {
     color: var(--accent);
@@ -202,10 +214,10 @@
   </div>
   <div class="scenario-form-grid grid md:grid-cols-3">
     <section class="scenario-form-panel surface rounded-xl md:col-span-2">
-      <label class="block text-sm muted mb-1">Slug</label>
+      <label class="scenario-field-label text-sm muted">Slug</label>
       <input name="slug" required value="{{ scenario.slug if scenario else '' }}"
              {% if scenario %}readonly{% endif %}>
-      <label for="scenario-definition" class="block text-sm muted mt-4 mb-1">Scenario YAML</label>
+      <label for="scenario-definition" class="scenario-field-label text-sm muted">Scenario YAML</label>
       <div class="scenario-editor-shell">
         <textarea id="scenario-definition" name="definition" required rows="30">{{ yaml_text }}</textarea>
       </div>
@@ -219,10 +231,20 @@
         <span class="dot"></span><span>Checking DSL…</span>
       </div>
       <div id="scenario-save-status" class="scenario-save-status" role="alert"></div>
-      <label class="block text-sm muted mt-4 mb-1">Version comment</label>
+      <label class="scenario-field-label text-sm muted">Version comment</label>
       <input name="comment" placeholder="What changed">
     </section>
     <section class="scenario-form-panel scenario-acl surface rounded-xl">
+      <div class="dsl-reference">
+        <h2 class="font-semibold">DSL quick reference</h2>
+        <ul>
+          <li>Required root keys: <code>label</code>, <code>component</code>, <code>steps</code></li>
+          <li>Step keys: <code>id</code>, <code>spider</code>, <code>action</code>, <code>with</code>, <code>needs</code>, <code>kind</code></li>
+          <li>Param types: <code>string</code>, <code>choice</code>, <code>boolean</code></li>
+          <li>References: <code>${params.name}</code>, <code>${step_id.field}</code></li>
+          <li>Trigger types: <code>manual</code>, <code>schedule</code>, <code>chain</code></li>
+        </ul>
+      </div>
       <div class="scenario-acl-header">
         <h2 class="font-semibold">ACL matching</h2>
         <p class="muted text-xs">Choose how roles and teams combine for every action.</p>
@@ -258,16 +280,6 @@
         </div>
       </div>
       {% endfor %}
-      <div class="dsl-reference">
-        <h2 class="font-semibold">DSL quick reference</h2>
-        <ul>
-          <li>Required root keys: <code>label</code>, <code>component</code>, <code>steps</code></li>
-          <li>Step keys: <code>id</code>, <code>spider</code>, <code>action</code>, <code>with</code>, <code>needs</code>, <code>kind</code></li>
-          <li>Param types: <code>string</code>, <code>choice</code>, <code>boolean</code></li>
-          <li>References: <code>${params.name}</code>, <code>${step_id.field}</code></li>
-          <li>Trigger types: <code>manual</code>, <code>schedule</code>, <code>chain</code></li>
-        </ul>
-      </div>
     </section>
   </div>
   {% if versions %}
