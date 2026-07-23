@@ -13,19 +13,12 @@
     outline: 2px solid var(--accent);
     outline-offset: -1px;
   }
-  .scenario-editor-shell .CodeMirror {
+  #scenario-editor {
     height: min(68vh, 760px);
     min-height: 34rem;
-    font-family: ui-monospace, "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
-    font-size: .875rem;
-    line-height: 1.55;
-    background: var(--surface2);
   }
-  .scenario-editor-shell .CodeMirror-gutters {
-    border-right: 1px solid var(--border);
-  }
-  .scenario-editor-shell .CodeMirror-linenumber {
-    color: var(--muted);
+  #scenario-definition {
+    display: none;
   }
   .scenario-editor-help {
     display: flex;
@@ -242,14 +235,6 @@
     font-size: .78rem;
     color: var(--muted);
   }
-  .CodeMirror-lint-mark-error {
-    background: rgba(255, 70, 90, .16);
-    border-bottom: 2px wavy var(--fail-fg);
-  }
-  .CodeMirror-guttermarker-subtle {
-    color: var(--fail-fg);
-    font-weight: 700;
-  }
 </style>
 
 <form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-6">
@@ -276,7 +261,8 @@
         {% endfor %}
       </p>
       <div class="scenario-editor-shell">
-        <textarea id="scenario-definition" name="definition" required rows="30">{{ yaml_text }}</textarea>
+        <textarea id="scenario-definition" name="definition" required>{{ yaml_text }}</textarea>
+        <div id="scenario-editor" aria-label="Scenario YAML editor"></div>
       </div>
       <div class="scenario-editor-help">
         <span><kbd>Tab</kbd> indent</span>
@@ -367,311 +353,306 @@
 {% endblock %}
 
 {% block scripts %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material-darker.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.css">
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/yaml/yaml.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/matchbrackets.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inconsolata@5.2.6/index.css">
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
 <script>
+  window.MonacoEnvironment = {
+    getWorkerUrl: function () {
+      var source = "self.MonacoEnvironment={baseUrl:'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/'};" +
+        "importScripts('https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/base/worker/workerMain.js');";
+      return URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+    }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"></script>
+<script>
   (function () {
-    var textarea = document.getElementById('scenario-definition');
-    var form = document.getElementById('scenario-form');
-    var saveButton = document.getElementById('scenario-save-button');
-    var saveStatus = document.getElementById('scenario-save-status');
-    var editorStatus = document.getElementById('scenario-editor-status');
-    if (!textarea || !form || !window.CodeMirror) return;
+    var textarea = document.getElementById("scenario-definition");
+    var container = document.getElementById("scenario-editor");
+    var form = document.getElementById("scenario-form");
+    var saveButton = document.getElementById("scenario-save-button");
+    var saveStatus = document.getElementById("scenario-save-status");
+    var editorStatus = document.getElementById("scenario-editor-status");
+    if (!textarea || !container || !form || !window.require) return;
 
-    var ROOT_KEYS = ['label: ', 'component: ', 'icon: "ti-"', 'accent: ', 'triggers:\n  - type: manual', 'params:\n  - name: ', 'steps:\n  - id: '];
-    var STEP_KEYS = ['id: ', 'spider: ', 'action: ', 'kind: ', 'with: {}', 'needs: []'];
-    var PARAM_KEYS = ['name: ', 'label: ', 'type: ', 'required: true', 'default: ', 'options: []'];
-    var TRIGGER_KEYS = ['type: manual', 'type: schedule', 'type: chain'];
-    var PARAM_TYPES = ['string', 'choice', 'boolean'];
-    var SPIDERS = ['forgejo', 'ansible-local', 'tofu-proxmox'];
-
-    var editor = CodeMirror.fromTextArea(textarea, {
-      mode: 'yaml',
-      lineNumbers: true,
-      gutters: ['CodeMirror-linenumbers', 'dsl-errors'],
-      lineWrapping: false,
-      indentUnit: 2,
-      tabSize: 2,
-      indentWithTabs: false,
-      smartIndent: true,
-      matchBrackets: true,
-      autoCloseBrackets: true,
-      viewportMargin: 20,
-      extraKeys: {
-        Tab: function (cm) {
-          if (cm.somethingSelected()) cm.indentSelection('add');
-          else cm.replaceSelection('  ', 'end');
-        },
-        'Shift-Tab': function (cm) { cm.indentSelection('subtract'); },
-        'Ctrl-Space': function (cm) { cm.showHint({hint: dslHint, completeSingle: false}); },
-        'Ctrl-S': submitEditor,
-        'Cmd-S': submitEditor
-      }
-    });
-
+    var ROOT_KEYS = ["label: ", "component: ", "icon: \"ti-\"", "accent: ", "triggers:\n  - type: manual", "params:\n  - name: ", "steps:\n  - id: "];
+    var STEP_KEYS = ["id: ", "spider: ", "action: ", "kind: ", "with: {}", "needs: []"];
+    var PARAM_KEYS = ["name: ", "label: ", "type: ", "required: true", "default: ", "options: []"];
+    var TRIGGER_KEYS = ["type: manual", "type: schedule", "type: chain"];
+    var PARAM_TYPES = ["string", "choice", "boolean"];
+    var SPIDERS = ["forgejo", "ansible-local", "tofu-proxmox"];
     var lintTimer = null;
-    var errorMarks = [];
 
-    function submitEditor(cm) {
-      cm.save();
-      if (form.requestSubmit) form.requestSubmit(saveButton);
-      else form.submit();
-    }
-
-    function syncTheme() {
-      var theme = document.documentElement.getAttribute('data-theme');
-      editor.setOption('theme', theme === 'light' ? 'default' : 'material-darker');
-    }
-
-    function showSaveError(message) {
-      saveStatus.textContent = message || 'Scenario validation failed.';
-      saveStatus.classList.add('is-error');
-    }
-
-    function currentSection(cm, lineNo) {
-      for (var i = lineNo; i >= 0; i--) {
-        var text = cm.getLine(i);
-        if (/^steps:\s*$/.test(text)) return 'steps';
-        if (/^params:\s*$/.test(text)) return 'params';
-        if (/^triggers:\s*$/.test(text)) return 'triggers';
-        if (/^\S/.test(text) && text.trim()) return 'root';
-      }
-      return 'root';
-    }
-
-    function dslHint(cm) {
-      var cursor = cm.getCursor();
-      var line = cm.getLine(cursor.line);
-      var token = cm.getTokenAt(cursor);
-      var start = token.start;
-      var end = cursor.ch;
-      var section = currentSection(cm, cursor.line);
-      var list = ROOT_KEYS;
-
-      if (section === 'steps') list = STEP_KEYS.concat(SPIDERS);
-      if (section === 'params') list = PARAM_KEYS.concat(PARAM_TYPES);
-      if (section === 'triggers') list = TRIGGER_KEYS;
-
-      if (/^\s*spider:\s*/.test(line)) {
-        list = SPIDERS;
-        start = line.indexOf(':') + 1;
-        while (line[start] === ' ') start++;
-      } else if (/^\s*type:\s*/.test(line) && section === 'params') {
-        list = PARAM_TYPES;
-        start = line.indexOf(':') + 1;
-        while (line[start] === ' ') start++;
-      } else if (/^\s*type:\s*/.test(line) && section === 'triggers') {
-        list = ['manual', 'schedule', 'chain'];
-        start = line.indexOf(':') + 1;
-        while (line[start] === ' ') start++;
-      }
-
-      var prefix = line.slice(start, end).trim();
-      list = list.filter(function (item) {
-        return !prefix || item.toLowerCase().indexOf(prefix.toLowerCase()) === 0;
+    require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs" } });
+    require(["vs/editor/editor.main", "vs/basic-languages/yaml/yaml.contribution"], function () {
+      monaco.editor.defineTheme("arachne-dracula", {
+        base: "vs-dark",
+        inherit: true,
+        rules: [
+          { token: "", foreground: "F8F8F2", background: "282A36" },
+          { token: "comment", foreground: "6272A4", fontStyle: "italic" },
+          { token: "string", foreground: "F1FA8C" },
+          { token: "number", foreground: "BD93F9" },
+          { token: "keyword", foreground: "FF79C6" },
+          { token: "type", foreground: "8BE9FD", fontStyle: "italic" },
+          { token: "tag", foreground: "FF79C6" },
+          { token: "key", foreground: "8BE9FD" }
+        ],
+        colors: {
+          "editor.background": "#282A36",
+          "editor.foreground": "#F8F8F2",
+          "editorLineNumber.foreground": "#6272A4",
+          "editorLineNumber.activeForeground": "#F8F8F2",
+          "editorCursor.foreground": "#F8F8F0",
+          "editor.selectionBackground": "#44475A",
+          "editor.inactiveSelectionBackground": "#44475A80",
+          "editor.lineHighlightBackground": "#44475A33",
+          "editorIndentGuide.background1": "#44475A",
+          "editorIndentGuide.activeBackground1": "#6272A4",
+          "editorBracketMatch.background": "#44475A",
+          "editorBracketMatch.border": "#8BE9FD",
+          "editorError.foreground": "#FF5555",
+          "editorWidget.background": "#282A36",
+          "editorWidget.border": "#6272A4",
+          "editorSuggestWidget.background": "#282A36",
+          "editorSuggestWidget.border": "#6272A4",
+          "editorSuggestWidget.selectedBackground": "#44475A"
+        }
       });
 
-      return {
-        list: list.map(function (text) { return {text: text, displayText: text.replace(/\n/g, ' ↵ ')}; }),
-        from: CodeMirror.Pos(cursor.line, start),
-        to: CodeMirror.Pos(cursor.line, end)
-      };
-    }
+      var model = monaco.editor.createModel(textarea.value, "yaml");
+      var editor = monaco.editor.create(container, {
+        model: model,
+        theme: "arachne-dracula",
+        fontFamily: "Inconsolata, monospace",
+        fontSize: 14,
+        fontWeight: "normal",
+        fontLigatures: false,
+        letterSpacing: 0,
+        lineHeight: 0,
+        lineNumbers: "on",
+        minimap: { enabled: false },
+        wordWrap: "off",
+        tabSize: 2,
+        insertSpaces: true,
+        detectIndentation: false,
+        automaticLayout: true,
+        scrollBeyondLastLine: false,
+        renderWhitespace: "selection",
+        bracketPairColorization: { enabled: true },
+        guides: { bracketPairs: true, indentation: true },
+        suggest: { showWords: false },
+        quickSuggestions: { other: true, comments: false, strings: true },
+        padding: { top: 12, bottom: 12 }
+      });
 
-    function addError(errors, message, line) {
-      errors.push({message: message, line: Math.max(0, Number(line) || 0)});
-    }
-
-    function lineForKey(key, fromLine) {
-      var escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      var rx = new RegExp('^\\s*(?:-\\s*)?' + escaped + '\\s*:');
-      for (var i = fromLine || 0; i < editor.lineCount(); i++) {
-        if (rx.test(editor.getLine(i))) return i;
+      function currentSection(lineNumber) {
+        for (var i = lineNumber; i >= 1; i--) {
+          var text = model.getLineContent(i);
+          if (/^steps:\s*$/.test(text)) return "steps";
+          if (/^params:\s*$/.test(text)) return "params";
+          if (/^triggers:\s*$/.test(text)) return "triggers";
+          if (/^\S/.test(text) && text.trim()) return "root";
+        }
+        return "root";
       }
-      return fromLine || 0;
-    }
 
-    function lintDsl(doc) {
-      var errors = [];
-      if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
-        addError(errors, 'Scenario definition must be a mapping.', 0);
+      monaco.languages.registerCompletionItemProvider("yaml", {
+        provideCompletionItems: function (completionModel, position) {
+          if (completionModel !== model) return { suggestions: [] };
+          var line = model.getLineContent(position.lineNumber);
+          var section = currentSection(position.lineNumber);
+          var list = section === "steps" ? STEP_KEYS.concat(SPIDERS) :
+            section === "params" ? PARAM_KEYS.concat(PARAM_TYPES) :
+            section === "triggers" ? TRIGGER_KEYS : ROOT_KEYS;
+          var word = model.getWordUntilPosition(position);
+          var startColumn = word.startColumn;
+
+          if (/^\s*spider:\s*/.test(line)) list = SPIDERS;
+          if (/^\s*type:\s*/.test(line) && section === "params") list = PARAM_TYPES;
+          if (/^\s*type:\s*/.test(line) && section === "triggers") list = ["manual", "schedule", "chain"];
+          if (/^\s*(spider|type):\s*/.test(line)) {
+            startColumn = line.indexOf(":") + 2;
+            while (line.charAt(startColumn - 1) === " ") startColumn++;
+          }
+
+          return {
+            suggestions: list.map(function (value) {
+              return {
+                label: value.replace(/\n/g, " ↵ "),
+                kind: monaco.languages.CompletionItemKind.Property,
+                insertText: value,
+                range: new monaco.Range(position.lineNumber, startColumn, position.lineNumber, position.column)
+              };
+            })
+          };
+        }
+      });
+
+      function addError(errors, message, line) {
+        errors.push({ message: message, line: Math.max(0, Number(line) || 0) });
+      }
+
+      function lineForKey(key, fromLine) {
+        var escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        var rx = new RegExp("^\\s*(?:-\\s*)?" + escaped + "\\s*:");
+        for (var i = Math.max(1, (fromLine || 0) + 1); i <= model.getLineCount(); i++) {
+          if (rx.test(model.getLineContent(i))) return i - 1;
+        }
+        return fromLine || 0;
+      }
+
+      function lintDsl(doc) {
+        var errors = [];
+        if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+          addError(errors, "Scenario definition must be a mapping.", 0);
+          return errors;
+        }
+        ["label", "component", "steps"].forEach(function (field) {
+          if (!(field in doc)) addError(errors, "Missing required field: " + field, 0);
+        });
+        if (!Array.isArray(doc.steps) || !doc.steps.length) {
+          addError(errors, "steps must be a non-empty list.", lineForKey("steps", 0));
+        }
+
+        var stepIds = {};
+        (Array.isArray(doc.steps) ? doc.steps : []).forEach(function (step, index) {
+          var line = lineForKey("id", lineForKey("steps", 0) + index);
+          if (!step || typeof step !== "object" || Array.isArray(step)) {
+            addError(errors, "Each step must be a mapping.", line);
+            return;
+          }
+          ["id", "spider", "action"].forEach(function (field) {
+            if (!step[field]) addError(errors, "Step " + (index + 1) + " is missing: " + field, line);
+          });
+          if (step.id) {
+            if (stepIds[step.id] !== undefined) addError(errors, "Duplicate step id: " + step.id, line);
+            stepIds[step.id] = index;
+          }
+          if (step.needs && !Array.isArray(step.needs)) addError(errors, "needs must be a list.", line);
+          if (step.with && (typeof step.with !== "object" || Array.isArray(step.with))) {
+            addError(errors, "with must be a mapping.", line);
+          }
+        });
+
+        var params = {};
+        (Array.isArray(doc.params) ? doc.params : []).forEach(function (param, index) {
+          var line = lineForKey("name", lineForKey("params", 0) + index);
+          if (!param || typeof param !== "object" || Array.isArray(param)) {
+            addError(errors, "Each param must be a mapping.", line);
+            return;
+          }
+          if (!param.name) addError(errors, "Param " + (index + 1) + " is missing: name", line);
+          if (!param.type) addError(errors, "Param " + (index + 1) + " is missing: type", line);
+          if (param.type && PARAM_TYPES.indexOf(param.type) < 0) addError(errors, "Unknown param type: " + param.type, line);
+          if (param.type === "choice" && (!Array.isArray(param.options) || !param.options.length)) {
+            addError(errors, "Choice param requires non-empty options.", line);
+          }
+          if (param.name) params[param.name] = true;
+        });
+
+        var refRx = /\$\{([^}]+)\}/g;
+        var match;
+        while ((match = refRx.exec(model.getValue()))) {
+          var ref = match[1];
+          var line = model.getPositionAt(match.index).lineNumber - 1;
+          if (ref.indexOf("params.") === 0) {
+            if (!params[ref.slice(7).split(".")[0]]) addError(errors, "Unknown parameter reference: " + ref, line);
+          } else if (stepIds[ref.split(".")[0]] === undefined) {
+            addError(errors, "Unknown step reference: " + ref, line);
+          }
+        }
         return errors;
       }
 
-      ['label', 'component', 'steps'].forEach(function (field) {
-        if (!(field in doc)) addError(errors, 'Missing required field: ' + field, 0);
+      function validateEditor() {
+        var errors = [];
+        try {
+          errors = lintDsl(window.jsyaml.load(model.getValue()));
+        } catch (error) {
+          addError(errors, error.reason || error.message || "Invalid YAML.", error && error.mark ? error.mark.line : 0);
+        }
+        monaco.editor.setModelMarkers(model, "arachne-dsl", errors.map(function (error) {
+          var lineNumber = Math.min(error.line + 1, model.getLineCount());
+          return {
+            severity: monaco.MarkerSeverity.Error,
+            message: error.message,
+            startLineNumber: lineNumber,
+            startColumn: 1,
+            endLineNumber: lineNumber,
+            endColumn: model.getLineMaxColumn(lineNumber)
+          };
+        }));
+        editorStatus.classList.remove("is-ok", "is-error");
+        editorStatus.classList.add(errors.length ? "is-error" : "is-ok");
+        editorStatus.querySelector("span:last-child").textContent = errors.length ?
+          errors.length + " DSL error" + (errors.length === 1 ? "" : "s") + ": " + errors[0].message :
+          "Valid YAML and Arachne DSL · " + model.getLineCount() + " lines";
+        return errors;
+      }
+
+      function syncTextarea() {
+        textarea.value = model.getValue();
+      }
+
+      function submitEditor() {
+        syncTextarea();
+        if (form.requestSubmit) form.requestSubmit(saveButton);
+        else form.submit();
+      }
+
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, submitEditor);
+      model.onDidChangeContent(function () {
+        syncTextarea();
+        window.clearTimeout(lintTimer);
+        lintTimer = window.setTimeout(validateEditor, 250);
       });
+      validateEditor();
 
-      if (!Array.isArray(doc.steps) || !doc.steps.length) {
-        addError(errors, 'steps must be a non-empty list.', lineForKey('steps', 0));
-      }
+      form.addEventListener("submit", async function (event) {
+        syncTextarea();
+        var submitter = event.submitter;
+        var targetAction = submitter && submitter.formAction ? submitter.formAction : form.action;
+        if (!targetAction.endsWith("/admin/scenarios/save")) return;
+        event.preventDefault();
+        saveStatus.classList.remove("is-error");
+        saveStatus.textContent = "";
 
-      var stepIds = {};
-      (Array.isArray(doc.steps) ? doc.steps : []).forEach(function (step, index) {
-        var approx = lineForKey('id', lineForKey('steps', 0) + index);
-        if (!step || typeof step !== 'object' || Array.isArray(step)) {
-          addError(errors, 'Each step must be a mapping.', approx);
-          return;
-        }
-        ['id', 'spider', 'action'].forEach(function (field) {
-          if (!step[field]) addError(errors, 'Step ' + (index + 1) + ' is missing: ' + field, approx);
-        });
-        if (step.id) {
-          if (stepIds[step.id] !== undefined) addError(errors, 'Duplicate step id: ' + step.id, approx);
-          stepIds[step.id] = index;
-        }
-        if (step.needs && !Array.isArray(step.needs)) addError(errors, 'needs must be a list.', approx);
-        if (step.with && (typeof step.with !== 'object' || Array.isArray(step.with))) {
-          addError(errors, 'with must be a mapping.', approx);
-        }
-      });
-
-      var params = {};
-      (Array.isArray(doc.params) ? doc.params : []).forEach(function (param, index) {
-        var approx = lineForKey('name', lineForKey('params', 0) + index);
-        if (!param || typeof param !== 'object' || Array.isArray(param)) {
-          addError(errors, 'Each param must be a mapping.', approx);
-          return;
-        }
-        if (!param.name) addError(errors, 'Param ' + (index + 1) + ' is missing: name', approx);
-        if (!param.type) addError(errors, 'Param ' + (index + 1) + ' is missing: type', approx);
-        if (param.type && PARAM_TYPES.indexOf(param.type) < 0) {
-          addError(errors, 'Unknown param type: ' + param.type, approx);
-        }
-        if (param.type === 'choice' && (!Array.isArray(param.options) || !param.options.length)) {
-          addError(errors, 'Choice param requires non-empty options.', approx);
-        }
-        if (param.name) params[param.name] = true;
-      });
-
-      var text = editor.getValue();
-      var refRx = /\$\{([^}]+)\}/g;
-      var match;
-      while ((match = refRx.exec(text))) {
-        var ref = match[1];
-        var line = editor.posFromIndex(match.index).line;
-        if (ref.indexOf('params.') === 0) {
-          var paramName = ref.slice(7).split('.')[0];
-          if (!params[paramName]) addError(errors, 'Unknown parameter reference: ' + ref, line);
-        } else {
-          var stepName = ref.split('.')[0];
-          if (stepIds[stepName] === undefined) addError(errors, 'Unknown step reference: ' + ref, line);
-        }
-      }
-
-      return errors;
-    }
-
-    function clearErrors() {
-      errorMarks.forEach(function (mark) { mark.clear(); });
-      errorMarks = [];
-      editor.clearGutter('dsl-errors');
-    }
-
-    function renderErrors(errors) {
-      clearErrors();
-      errors.forEach(function (error) {
-        var line = Math.min(error.line, editor.lineCount() - 1);
-        var marker = document.createElement('span');
-        marker.className = 'CodeMirror-guttermarker-subtle';
-        marker.textContent = '×';
-        marker.title = error.message;
-        editor.setGutterMarker(line, 'dsl-errors', marker);
-        errorMarks.push(editor.markText(
-          CodeMirror.Pos(line, 0),
-          CodeMirror.Pos(line, editor.getLine(line).length),
-          {className: 'CodeMirror-lint-mark-error', title: error.message}
-        ));
-      });
-
-      editorStatus.classList.remove('is-ok', 'is-error');
-      if (errors.length) {
-        editorStatus.classList.add('is-error');
-        editorStatus.querySelector('span:last-child').textContent =
-          errors.length + ' DSL error' + (errors.length === 1 ? '' : 's') + ': ' + errors[0].message;
-      } else {
-        editorStatus.classList.add('is-ok');
-        editorStatus.querySelector('span:last-child').textContent =
-          'Valid YAML and Arachne DSL · ' + editor.lineCount() + ' lines';
-      }
-    }
-
-    function validateEditor() {
-      var errors = [];
-      try {
-        var doc = window.jsyaml.load(editor.getValue());
-        errors = lintDsl(doc);
-      } catch (error) {
-        var line = error && error.mark ? error.mark.line : 0;
-        addError(errors, error.reason || error.message || 'Invalid YAML.', line);
-      }
-      renderErrors(errors);
-      return errors;
-    }
-
-    syncTheme();
-    new MutationObserver(syncTheme).observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme']
-    });
-
-    editor.on('change', function () {
-      window.clearTimeout(lintTimer);
-      lintTimer = window.setTimeout(validateEditor, 250);
-    });
-    validateEditor();
-
-    form.addEventListener('submit', async function (event) {
-      editor.save();
-
-      var submitter = event.submitter;
-      var targetAction = submitter && submitter.formAction ? submitter.formAction : form.action;
-      if (!targetAction.endsWith('/admin/scenarios/save')) return;
-
-      event.preventDefault();
-      saveStatus.classList.remove('is-error');
-      saveStatus.textContent = '';
-
-      var errors = validateEditor();
-      if (errors.length) {
-        showSaveError('Fix DSL errors before publishing.\n' + errors.map(function (e) {
-          return 'Line ' + (e.line + 1) + ': ' + e.message;
-        }).join('\n'));
-        editor.setCursor(errors[0].line, 0);
-        editor.focus();
-        return;
-      }
-
-      saveButton.disabled = true;
-      saveButton.style.filter = 'grayscale(.35)';
-
-      try {
-        var response = await fetch(form.action, {
-          method: 'POST',
-          body: new FormData(form),
-          credentials: 'same-origin'
-        });
-
-        if (!response.ok) {
-          showSaveError(await response.text());
+        var errors = validateEditor();
+        if (errors.length) {
+          saveStatus.textContent = "Fix DSL errors before publishing.\n" + errors.map(function (error) {
+            return "Line " + (error.line + 1) + ": " + error.message;
+          }).join("\n");
+          saveStatus.classList.add("is-error");
+          editor.setPosition({ lineNumber: errors[0].line + 1, column: 1 });
+          editor.revealLineInCenter(errors[0].line + 1);
+          editor.focus();
           return;
         }
 
-        var slug = String(new FormData(form).get('slug') || '').trim();
-        window.location.assign('/admin/scenarios/' + encodeURIComponent(slug) + '/edit');
-      } catch (error) {
-        showSaveError(error && error.message ? error.message : String(error));
-      } finally {
-        saveButton.disabled = false;
-        saveButton.style.filter = '';
-      }
+        saveButton.disabled = true;
+        saveButton.style.filter = "grayscale(.35)";
+        try {
+          var response = await fetch(form.action, {
+            method: "POST",
+            body: new FormData(form),
+            credentials: "same-origin"
+          });
+          if (!response.ok) {
+            saveStatus.textContent = await response.text();
+            saveStatus.classList.add("is-error");
+            return;
+          }
+          var slug = String(new FormData(form).get("slug") || "").trim();
+          window.location.assign("/admin/scenarios/" + encodeURIComponent(slug) + "/edit");
+        } catch (error) {
+          saveStatus.textContent = error && error.message ? error.message : String(error);
+          saveStatus.classList.add("is-error");
+        } finally {
+          saveButton.disabled = false;
+          saveButton.style.filter = "";
+        }
+      });
     });
   })();
 </script>
