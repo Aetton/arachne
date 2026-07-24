@@ -59,7 +59,9 @@ _preflight:
 .PHONY: up
 up: _preflight
 	$(DC) up -d --build
-	@echo "→ Arachne on http://localhost:8080"
+	@echo "→ Arachne: http://localhost:8080"
+	@echo "→ Wiki:    http://localhost:8080/wiki/"
+	@echo "→ API:     http://localhost:8080/docs"
 
 .PHONY: down
 down:
@@ -83,7 +85,7 @@ shell:
 update: _preflight
 	@git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git pull --ff-only || echo "→ not a git checkout, skipping pull"
 	$(DC) up -d --build
-	@echo "→ updated; tail with: make logs"
+	@echo "→ updated; wiki: http://localhost:8080/wiki/; logs: make logs"
 
 .PHONY: rebuild
 rebuild: _preflight
