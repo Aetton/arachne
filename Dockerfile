@@ -1,3 +1,12 @@
+FROM node:22-alpine AS docs-builder
+
+WORKDIR /docs
+COPY docs/package*.json ./
+RUN npm ci
+COPY docs/ ./
+ENV DOCS_BASE=/wiki/
+RUN npm run docs:build
+
 FROM python:3.12-slim
 
 # ansible + openssh-client for playbooks that provision/deploy over SSH.
@@ -19,6 +28,7 @@ COPY config/ ./config/
 COPY playbooks/ ./playbooks/
 COPY hubs/ ./hubs/
 COPY scripts/ ./scripts/
+COPY --from=docs-builder /docs/.vitepress/dist /app/wiki/
 
 RUN chmod +x api/runners/demo_play.sh \
     && chmod +x scripts/*.sh
