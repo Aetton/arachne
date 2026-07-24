@@ -5,7 +5,7 @@ export default defineConfig({
   base: process.env.DOCS_BASE || "/",
   description: "Documentation for the Arachne CI/CD orchestration portal",
   cleanUrls: true,
-  lastUpdated: true,
+  lastUpdated: process.env.DOCS_LAST_UPDATED !== "false",
   themeConfig: {
     nav: [
       { text: "Guide", link: "/getting-started/overview" },
