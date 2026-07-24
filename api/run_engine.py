@@ -29,10 +29,10 @@ from core.registry import load_plugins, all_triggers
 from core import orchestrator
 from core.types import LogLine, RunStatus
 
-_live: dict[str, list[dict]] = defaultdict(list)   # structured log records
+_live: dict[str, list[dict]] = defaultdict(list)
 _done: dict[str, bool] = {}
 _status: dict[str, RunStatus] = {}
-_arts: dict[str, list[dict]] = defaultdict(list)   # artifacts accumulated per run
+_arts: dict[str, list[dict]] = defaultdict(list)
 
 _initialized = False
 
@@ -101,7 +101,6 @@ def _log_sink(run_id: str, line: LogLine):
         "stream": line.stream,
         "text": line.text,
     })
-    # accumulate artifacts as they're announced (system lines: 'artifact: ...')
     if line.stream == "system" and line.text.startswith("artifact: "):
         body = line.text[len("artifact: "):]
         name = body.split(" [", 1)[0].strip()
@@ -136,9 +135,7 @@ def _start_task(run_id: str, scenario_key: str, scenario: dict, params: dict) ->
 async def fire_async(scenario_key: str, params: dict, source: str = "manual") -> str:
     scenario = _get_scenario(scenario_key)
     run_id = new_run_id()
-
     await asyncio.to_thread(_create_run, run_id, scenario_key, scenario, params)
-
     _live[run_id] = []
     _done[run_id] = False
     _status[run_id] = RunStatus.RUNNING
@@ -148,15 +145,10 @@ async def fire_async(scenario_key: str, params: dict, source: str = "manual") ->
 
 
 def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
-    """Synchronous compatibility entrypoint.
-
-    Prefer fire_async() from FastAPI routes and async scheduler jobs. This function
-    still requires an active event loop because it schedules the scenario task.
-    """
+    """Synchronous compatibility entrypoint."""
     scenario = _get_scenario(scenario_key)
     run_id = new_run_id()
     _create_run(run_id, scenario_key, scenario, params)
-
     _live[run_id] = []
     _done[run_id] = False
     _status[run_id] = RunStatus.RUNNING
@@ -175,9 +167,10 @@ def start_run(user_id: int, scenario_key: str, params: dict) -> str:
 
 async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict):
     clean = {k: v for k, v in params.items() if not k.startswith("__")}
+    user_id = params.get("__user_id__")
     try:
         status = await orchestrator.run_scenario(
-            run_id, scenario_key, scenario, clean, _log_sink)
+            run_id, scenario_key, scenario, clean, _log_sink, user_id=user_id)
     except Exception as exc:  # noqa: BLE001
         _live[run_id].append({"step_id": "", "seq": 0, "stream": "stderr",
                               "text": f"ARACHNE ERROR: {exc}"})
@@ -195,22 +188,18 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
 
 
 def live_records(run_id: str) -> list[dict]:
-    """Structured log records for the UI: [{step_id, seq, stream, text}]."""
     return _live.get(run_id, [])
 
 
 def live_lines(run_id: str) -> list[str]:
-    """Plain text log lines for the legacy SSE endpoint."""
     return [rec.get("text", "") for rec in _live.get(run_id, [])]
 
 
 def live_artifacts(run_id: str) -> list[dict]:
-    """Artifacts announced by a live or completed run."""
     return list(_arts.get(run_id, []))
 
 
 def get_status(run_id: str) -> RunStatus:
-    """Current in-memory status of a run started by this process."""
     return _status.get(run_id, RunStatus.PENDING)
 
 
