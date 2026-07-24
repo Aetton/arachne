@@ -45,9 +45,10 @@ def parse_steps(scenario: dict) -> list[StepSpec]:
 
 
 async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
-                       params: dict, log_sink: LogSink) -> RunStatus:
+                       params: dict, log_sink: LogSink,
+                       user_id: int | None = None) -> RunStatus:
     """Execute all steps. Returns the overall status."""
-    ctx = RunContext(params)
+    ctx = RunContext(params, user_id=user_id)
     steps = parse_steps(scenario)
 
     await events.emit(events.RUN_STARTED, {"scenario": scenario_key, "run_id": run_id})
@@ -68,7 +69,8 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
         def _on_log(text, stream, seq, step_id, _rid=run_id):
             log_sink(_rid, LogLine(text, stream, seq=seq, step_id=step_id))
 
-        result = await run_step(run_id, step.kind, step.spider, step_dict, _on_log)
+        result = await run_step(run_id, step.kind, step.spider, step_dict, _on_log,
+                                context={"user_id": ctx.user_id})
 
         status = result["status"]
         artifacts = result["artifacts"]

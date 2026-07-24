@@ -21,8 +21,11 @@ _UNRESOLVED = re.compile(r"\$\{[^{}]+\}")
 
 
 class RunContext:
-    def __init__(self, params: dict):
+    def __init__(self, params: dict, *, user_id: int | None = None):
         self.params = params
+        # Internal execution metadata is deliberately separate from params so it
+        # cannot be referenced from scenario DSL as ${params.__user_id__}.
+        self.user_id = user_id
         self.steps: dict[str, StepResult] = {}
 
     def record(self, result: StepResult):

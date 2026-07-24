@@ -40,10 +40,17 @@ class ScenarioSpider(BuildSpider):
         if not isinstance(params, dict):
             raise ValueError("scenario spider with.params must be a mapping")
 
+        user_id = (ctx or {}).get("user_id")
+        if not isinstance(user_id, int) or user_id <= 0:
+            raise ValueError("scenario spider requires a valid parent run owner")
+
+        child_params = dict(params)
+        child_params["__user_id__"] = user_id
+
         ext = f"scenario:{step.id}:{id(step):x}"
         self._runs[ext] = {
             "scenario": scenario_key,
-            "params": params,
+            "params": child_params,
             "child_run_id": None,
             "status": RunStatus.PENDING,
             "artifacts": [],
@@ -52,11 +59,10 @@ class ScenarioSpider(BuildSpider):
         return RunHandle(
             spider=self.NAME,
             external_id=ext,
-            metadata={"scenario": scenario_key},
+            metadata={"scenario": scenario_key, "user_id": user_id},
         )
 
     async def stream_logs(self, handle: RunHandle) -> AsyncIterator[LogLine]:
-        # Late import avoids a module cycle while run_engine is loading plugins.
         import run_engine
 
         state = self._runs[handle.external_id]
@@ -97,7 +103,6 @@ class ScenarioSpider(BuildSpider):
                 break
             await asyncio.sleep(0.2)
 
-        # Drain records appended between the last poll and completion.
         records = run_engine.live_records(child_run_id)
         for record in records[offset:]:
             child_step = record.get("step_id") or "scenario"

@@ -20,7 +20,7 @@ LogCB = Callable[[str, str, int, str], None]
 
 
 async def run_step(run_id: str, kind: str, spider_name: str, step_dict: dict,
-                   on_log: LogCB) -> dict:
+                   on_log: LogCB, context: dict | None = None) -> dict:
     """Run one step through the bus. Returns
     {status: RunStatus, handle, artifacts, error: dict|None}."""
     bus = get_bus()
@@ -33,7 +33,12 @@ async def run_step(run_id: str, kind: str, spider_name: str, step_dict: dict,
 
     subscription = await bus.subscribe(log_subject, _log_handler)
     try:
-        payload = {"run_id": run_id, "spider": spider_name, "step": step_dict}
+        payload = {
+            "run_id": run_id,
+            "spider": spider_name,
+            "step": step_dict,
+            "context": context or {},
+        }
         result = await bus.request(subjects.run(kind, spider_name), payload,
                                    timeout=STEP_TIMEOUT)
     finally:
