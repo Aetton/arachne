@@ -4,7 +4,8 @@ WORKDIR /docs
 COPY docs/package*.json ./
 RUN npm ci
 COPY docs/ ./
-ENV DOCS_BASE=/wiki/
+ENV DOCS_BASE=/wiki/ \
+    DOCS_LAST_UPDATED=false
 RUN npm run docs:build
 
 FROM python:3.12-slim
