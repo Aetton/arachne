@@ -111,10 +111,38 @@ not be bolted onto runtime reference resolution.
 
 ## Running another scenario
 
-Use the `scenario` spider when one scenario must run other scenarios explicitly as
+Use the `scenario` spider when one scenario must run another scenario as one of its
 ordered steps. Unlike a `chain` trigger, this keeps orchestration inside the parent
 run, passes parameters deliberately, streams child logs, waits for completion, and
-propagates child failure to the parent.
+propagates the child terminal status to the parent step.
+
+### Minimal form
+
+```yaml
+steps:
+  - id: build-auth
+    spider: scenario
+    action: run
+    with:
+      scenario: build-broker-auth
+```
+
+The supported action is `run`. Other action names are not part of the scenario
+spider contract and must not be used.
+
+### Inputs
+
+`with.scenario`
+: Required. Exact slug of the published child scenario. It must be a non-empty
+  string. An unknown or unavailable slug fails the parent step when Arachne tries to
+  start the child run.
+
+`with.params`
+: Optional mapping passed to the child scenario. When omitted, the child receives an
+  empty parameter mapping. Values are resolved through the normal `${...}` mechanism
+  before dispatch, including nested mappings and lists.
+
+Example with explicit parameter forwarding:
 
 ```yaml
 steps:
@@ -127,24 +155,106 @@ steps:
         version: "${params.version}"
         release: "${params.release}"
         branch: "${params.branch}"
+```
+
+`with.params` must be a mapping. Lists, strings, numbers, and other scalar values are
+rejected.
+
+Parameters are not forwarded automatically. Every value required by the child must
+be declared explicitly under `with.params`:
+
+```yaml
+# Parent parameter "version" is forwarded.
+params:
+  version: "${params.version}"
+```
+
+### Execution and logs
+
+The child is created as a regular persisted Arachne run with its own run ID, scenario
+snapshot, history entry, logs, status, and artifacts. The parent step waits until the
+child reaches a terminal state.
+
+Child log records are copied into the parent step and prefixed with the child
+scenario and child step identifiers:
+
+```text
+[build-broker-auth/checkout] cloning repository
+[build-broker-auth/build] compilation complete
+```
+
+This keeps the complete orchestration visible from the parent run while preserving
+the child as an independently inspectable run.
+
+### Status propagation
+
+The child terminal status becomes the status of the parent `scenario` step:
+
+- `success` lets the parent continue to its next step;
+- `failed` fails the parent step and stops normal sequential execution;
+- `cancelled` marks the parent step cancelled and stops normal sequential execution.
+
+Because ordinary scenario steps are sequential, a list of `scenario` steps runs one
+child after another. The next child starts only after the previous child returns
+`success`.
+
+```yaml
+steps:
+  - id: build-auth
+    spider: scenario
+    action: run
+    with:
+      scenario: build-broker-auth
 
   - id: build-gateway
     spider: scenario
     action: run
     with:
       scenario: build-broker-gateway
-      params:
-        version: "${params.version}"
-        release: "${params.release}"
-        branch: "${params.branch}"
 ```
 
-`with.scenario` is the exact child scenario slug. `with.params` is an optional
-mapping passed to the child run after normal `${...}` resolution. Child scenarios
-are regular persisted runs with their own run IDs and history records.
+### Artifacts
 
-Steps remain sequential: the next child scenario starts only after the previous one
-returns `success`. A failed or cancelled child stops the parent scenario.
+Artifacts produced by the child are exposed as artifacts of the parent step after
+the child completes. Each copied artifact includes metadata identifying its origin:
 
-The detailed field-by-field schema will be moved here from the scenario methodical
-guide once that guide is present in the repository.
+- `scenario`: child scenario slug;
+- `child_run_id`: persisted child run ID.
+
+The artifact name, type, and download URL are preserved when available.
+
+### `scenario` spider versus `chain` trigger
+
+Use `scenario` when the parent owns the orchestration:
+
+- the child is an explicit ordered step;
+- parameters are passed deliberately;
+- the parent waits for the child;
+- logs and artifacts are visible in the parent;
+- child failure affects the parent.
+
+Use `chain` when a completed run should independently trigger another scenario:
+
+- the downstream run is event-driven;
+- it is not an ordered step of the upstream scenario;
+- the upstream run does not wait for it;
+- the downstream result does not alter the already completed upstream run.
+
+### Current limitations
+
+The current implementation has the following limits:
+
+- cancelling the parent run does not yet propagate cancellation to an already
+  running child scenario;
+- recursive orchestration is not yet guarded, so a scenario can directly or
+  indirectly invoke itself; authors must avoid cycles;
+- child execution and live log forwarding currently depend on the child run being
+  available through the same in-process run engine;
+- access checks are performed when a user starts the parent scenario, but the
+  internal child dispatch does not currently perform a separate child ACL check;
+- caller identity is not yet propagated into the child run, so audit ownership of
+  internally launched children requires further work.
+
+These are runtime limitations, not supported DSL features. Scenario authors should
+keep orchestration acyclic and avoid relying on parent cancellation until explicit
+child cancellation is implemented.
