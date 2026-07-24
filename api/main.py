@@ -77,7 +77,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Arachne", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-app.mount("/wiki", StaticFiles(directory=WIKI_DIR, html=True), name="wiki")
+if os.path.isdir(WIKI_DIR):
+    app.mount("/wiki", StaticFiles(directory=WIKI_DIR, html=True), name="wiki")
 
 
 @app.get("/healthz")
