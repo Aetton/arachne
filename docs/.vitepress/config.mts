@@ -2,6 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "Arachne",
+  base: process.env.DOCS_BASE || "/",
   description: "Documentation for the Arachne CI/CD orchestration portal",
   cleanUrls: true,
   lastUpdated: true,

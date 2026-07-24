@@ -36,6 +36,7 @@ from pydantic import BaseModel
 BASE_DIR = os.path.dirname(__file__)
 TEMPLATES_DIR = os.path.join(BASE_DIR, "..", "frontend", "templates")
 STATIC_DIR = os.path.join(BASE_DIR, "..", "frontend", "static")
+WIKI_DIR = os.path.join(BASE_DIR, "..", "wiki")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
@@ -76,6 +77,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Arachne", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if os.path.isdir(WIKI_DIR):
+    app.mount("/wiki", StaticFiles(directory=WIKI_DIR, html=True), name="wiki")
 
 
 @app.get("/healthz")

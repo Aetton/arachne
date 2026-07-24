@@ -34,5 +34,7 @@ tofu/**/terraform.tfstate*
 api/.git/
 **/.git/
 
-
-
+# Documentation build artifacts
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
