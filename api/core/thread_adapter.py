@@ -29,7 +29,7 @@ def _run_key(run_id: str, step_id: str) -> str:
     return f"{run_id}:{step_id}"
 
 
-async def _execute(spider, step, run_id: str, emit_log) -> dict:
+async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
     """Drive one spider through one step. Returns the wire result dict."""
     seq = 0
 
@@ -40,7 +40,7 @@ async def _execute(spider, step, run_id: str, emit_log) -> dict:
 
     # dispatch can do blocking backend I/O; keep it off the event loop.
     try:
-        handle = await asyncio.to_thread(spider.dispatch, step, None)
+        handle = await asyncio.to_thread(spider.dispatch, step, context)
     except Exception as exc:  # noqa: BLE001
         await log(f"PORTAL ERROR dispatching {step.id}: {exc}", "stderr")
         return {"status": RunStatus.FAILED.value, "handle": None, "artifacts": [],
@@ -54,8 +54,6 @@ async def _execute(spider, step, run_id: str, emit_log) -> dict:
         async for line in spider.stream_logs(handle):
             await log(line.text, line.stream)
     except asyncio.CancelledError:
-        # cancel signal arrived — let the spider cut its own thread. It may do
-        # backend I/O too, so run cleanup in a worker thread.
         try:
             await asyncio.to_thread(spider.cancel, handle)
         except Exception as exc:  # noqa: BLE001
@@ -75,7 +73,6 @@ async def _execute(spider, step, run_id: str, emit_log) -> dict:
         "error": None,
     }
     if status == RunStatus.FAILED:
-        # spiders may stash a reason on the handle metadata
         reason = handle.metadata.get("error") if handle.metadata else None
         result["error"] = RunError(
             "BackendError",
@@ -90,6 +87,7 @@ def _make_run_responder(expected_kind: str):
         spider_name = payload["spider"]
         run_id = payload["run_id"]
         step = wire_codec.step_from_dict(payload["step"])
+        context = payload.get("context") or {}
         log_subject = subjects.log(run_id, step.id)
 
         async def emit_log(text, stream, seq, step_id):
@@ -107,7 +105,7 @@ def _make_run_responder(expected_kind: str):
                     "error": RunError("UnknownSpider", str(exc)).to_dict()}
 
         key = _run_key(run_id, step.id)
-        task = asyncio.create_task(_execute(spider, step, run_id, emit_log))
+        task = asyncio.create_task(_execute(spider, step, run_id, emit_log, context))
         _active[key] = {"task": task, "spider": spider, "handle": None}
         try:
             return await task
@@ -117,8 +115,6 @@ def _make_run_responder(expected_kind: str):
 
 
 async def _cancel_handler(payload: dict):
-    """Cut a running thread. Cancelling the task raises CancelledError inside
-    _execute, where the spider cleans up its own anchor."""
     key = _run_key(payload["run_id"], payload.get("step_id", ""))
     entry = _active.get(key)
     if entry and not entry["task"].done():
@@ -126,7 +122,6 @@ async def _cancel_handler(payload: dict):
 
 
 async def expose(spider):
-    """Register one spider's run + cancel handlers on the bus."""
     bus = get_bus()
     await bus.reply(subjects.run(spider.KIND, spider.NAME),
                     _make_run_responder(spider.KIND))
@@ -134,7 +129,5 @@ async def expose(spider):
 
 
 async def expose_all():
-    """Expose every locally-registered spider. Single-process: call at startup.
-    Multi-process: each host exposes only the spiders it runs."""
     for spider in all_spiders().values():
         await expose(spider)
