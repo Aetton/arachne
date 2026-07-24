@@ -10,6 +10,8 @@ Public interface:
     fire_async(scenario_key, params, source) -> run_id
     live_records(run_id) -> list[dict]
     live_lines(run_id) -> list[str]
+    live_artifacts(run_id) -> list[dict]
+    get_status(run_id) -> RunStatus
     is_done(run_id) -> bool
 """
 from __future__ import annotations
@@ -29,6 +31,7 @@ from core.types import LogLine, RunStatus
 
 _live: dict[str, list[dict]] = defaultdict(list)   # structured log records
 _done: dict[str, bool] = {}
+_status: dict[str, RunStatus] = {}
 _arts: dict[str, list[dict]] = defaultdict(list)   # artifacts accumulated per run
 
 _initialized = False
@@ -138,6 +141,7 @@ async def fire_async(scenario_key: str, params: dict, source: str = "manual") ->
 
     _live[run_id] = []
     _done[run_id] = False
+    _status[run_id] = RunStatus.RUNNING
     _arts[run_id] = []
     _start_task(run_id, scenario_key, scenario, params)
     return run_id
@@ -155,6 +159,7 @@ def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
 
     _live[run_id] = []
     _done[run_id] = False
+    _status[run_id] = RunStatus.RUNNING
     _arts[run_id] = []
     _start_task(run_id, scenario_key, scenario, params)
     return run_id
@@ -185,6 +190,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
         list(_live[run_id]),
         list(_arts[run_id]),
     )
+    _status[run_id] = status
     _done[run_id] = True
 
 
@@ -196,6 +202,16 @@ def live_records(run_id: str) -> list[dict]:
 def live_lines(run_id: str) -> list[str]:
     """Plain text log lines for the legacy SSE endpoint."""
     return [rec.get("text", "") for rec in _live.get(run_id, [])]
+
+
+def live_artifacts(run_id: str) -> list[dict]:
+    """Artifacts announced by a live or completed run."""
+    return list(_arts.get(run_id, []))
+
+
+def get_status(run_id: str) -> RunStatus:
+    """Current in-memory status of a run started by this process."""
+    return _status.get(run_id, RunStatus.PENDING)
 
 
 def is_done(run_id: str) -> bool:
