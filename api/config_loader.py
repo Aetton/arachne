@@ -1,5 +1,6 @@
 """Compatibility facade for database-backed scenario configuration."""
 from database import Component, SessionLocal
+import input_sources
 import scenario_store
 
 
@@ -25,7 +26,9 @@ def all_components() -> dict:
 def get_scenario(key: str) -> dict | None:
     with SessionLocal() as db:
         item = scenario_store.get_published(db, key)
-        return dict(item[1].definition) if item else None
+        if not item:
+            return None
+        return input_sources.enrich_scenario_inputs(dict(item[1].definition))
 
 
 def scenarios_for_components(components: list[str]) -> dict:
