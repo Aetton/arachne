@@ -2,6 +2,32 @@
 {% block title %}Dashboard · Arachne{% endblock %}
 {% block content %}
 <style>
+  .operator-shell {
+    display: grid;
+    grid-template-columns: minmax(320px, 38%) minmax(0, 62%);
+    gap: 1rem;
+    align-items: start;
+  }
+  .operator-column {
+    min-height: 0;
+    max-height: calc(100vh - 7rem);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+  .operator-nav {
+    padding-right: .35rem;
+  }
+  .operator-workspace {
+    position: sticky;
+    top: 1rem;
+  }
+  .workspace-empty {
+    min-height: 22rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
   .scenario-card {
     --scenario-accent: #6366f1;
     box-shadow: inset 3px 0 0 var(--scenario-accent);
@@ -24,55 +50,72 @@
   .scenario-group summary::-webkit-details-marker { display: none; }
   .scenario-group-chevron { transition: transform .15s ease; }
   .scenario-group[open] .scenario-group-chevron { transform: rotate(90deg); }
+
+  @media (max-width: 900px) {
+    .operator-shell { grid-template-columns: 1fr; }
+    .operator-column { max-height: none; overflow: visible; }
+    .operator-workspace { position: static; }
+  }
 </style>
 
-<div class="flex items-end justify-between gap-4 mb-5">
-  <div>
-    <h1 class="text-xl font-semibold mb-1">Scenarios</h1>
-    <p class="muted text-sm">Pick a build or deployment scenario to run.</p>
-  </div>
-  <input id="scenario-search" type="search" placeholder="Search scenarios…"
-         aria-label="Search scenarios" style="max-width:20rem">
-</div>
-
-{% for group in scenario_groups %}
-<details class="scenario-group mb-6" data-component="{{ group.component.slug }}" open>
-  <summary class="flex items-center gap-2 mb-3">
-    <i class="ti ti-chevron-right scenario-group-chevron muted"></i>
-    <i class="ti {{ group.component.icon or 'ti-box' }} accent"></i>
-    <h2 class="text-lg font-semibold">{{ group.component.label }}</h2>
-    <span class="muted text-xs">· <span class="scenario-group-count">{{ group.scenarios|length }}</span></span>
-  </summary>
-  <div class="scenario-group-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-  {% for item in group.scenarios %}
-  {% set key = item.slug %}
-  {% set s = item.definition %}
-  <button hx-get="/scenarios/{{ key }}/form" hx-target="#panel" hx-swap="innerHTML"
-          data-search="{{ key }} {{ s.label }} {{ group.component.slug }} {{ group.component.label }}"
-          class="scenario-card scenario-accent-{{ s.accent or 'indigo' }} surface rounded-xl p-4 text-left hover:brightness-110 transition"
-          style="border-color: var(--border);">
-    <div class="flex items-center gap-2 mb-1.5">
-      <i class="ti {{ s.icon or 'ti-box' }} text-lg scenario-icon"></i>
-      <span class="font-medium">{{ s.label }}</span>
+<div class="operator-shell">
+  <aside class="operator-column operator-nav">
+    <div class="surface rounded-xl p-4 mb-4">
+      <div class="flex items-end justify-between gap-3 mb-4">
+        <div>
+          <h1 class="text-xl font-semibold mb-1">Scenarios</h1>
+          <p class="muted text-sm">Launch builds and deployments.</p>
+        </div>
+      </div>
+      <input id="scenario-search" type="search" placeholder="Search scenarios…"
+             aria-label="Search scenarios">
     </div>
-    <p class="muted text-xs">{{ s.component }}</p>
-  </button>
-  {% endfor %}
-  </div>
-</details>
-{% else %}
-<p class="muted text-sm mb-10">No scenarios are available.</p>
-{% endfor %}
 
-<div id="panel"></div>
+    {% for group in scenario_groups %}
+    <details class="scenario-group mb-4" data-component="{{ group.component.slug }}" open>
+      <summary class="flex items-center gap-2 mb-2 px-1">
+        <i class="ti ti-chevron-right scenario-group-chevron muted"></i>
+        <i class="ti {{ group.component.icon or 'ti-box' }} accent"></i>
+        <h2 class="font-semibold">{{ group.component.label }}</h2>
+        <span class="muted text-xs">· <span class="scenario-group-count">{{ group.scenarios|length }}</span></span>
+      </summary>
+      <div class="scenario-group-grid grid grid-cols-1 gap-2">
+      {% for item in group.scenarios %}
+      {% set key = item.slug %}
+      {% set s = item.definition %}
+      <button hx-get="/scenarios/{{ key }}/form" hx-target="#workspace" hx-swap="innerHTML"
+              data-search="{{ key }} {{ s.label }} {{ group.component.slug }} {{ group.component.label }}"
+              class="scenario-card scenario-accent-{{ s.accent or 'indigo' }} surface rounded-xl p-3 text-left hover:brightness-110 transition"
+              style="border-color: var(--border);">
+        <div class="flex items-center gap-2 mb-1">
+          <i class="ti {{ s.icon or 'ti-box' }} scenario-icon"></i>
+          <span class="font-medium text-sm">{{ s.label }}</span>
+        </div>
+        <p class="muted text-xs">{{ s.component }}</p>
+      </button>
+      {% endfor %}
+      </div>
+    </details>
+    {% else %}
+    <p class="muted text-sm mb-6">No scenarios are available.</p>
+    {% endfor %}
 
-<div class="flex items-center justify-between mt-8 mb-3">
-  <h2 class="text-lg font-semibold">Recent runs</h2>
-  <button class="btn-ghost text-xs" hx-get="/runs/history" hx-target="#history" hx-swap="innerHTML">
-    <i class="ti ti-refresh"></i> Refresh
-  </button>
-</div>
-<div id="history" hx-get="/runs/history" hx-trigger="load, runStarted from:body delay:500ms">
+    <div id="run-list"
+         hx-get="/runs/history"
+         hx-trigger="load, every 3s, runStarted from:body delay:300ms"
+         hx-swap="innerHTML">
+    </div>
+  </aside>
+
+  <section id="workspace" class="operator-column operator-workspace">
+    <div class="surface rounded-xl workspace-empty p-8">
+      <div>
+        <i class="ti ti-layout-dashboard text-3xl accent"></i>
+        <h2 class="font-semibold mt-3 mb-1">Workspace</h2>
+        <p class="muted text-sm">Select a scenario or an active run.</p>
+      </div>
+    </div>
+  </section>
 </div>
 
 {% endblock %}
