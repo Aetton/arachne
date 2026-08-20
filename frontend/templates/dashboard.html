@@ -67,6 +67,8 @@
 <script>
   (function () {
     var groups = Array.from(document.querySelectorAll('.scenario-group'));
+    var scenarioCards = Array.from(document.querySelectorAll('.scenario-card'));
+
     groups.forEach(function (group) {
       var key = 'arachne-component-open:' + group.dataset.component;
       try {
@@ -75,6 +77,13 @@
       } catch (e) {}
       group.addEventListener('toggle', function () {
         try { localStorage.setItem(key, String(group.open)); } catch (e) {}
+      });
+    });
+
+    scenarioCards.forEach(function (card) {
+      card.addEventListener('click', function () {
+        scenarioCards.forEach(function (item) { item.classList.remove('is-selected'); });
+        card.classList.add('is-selected');
       });
     });
 
