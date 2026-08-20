@@ -15,10 +15,21 @@
       <label class="block text-sm muted mb-1">
         {{ p.label }}{% if p.required %} <span class="accent">*</span>{% endif %}
       </label>
-      {% if p.type == "choice" %}
-        <select name="{{ p.name }}">
-          {% for opt in p.options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+      {% if p.type == "choice" or p.type == "select" %}
+        <select name="{{ p.name }}"
+                {% if p.required %}required{% endif %}
+                {% if p.source_error %}disabled{% endif %}>
+          {% if p.source_error %}
+            <option value="" selected>Unable to load options</option>
+          {% else %}
+            {% for opt in p.options %}
+              <option value="{{ opt }}" {% if opt == p.default %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          {% endif %}
         </select>
+        {% if p.source_error %}
+          <div class="text-xs muted mt-1">{{ p.source_error }}</div>
+        {% endif %}
       {% elif p.type == "boolean" %}
         <label class="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" name="{{ p.name }}" value="true" style="width:auto;"
