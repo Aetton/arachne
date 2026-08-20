@@ -3,12 +3,12 @@
     <h3 class="font-semibold flex items-center gap-2">
       <i class="ti {{ s.icon or 'ti-box' }} accent"></i> {{ s.label }}
     </h3>
-    <button class="muted hover:opacity-70" onclick="document.getElementById('panel').innerHTML=''">
+    <button class="muted hover:opacity-70" onclick="document.getElementById('workspace').innerHTML=''">
       <i class="ti ti-x"></i>
     </button>
   </div>
 
-  <form hx-post="/scenarios/{{ key }}/run" hx-target="#panel" hx-swap="innerHTML"
+  <form hx-post="/scenarios/{{ key }}/run" hx-target="#workspace" hx-swap="innerHTML"
         class="space-y-4">
     {% for p in s.params %}
     <div>
@@ -48,7 +48,7 @@
         <i class="ti ti-player-play"></i> Run
       </button>
       <button type="button" class="btn-ghost flex-1"
-              onclick="document.getElementById('panel').innerHTML=''">Cancel</button>
+              onclick="document.getElementById('workspace').innerHTML=''">Cancel</button>
     </div>
   </form>
 </div>
