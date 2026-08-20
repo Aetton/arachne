@@ -1,103 +1,48 @@
 {% extends "base.html" %}
-{% block title %}Dashboard · Arachne{% endblock %}
+{% block title %}Web · Arachne{% endblock %}
 {% block content %}
-<style>
-  .operator-shell {
-    display: grid;
-    grid-template-columns: minmax(320px, 38%) minmax(0, 62%);
-    gap: 1rem;
-    align-items: start;
-  }
-  .operator-column {
-    min-height: 0;
-    max-height: calc(100vh - 7rem);
-    overflow-y: auto;
-  }
-  .operator-nav {
-    padding-right: .35rem;
-  }
-  .operator-workspace {
-    position: sticky;
-    top: 1rem;
-  }
-  .workspace-empty {
-    min-height: 22rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-  }
-  .scenario-card {
-    --scenario-accent: #6366f1;
-    box-shadow: inset 3px 0 0 var(--scenario-accent);
-  }
-  .scenario-card .scenario-icon { color: var(--scenario-accent); }
-  .scenario-accent-red { --scenario-accent: #ff5555; }
-  .scenario-accent-orange { --scenario-accent: #ffb86c; }
-  .scenario-accent-yellow { --scenario-accent: #f1fa8c; }
-  .scenario-accent-green { --scenario-accent: #50fa7b; }
-  .scenario-accent-teal { --scenario-accent: #4fd6be; }
-  .scenario-accent-cyan { --scenario-accent: #8be9fd; }
-  .scenario-accent-blue { --scenario-accent: #6ea8fe; }
-  .scenario-accent-indigo { --scenario-accent: #6366f1; }
-  .scenario-accent-purple { --scenario-accent: #bd93f9; }
-  .scenario-accent-pink { --scenario-accent: #ff79c6; }
-  .scenario-group summary {
-    list-style: none;
-    cursor: pointer;
-  }
-  .scenario-group summary::-webkit-details-marker { display: none; }
-  .scenario-group-chevron { transition: transform .15s ease; }
-  .scenario-group[open] .scenario-group-chevron { transform: rotate(90deg); }
-
-  @media (max-width: 900px) {
-    .operator-shell { grid-template-columns: 1fr; }
-    .operator-column { max-height: none; overflow: visible; }
-    .operator-workspace { position: static; }
-  }
-</style>
-
 <div class="operator-shell">
   <aside class="operator-column operator-nav">
-    <div class="surface rounded-xl p-4 mb-4">
-      <div class="flex items-end justify-between gap-3 mb-4">
+    <section class="web-section">
+      <div class="web-section-head">
         <div>
-          <h1 class="text-xl font-semibold mb-1">Scenarios</h1>
-          <p class="muted text-sm">Launch builds and deployments.</p>
+          <div class="eyebrow">Scenario web</div>
         </div>
+        <span class="web-count">{{ scenario_groups | map(attribute='scenarios') | map('length') | sum }}</span>
       </div>
-      <input id="scenario-search" type="search" placeholder="Search scenarios…"
-             aria-label="Search scenarios">
-    </div>
+      <div class="scenario-search-shell">
+        <i class="ti ti-search"></i>
+        <input id="scenario-search" type="search" placeholder="Search the web…" aria-label="Search scenarios">
+      </div>
 
-    {% for group in scenario_groups %}
-    <details class="scenario-group mb-4" data-component="{{ group.component.slug }}" open>
-      <summary class="flex items-center gap-2 mb-2 px-1">
-        <i class="ti ti-chevron-right scenario-group-chevron muted"></i>
-        <i class="ti {{ group.component.icon or 'ti-box' }} accent"></i>
-        <h2 class="font-semibold">{{ group.component.label }}</h2>
-        <span class="muted text-xs">· <span class="scenario-group-count">{{ group.scenarios|length }}</span></span>
-      </summary>
-      <div class="scenario-group-grid grid grid-cols-1 gap-2">
-      {% for item in group.scenarios %}
-      {% set key = item.slug %}
-      {% set s = item.definition %}
-      <button hx-get="/scenarios/{{ key }}/form" hx-target="#workspace" hx-swap="innerHTML"
-              data-search="{{ key }} {{ s.label }} {{ group.component.slug }} {{ group.component.label }}"
-              class="scenario-card scenario-accent-{{ s.accent or 'indigo' }} surface rounded-xl p-3 text-left hover:brightness-110 transition"
-              style="border-color: var(--border);">
-        <div class="flex items-center gap-2 mb-1">
-          <i class="ti {{ s.icon or 'ti-box' }} scenario-icon"></i>
-          <span class="font-medium text-sm">{{ s.label }}</span>
+      {% for group in scenario_groups %}
+      <details class="scenario-group" data-component="{{ group.component.slug }}" open>
+        <summary>
+          <i class="ti ti-chevron-right scenario-group-chevron"></i>
+          <i class="ti {{ group.component.icon or 'ti-box' }} group-icon"></i>
+          <span class="group-label">{{ group.component.label }}</span>
+          <span class="web-count scenario-group-count">{{ group.scenarios|length }}</span>
+        </summary>
+        <div class="scenario-list">
+          {% for item in group.scenarios %}
+          {% set key = item.slug %}
+          {% set s = item.definition %}
+          <button hx-get="/scenarios/{{ key }}/form" hx-target="#workspace" hx-swap="innerHTML"
+                  data-search="{{ key }} {{ s.label }} {{ group.component.slug }} {{ group.component.label }}"
+                  class="scenario-card scenario-accent-{{ s.accent or 'indigo' }}">
+            <span class="min-w-0">
+              <span class="scenario-title block">{{ s.label }}</span>
+              <span class="scenario-component block">{{ s.component }}</span>
+            </span>
+            <i class="ti {{ s.icon or 'ti-point' }} scenario-icon"></i>
+          </button>
+          {% endfor %}
         </div>
-        <p class="muted text-xs">{{ s.component }}</p>
-      </button>
+      </details>
+      {% else %}
+      <div class="run-empty">No scenarios are available.</div>
       {% endfor %}
-      </div>
-    </details>
-    {% else %}
-    <p class="muted text-sm mb-6">No scenarios are available.</p>
-    {% endfor %}
+    </section>
 
     <div id="run-list"
          hx-get="/runs/history"
@@ -107,17 +52,17 @@
   </aside>
 
   <section id="workspace" class="operator-column operator-workspace">
-    <div class="surface rounded-xl workspace-empty p-8">
-      <div>
-        <i class="ti ti-layout-dashboard text-3xl accent"></i>
-        <h2 class="font-semibold mt-3 mb-1">Workspace</h2>
-        <p class="muted text-sm">Select a scenario or an active run.</p>
+    <div class="workspace-frame workspace-empty">
+      <div class="web-sigil">
+        <div class="web-sigil-node"><i class="ti ti-spider"></i></div>
+        <h2>No thread selected</h2>
+        <p>Pick a scenario to spin a new thread.</p>
       </div>
     </div>
   </section>
 </div>
-
 {% endblock %}
+
 {% block scripts %}
 <script>
   (function () {
