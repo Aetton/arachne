@@ -1,84 +1,100 @@
-"""BuildSpider (Arachne thread → Forgejo).
+"""Forgejo v16 BuildSpider.
 
-Pluck model. On dispatch the spider:
-  1. plucks a thread on the switchboard → one-time token
-  2. POSTs the workflow dispatch, injecting build_id + callback_url + token
-  3. asks Forgejo to return run metadata when supported
-  4. waits for Arachne hub telemetry from workflow actions
+The spider uses Forgejo's Actions HTTP API end-to-end:
+  1. dispatch workflow and bind the returned run id
+  2. poll workflow state and logs directly from Forgejo
+  3. collect Forgejo Actions artifacts after completion
+  4. cancel the workflow through Forgejo's cancel endpoint
 
-Forgejo's public API exposes dispatch/run/task metadata on current Forgejo, but not
-runner logs. Logs are mirrored by the Forgejo utility belt actions such as
-`arachne/init-pwsh`.
+No Arachne callback inputs or switchboard telemetry are required.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import time
 from typing import AsyncIterator
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, unquote
 
 import httpx
 
 from core.spider import BuildSpider
 from core.registry import register_spider
 from core.types import RunHandle, LogLine, RunStatus, Artifact, StepSpec
-from core import switchboard
+
 
 FORGEJO_URL = os.getenv("FORGEJO_URL", "https://forgejo.example.internal").rstrip("/")
 FORGEJO_TOKEN = os.getenv("FORGEJO_TOKEN", "")
 FORGEJO_OWNER = os.getenv("FORGEJO_OWNER", "example")
-ARACHNE_URL = os.getenv("ARACHNE_URL", "https://arachne.example.internal").rstrip("/")
 NEXUS_URL = os.getenv("NEXUS_URL", "https://nexus.example.internal").rstrip("/")
 VERIFY_TLS = os.getenv("FORGEJO_VERIFY_TLS", "true").lower() != "false"
 
 FORGEJO_DEADLINE = float(os.getenv("FORGEJO_DEADLINE", "3600"))
-FORGEJO_SILENCE = float(os.getenv("FORGEJO_SILENCE", "600"))
+FORGEJO_POLL_INTERVAL = float(os.getenv("FORGEJO_POLL_INTERVAL", "2"))
 
 _NEXUS_URL_RE = re.compile(
     r"(?P<url>https?://[^\s'\"<>]+/repository/(?P<repo>[^/\s'\"<>]+)/(?P<path>[^\s'\"<>]+))",
     re.IGNORECASE,
 )
 _UPLOADED_RE = re.compile(
-    r"uploaded\s+to\s+(?P<repo>[\w.-]+)\/(?P<path>[^\s'\"<>]+)",
+    r"uploaded\s+to\s+(?P<repo>[\w.-]+)/(?P<path>[^\s'\"<>]+)",
     re.IGNORECASE,
 )
 _TRAILING_URL_JUNK = "`'\".,;:)]}"
-_UPLOAD_STEP_HINTS = ("upload", "publish", "artifact", "nexus")
+
+_TERMINAL_SUCCESS = {"success"}
+_TERMINAL_CANCELLED = {"cancelled", "canceled"}
+_TERMINAL_FAILED = {
+    "failure", "failed", "timed_out", "timeout", "action_required",
+    "stale", "startup_failure",
+}
+_TERMINAL_SKIPPED = {"skipped", "neutral"}
 
 
 class ForgejoSpider(BuildSpider):
     NAME = "forgejo"
 
-    # keys consumed by the spider itself — everything else flows to workflow inputs
+    # consumed by the spider; all other keys become workflow_dispatch inputs.
     _CONTROL_KEYS = {"component", "repo", "workflow", "owner", "ref", "branch"}
-    _SECRET_INPUT_KEYS = {"arachne_token", "token", "password", "secret"}
 
     def __init__(self):
         self._runs: dict[str, dict] = {}
 
-    def _headers(self):
-        return {"Authorization": f"token {FORGEJO_TOKEN}",
-                "Content-Type": "application/json"}
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"token {FORGEJO_TOKEN}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
 
-    @classmethod
-    def _safe_body(cls, body: dict | None) -> dict | None:
+    @staticmethod
+    def _api_path(owner: str, repo: str, suffix: str) -> str:
+        return f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}/{suffix.lstrip('/')}"
+
+    @staticmethod
+    def _safe_body(body: dict | None) -> dict | None:
         if body is None:
             return None
         safe = dict(body)
-        inputs = safe.get("inputs")
-        if isinstance(inputs, dict):
-            masked_inputs = dict(inputs)
-            for key in list(masked_inputs):
-                if key.lower() in cls._SECRET_INPUT_KEYS:
-                    masked_inputs[key] = "***"
-            safe["inputs"] = masked_inputs
+        if isinstance(safe.get("inputs"), dict):
+            masked = {}
+            for key, value in safe["inputs"].items():
+                lowered = key.lower()
+                masked[key] = "***" if any(
+                    marker in lowered for marker in ("token", "secret", "password")
+                ) else value
+            safe["inputs"] = masked
         return safe
 
     @classmethod
-    def _http_error(cls, exc: Exception, url: str, body: dict | None = None,
-                    method: str = "POST") -> str:
-        """Return an operator-readable backend error, including Forgejo's body."""
+    def _http_error(
+        cls,
+        exc: Exception,
+        url: str,
+        body: dict | None = None,
+        method: str = "GET",
+    ) -> str:
         safe_body = cls._safe_body(body)
         if isinstance(exc, httpx.HTTPStatusError):
             resp = exc.response
@@ -86,15 +102,21 @@ class ForgejoSpider(BuildSpider):
                 detail = resp.json()
             except ValueError:
                 detail = resp.text
-            return (f"Forgejo API {resp.status_code} while {method} {url}: {detail!r}; "
-                    f"request={safe_body!r}")
+            return (
+                f"Forgejo API {resp.status_code} while {method} {url}: "
+                f"{detail!r}; request={safe_body!r}"
+            )
         return f"{exc} (while {method} {url}; request={safe_body!r})"
 
     def healthcheck(self) -> bool:
         try:
-            r = httpx.get(f"{FORGEJO_URL}/api/v1/version",
-                          headers=self._headers(), timeout=5, verify=VERIFY_TLS)
-            return r.status_code == 200
+            response = httpx.get(
+                f"{FORGEJO_URL}/api/v1/version",
+                headers=self._headers(),
+                timeout=5,
+                verify=VERIFY_TLS,
+            )
+            return response.status_code == 200
         except Exception:
             return False
 
@@ -104,188 +126,302 @@ class ForgejoSpider(BuildSpider):
             return workflow
         return f".forgejo/workflows/{workflow}"
 
-    def _preflight_workflow_ref(self, owner: str, repo: str, workflow: str, ref: str) -> str | None:
+    def _preflight_workflow_ref(
+        self,
+        owner: str,
+        repo: str,
+        workflow: str,
+        ref: str,
+    ) -> str | None:
         workflow_path = self._workflow_content_path(workflow)
         encoded_path = quote(workflow_path, safe="/")
-        url = f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}/contents/{encoded_path}"
+        url = self._api_path(owner, repo, f"contents/{encoded_path}")
         try:
-            r = httpx.get(url, headers=self._headers(), params={"ref": ref},
-                          timeout=10, verify=VERIFY_TLS)
-            r.raise_for_status()
+            response = httpx.get(
+                url,
+                headers=self._headers(),
+                params={"ref": ref},
+                timeout=10,
+                verify=VERIFY_TLS,
+            )
+            response.raise_for_status()
             return None
         except Exception as exc:  # noqa: BLE001
             return self._http_error(exc, url, {"ref": ref}, method="GET")
 
+    def _run_url(self, state: dict, suffix: str = "") -> str:
+        base = self._api_path(
+            state["owner"],
+            state["repo"],
+            f"actions/runs/{state['forgejo_run_id']}",
+        )
+        return f"{base}/{suffix.lstrip('/')}" if suffix else base
+
+    def _discover_run(
+        self,
+        owner: str,
+        repo: str,
+        workflow: str,
+        ref: str,
+        started_after: float,
+    ) -> dict | None:
+        """Fallback for servers that accepted dispatch but did not return run metadata."""
+        url = self._api_path(owner, repo, f"actions/workflows/{workflow}/runs")
+        for _ in range(10):
+            try:
+                response = httpx.get(
+                    url,
+                    headers=self._headers(),
+                    params={
+                        "branch": ref,
+                        "event": "workflow_dispatch",
+                        "limit": 20,
+                    },
+                    timeout=10,
+                    verify=VERIFY_TLS,
+                )
+                response.raise_for_status()
+                rows = response.json().get("workflow_runs", [])
+                for row in rows:
+                    created = row.get("created_at") or row.get("run_started_at")
+                    if not created:
+                        return row
+                    try:
+                        stamp = created.replace("Z", "+00:00")
+                        from datetime import datetime
+                        if datetime.fromisoformat(stamp).timestamp() >= started_after - 2:
+                            return row
+                    except (TypeError, ValueError):
+                        return row
+            except Exception:
+                pass
+            time.sleep(0.5)
+        return None
+
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
         w = step.with_
         repo = w.get("repo")
-        wf = w.get("workflow")
-        if not repo or not wf:
+        workflow = w.get("workflow")
+        if not repo or not workflow:
             raise KeyError(
-                f"forgejo spider needs 'repo' and 'workflow' in step.with "
-                f"(got repo={repo!r}, workflow={wf!r}). "
-                f"Define them in the scenario step, not in code.")
-        owner = w.get("owner", FORGEJO_OWNER)
+                "forgejo spider needs 'repo' and 'workflow' in step.with "
+                f"(got repo={repo!r}, workflow={workflow!r})"
+            )
+
+        owner = str(w.get("owner") or FORGEJO_OWNER)
         ref = str(w.get("ref") or w.get("branch") or "main")
 
-        thread = switchboard.pluck()
-        build_id = thread.build_id
+        preflight_error = self._preflight_workflow_ref(owner, repo, workflow, ref)
+        if preflight_error:
+            raise RuntimeError(
+                f"Forgejo preflight failed for {owner}/{repo}:{ref}/{workflow}: "
+                f"{preflight_error}"
+            )
 
-        inputs = {k: (str(v).lower() if isinstance(v, bool) else str(v))
-                  for k, v in w.items() if k not in self._CONTROL_KEYS}
-        inputs["build_id"] = build_id
-        inputs["arachne_callback"] = f"{ARACHNE_URL}/api/threads/{build_id}"
-        inputs["arachne_token"] = thread.token
-
-        url = (f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}"
-               f"/actions/workflows/{wf}/dispatches")
-        body = {"ref": ref, "inputs": inputs, "return_run_info": True}
-        metadata = {"repo": repo, "workflow": wf, "owner": owner, "ref": ref}
-
-        self._runs[build_id] = {
-            "comp": w.get("component", repo),
-            "repo": repo,
-            "owner": owner,
-            "wf": wf,
-            "ref": ref,
-            "version": inputs.get("version", "0.0.0"),
-            "status": RunStatus.PENDING,
-            "artifacts": [],
-            "forgejo_run_id": None,
-            "forgejo_run_number": None,
-            "forgejo_jobs": [],
+        inputs = {
+            key: (str(value).lower() if isinstance(value, bool) else str(value))
+            for key, value in w.items()
+            if key not in self._CONTROL_KEYS
         }
 
-        preflight_error = self._preflight_workflow_ref(owner, repo, wf, ref)
-        if preflight_error:
-            err = f"Forgejo preflight failed for {owner}/{repo}:{ref}/{wf}: {preflight_error}"
-            self._runs[build_id]["status"] = RunStatus.FAILED
-            self._runs[build_id]["error"] = err
-            metadata["error"] = err
-            return RunHandle(spider=self.NAME, external_id=build_id, metadata=metadata)
+        url = self._api_path(
+            owner,
+            repo,
+            f"actions/workflows/{workflow}/dispatches",
+        )
+        body = {"ref": ref, "inputs": inputs, "return_run_info": True}
+        started_at = time.time()
 
         try:
-            r = httpx.post(url, headers=self._headers(), json=body,
-                           timeout=10, verify=VERIFY_TLS)
-            r.raise_for_status()
-            self._runs[build_id]["status"] = RunStatus.RUNNING
-            if r.status_code == 201 and r.content:
-                self._bind_dispatch_run_info(build_id, r.json(), metadata)
+            response = httpx.post(
+                url,
+                headers=self._headers(),
+                json=body,
+                timeout=15,
+                verify=VERIFY_TLS,
+            )
+            response.raise_for_status()
         except Exception as exc:  # noqa: BLE001
-            err = self._http_error(exc, url, body)
-            self._runs[build_id]["status"] = RunStatus.FAILED
-            self._runs[build_id]["error"] = err
-            metadata["error"] = err
+            raise RuntimeError(self._http_error(exc, url, body, method="POST")) from exc
 
-        return RunHandle(spider=self.NAME, external_id=build_id, metadata=metadata)
+        data = {}
+        if response.content:
+            try:
+                data = response.json()
+            except ValueError:
+                data = {}
 
-    def _bind_dispatch_run_info(self, build_id: str, data: dict, metadata: dict):
-        st = self._runs[build_id]
         run_id = data.get("id") or data.get("run_id")
-        if run_id:
-            st["forgejo_run_id"] = str(run_id)
-            metadata["forgejo_run_id"] = str(run_id)
-        if data.get("run_number") is not None:
-            st["forgejo_run_number"] = str(data.get("run_number"))
-            metadata["forgejo_run_number"] = str(data.get("run_number"))
-        if isinstance(data.get("jobs"), list):
-            st["forgejo_jobs"] = data["jobs"]
+        if not run_id:
+            discovered = self._discover_run(
+                owner, repo, workflow, ref, started_after=started_at
+            )
+            if discovered:
+                data = discovered
+                run_id = data.get("id") or data.get("run_id")
+
+        if not run_id:
+            raise RuntimeError(
+                "Forgejo accepted workflow dispatch but Arachne could not resolve "
+                "the resulting Actions run id"
+            )
+
+        key = str(run_id)
+        state = {
+            "comp": w.get("component", repo),
+            "repo": str(repo),
+            "owner": owner,
+            "workflow": str(workflow),
+            "ref": ref,
+            "forgejo_run_id": key,
+            "forgejo_run_number": data.get("run_number"),
+            "status": RunStatus.RUNNING,
+            "artifacts": [],
+            "last_log_text": "",
+            "last_run": data,
+            "error": None,
+        }
+        self._runs[key] = state
+
+        metadata = {
+            "repo": state["repo"],
+            "workflow": state["workflow"],
+            "owner": owner,
+            "ref": ref,
+            "forgejo_run_id": key,
+            "forgejo_run_number": data.get("run_number"),
+        }
+        return RunHandle(spider=self.NAME, external_id=key, metadata=metadata)
 
     @staticmethod
-    def _parse_kv_output(output: str) -> dict[str, str]:
-        data: dict[str, str] = {}
-        for line in (output or "").splitlines():
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            if key:
-                data[key] = value.strip()
-        return data
+    def _map_run_status(payload: dict) -> RunStatus:
+        raw = str(payload.get("conclusion") or payload.get("status") or "").lower()
+        status = str(payload.get("status") or "").lower()
 
-    def _bind_forgejo_run_signal(self, st: dict, block: dict) -> list[LogLine]:
-        """Backward-compatible bind signal for older workflows."""
-        data = self._parse_kv_output(block.get("output", "") or "")
-        run_id = (data.get("forgejo_run_id") or data.get("run_id")
-                  or data.get("GITHUB_RUN_ID"))
-        if not run_id:
-            return [LogLine("forgejo-run bind signal did not include run id", "stderr")]
-        st["forgejo_run_id"] = run_id
-        st["forgejo_run_number"] = data.get("forgejo_run_number") or data.get("run_number")
-        return [LogLine(f"bound Forgejo Actions run_id={run_id} "
-                        f"run_number={st.get('forgejo_run_number') or '-'}", "system")]
+        if raw in _TERMINAL_SUCCESS:
+            return RunStatus.SUCCESS
+        if raw in _TERMINAL_CANCELLED:
+            return RunStatus.CANCELLED
+        if raw in _TERMINAL_FAILED:
+            return RunStatus.FAILED
+        if raw in _TERMINAL_SKIPPED:
+            return RunStatus.SUCCESS
+
+        if status in {"completed"}:
+            return RunStatus.FAILED
+
+        if status in {"pending", "queued", "waiting", "requested"}:
+            return RunStatus.PENDING
+        return RunStatus.RUNNING
+
+    def _fetch_run(self, state: dict) -> dict:
+        url = self._run_url(state)
+        response = httpx.get(
+            url,
+            headers=self._headers(),
+            timeout=10,
+            verify=VERIFY_TLS,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        state["last_run"] = payload
+        state["status"] = self._map_run_status(payload)
+        if state["status"] == RunStatus.FAILED:
+            state["error"] = (
+                payload.get("conclusion")
+                or payload.get("status")
+                or "Forgejo Actions run failed"
+            )
+        return payload
+
+    async def _fetch_log_text(self, state: dict) -> str | None:
+        url = self._run_url(state, "logs")
+        try:
+            async with httpx.AsyncClient(
+                headers=self._headers(),
+                timeout=15,
+                verify=VERIFY_TLS,
+                follow_redirects=True,
+            ) as client:
+                response = await client.get(url)
+            if response.status_code in (404, 409):
+                return None
+            response.raise_for_status()
+            return response.text
+        except httpx.HTTPError as exc:
+            state["last_log_error"] = self._http_error(exc, url, method="GET")
+            return None
+
+    @staticmethod
+    def _new_log_lines(previous: str, current: str) -> list[str]:
+        if not current:
+            return []
+        if previous and current.startswith(previous):
+            tail = current[len(previous):]
+            return tail.splitlines()
+        if previous == current:
+            return []
+
+        old = previous.splitlines()
+        new = current.splitlines()
+        common = 0
+        for left, right in zip(old, new):
+            if left != right:
+                break
+            common += 1
+        return new[common:]
 
     async def stream_logs(self, handle: RunHandle) -> AsyncIterator[LogLine]:
-        bid = handle.external_id
-        st = self._runs[bid]
-        yield LogLine(f"plucked {st['comp']} → {st['repo']}/{st['wf']} "
-                      f"@ {st.get('ref', 'main')} (build_id={bid})", "system")
+        state = self._runs[handle.external_id]
+        run_id = state["forgejo_run_id"]
+        yield LogLine(
+            f"dispatched {state['comp']} → {state['repo']}/{state['workflow']} "
+            f"@ {state['ref']} (Forgejo run_id={run_id})",
+            "system",
+        )
 
-        if st["status"] == RunStatus.FAILED:
-            yield LogLine(f"dispatch failed: {st.get('error','unknown')}", "stderr")
-            switchboard.release(bid)
-            return
-
-        if st.get("forgejo_run_id"):
-            yield LogLine(f"Forgejo run_id={st['forgejo_run_id']} "
-                          f"run_number={st.get('forgejo_run_number') or '-'}", "system")
-        else:
-            yield LogLine("Forgejo did not return run metadata; waiting for hub telemetry", "system")
-
-        yield LogLine("waiting for Arachne hub telemetry…", "system")
-
-        deadline = time.time() + FORGEJO_DEADLINE
-        seen_blocks = 0
+        deadline = time.monotonic() + FORGEJO_DEADLINE
 
         while True:
-            got = await switchboard.wait_pulse(bid, timeout=FORGEJO_SILENCE)
-            thread = switchboard.get(bid)
-            if thread is None:
-                st["status"] = RunStatus.FAILED
-                yield LogLine("thread lost", "stderr")
+            text = await self._fetch_log_text(state)
+            if text is not None:
+                for line in self._new_log_lines(state["last_log_text"], text):
+                    yield LogLine(line)
+                state["last_log_text"] = text
+
+            try:
+                payload = await asyncio.to_thread(self._fetch_run, state)
+            except Exception as exc:  # noqa: BLE001
+                state["status"] = RunStatus.FAILED
+                state["error"] = self._http_error(
+                    exc, self._run_url(state), method="GET"
+                )
+                yield LogLine(f"Forgejo status polling failed: {state['error']}", "stderr")
                 return
 
-            while seen_blocks < len(thread.blocks):
-                blk = thread.blocks[seen_blocks]
-                seen_blocks += 1
-                name = blk.get("step", f"block {seen_blocks}")
-                status = blk.get("status", "")
+            status = state["status"]
+            if status in (RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED):
+                final_text = await self._fetch_log_text(state)
+                if final_text is not None:
+                    for line in self._new_log_lines(state["last_log_text"], final_text):
+                        yield LogLine(line)
+                    state["last_log_text"] = final_text
 
-                if name == "forgejo-run":
-                    for line in self._bind_forgejo_run_signal(st, blk):
-                        yield line
-                    continue
-
-                yield LogLine(f"TASK [{name}]", "stdout")
-                for ln in (blk.get("output", "") or "").splitlines():
-                    yield LogLine(ln)
-                marker = "ok" if status in ("ok", "success", "passed") else f"failed: {status}"
-                yield LogLine(f"{marker}: [{name}]")
-
-            if thread.final_status is not None:
-                if thread.final_status == "success":
-                    st["status"] = RunStatus.SUCCESS
-                elif thread.final_status == "cancelled":
-                    st["status"] = RunStatus.CANCELLED
-                else:
-                    st["status"] = RunStatus.FAILED
-                self._finish(handle, thread)
-                yield LogLine(f"thread settled: {thread.final_status}", "system")
-                switchboard.release(bid)
+                await asyncio.to_thread(self._collect_artifacts, state)
+                conclusion = payload.get("conclusion") or payload.get("status")
+                yield LogLine(
+                    f"Forgejo run {run_id} settled: {conclusion or status.value}",
+                    "system",
+                )
                 return
 
-            if not got:
-                st["status"] = RunStatus.FAILED
-                yield LogLine(f"no hub telemetry for {int(FORGEJO_SILENCE)}s — run lost",
-                              "stderr")
-                switchboard.release(bid)
+            if time.monotonic() > deadline:
+                state["status"] = RunStatus.FAILED
+                state["error"] = f"Forgejo run deadline exceeded ({FORGEJO_DEADLINE:.0f}s)"
+                yield LogLine(state["error"], "stderr")
                 return
 
-            if time.time() > deadline:
-                st["status"] = RunStatus.FAILED
-                yield LogLine("deadline exceeded — run lost", "stderr")
-                switchboard.release(bid)
-                return
+            await asyncio.sleep(FORGEJO_POLL_INTERVAL)
 
     @staticmethod
     def _clean_artifact_path(value: str) -> str:
@@ -295,111 +431,122 @@ class ForgejoSpider(BuildSpider):
     def _artifact_name(path: str) -> str:
         return path.rsplit("/", 1)[-1] or "artifact"
 
-    @staticmethod
-    def _is_upload_block(block: dict) -> bool:
-        step = str(block.get("step") or "").lower()
-        output = str(block.get("output") or "").lower()
-        return any(hint in step for hint in _UPLOAD_STEP_HINTS) or "--upload-file" in output
-
-    def _artifact_from_nexus_url(self, url: str, source_step: str = "") -> dict | None:
-        cleaned = self._clean_artifact_path(url)
-        parsed = urlparse(cleaned)
-        marker = "/repository/"
-        if marker not in parsed.path:
-            return None
-        repo_path = parsed.path.split(marker, 1)[1]
-        if "/" not in repo_path:
-            return None
-        repo, path = repo_path.split("/", 1)
-        repo = self._clean_artifact_path(repo)
-        path = self._clean_artifact_path(path)
-        if not repo or not path:
-            return None
-        return {
-            "name": self._artifact_name(path),
-            "type": "nexus",
-            "location": f"{repo}/{path}",
-            "download_url": cleaned,
-            "metadata": {"repo": repo, "path": path, "source_step": source_step},
-        }
-
-    def _artifact_from_uploaded_line(self, repo: str, path: str, source_step: str = "") -> dict | None:
-        repo = self._clean_artifact_path(repo)
-        path = self._clean_artifact_path(path)
-        if not repo or not path:
-            return None
-        return {
-            "name": self._artifact_name(path),
-            "type": "nexus",
-            "location": f"{repo}/{path}",
-            "download_url": f"{NEXUS_URL}/repository/{repo}/{path}",
-            "metadata": {"repo": repo, "path": path, "source_step": source_step},
-        }
-
-    def _artifacts_from_block_list(self, blocks: list[dict]) -> list[dict]:
-        found: list[dict] = []
+    def _nexus_artifacts_from_logs(self, text: str) -> list[Artifact]:
+        found: list[Artifact] = []
         seen: set[str] = set()
 
-        def add(artifact: dict | None) -> None:
-            if not artifact:
+        def add(repo: str, path: str, download_url: str) -> None:
+            repo_clean = self._clean_artifact_path(repo)
+            path_clean = self._clean_artifact_path(path)
+            url_clean = self._clean_artifact_path(download_url)
+            if not repo_clean or not path_clean or not url_clean or url_clean in seen:
                 return
-            key = artifact.get("download_url") or artifact.get("location") or artifact.get("name")
-            if not key or key in seen:
-                return
-            seen.add(key)
-            found.append(artifact)
+            seen.add(url_clean)
+            found.append(Artifact(
+                name=self._artifact_name(path_clean),
+                type="nexus",
+                location=f"{repo_clean}/{path_clean}",
+                download_url=url_clean,
+                metadata={"repo": repo_clean, "path": path_clean},
+            ))
 
-        for block in blocks:
-            output = block.get("output", "") or ""
-            source_step = str(block.get("step") or "")
-            for match in _NEXUS_URL_RE.finditer(output):
-                add(self._artifact_from_nexus_url(match.group("url"), source_step))
-            for match in _UPLOADED_RE.finditer(output):
-                add(self._artifact_from_uploaded_line(
-                    match.group("repo"), match.group("path"), source_step))
+        for match in _NEXUS_URL_RE.finditer(text or ""):
+            add(match.group("repo"), match.group("path"), match.group("url"))
+
+        for match in _UPLOADED_RE.finditer(text or ""):
+            repo = match.group("repo")
+            path = match.group("path")
+            add(repo, path, f"{NEXUS_URL}/repository/{repo}/{path}")
+
         return found
 
-    def _artifacts_from_blocks(self, thread) -> list[dict]:
-        """Recover Nexus artifacts from wrapper-captured upload logs.
+    def _collect_artifacts(self, state: dict) -> None:
+        artifacts: list[Artifact] = []
+        seen: set[str] = set()
 
-        Old workflows posted `artifacts` explicitly in the final status. The shell
-        wrapper settles the thread from a post hook, so forgotten artifact JSON
-        files used to make us fall back to a fake `<component>.tar.gz`. Instead,
-        read the mirrored upload output and recover Nexus links deterministically.
-        """
-        blocks = list(getattr(thread, "blocks", []) or [])
-        upload_blocks = [block for block in blocks if self._is_upload_block(block)]
-        if upload_blocks:
-            artifacts = self._artifacts_from_block_list(upload_blocks)
-            if artifacts:
-                return artifacts
-        return self._artifacts_from_block_list(blocks)
+        url = self._run_url(state, "artifacts")
+        try:
+            response = httpx.get(
+                url,
+                headers=self._headers(),
+                timeout=10,
+                verify=VERIFY_TLS,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            for item in payload.get("artifacts", []):
+                if item.get("expired"):
+                    continue
+                artifact_id = item.get("id")
+                name = str(item.get("name") or f"artifact-{artifact_id}")
+                key = f"forgejo:{artifact_id or name}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                download_url = (
+                    f"{FORGEJO_URL}/{state['owner']}/{state['repo']}"
+                    f"/actions/runs/{state['forgejo_run_id']}/artifacts/{quote(name, safe='')}"
+                )
+                artifacts.append(Artifact(
+                    name=name,
+                    type="forgejo-actions",
+                    location=str(artifact_id or name),
+                    download_url=download_url,
+                    metadata={
+                        "id": artifact_id,
+                        "size_in_bytes": item.get("size_in_bytes"),
+                        "expired": item.get("expired", False),
+                        "archive_download_url": item.get("archive_download_url"),
+                    },
+                ))
+        except Exception as exc:  # noqa: BLE001
+            state["artifact_error"] = self._http_error(exc, url, method="GET")
 
-    def _finish(self, handle: RunHandle, thread):
-        st = self._runs[handle.external_id]
-        raw_artifacts = thread.artifacts or self._artifacts_from_blocks(thread)
-        st["artifacts"] = [
-            Artifact(name=a.get("name", "artifact"),
-                     type=a.get("type", "nexus"),
-                     location=a.get("location", ""),
-                     download_url=a.get("download_url"),
-                     metadata=a.get("metadata", {}))
-            for a in raw_artifacts
-        ]
+        for artifact in self._nexus_artifacts_from_logs(state.get("last_log_text", "")):
+            key = artifact.download_url or artifact.location or artifact.name
+            if key in seen:
+                continue
+            seen.add(key)
+            artifacts.append(artifact)
+
+        state["artifacts"] = artifacts
 
     def get_status(self, handle: RunHandle) -> RunStatus:
-        return self._runs[handle.external_id]["status"]
+        state = self._runs[handle.external_id]
+        return state["status"]
 
     def get_artifacts(self, handle: RunHandle) -> list[Artifact]:
-        return self._runs[handle.external_id]["artifacts"]
+        return list(self._runs[handle.external_id].get("artifacts", []))
 
     def cancel(self, handle: RunHandle) -> bool:
-        st = self._runs.get(handle.external_id)
-        if not st:
+        state = self._runs.get(handle.external_id)
+        if not state:
             return False
-        st["status"] = RunStatus.CANCELLED
-        switchboard.release(handle.external_id)
-        return True
+
+        url = self._run_url(state, "cancel")
+        try:
+            response = httpx.post(
+                url,
+                headers=self._headers(),
+                timeout=10,
+                verify=VERIFY_TLS,
+            )
+            if response.status_code == 409:
+                try:
+                    self._fetch_run(state)
+                except Exception:
+                    pass
+                return state["status"] in (
+                    RunStatus.SUCCESS,
+                    RunStatus.FAILED,
+                    RunStatus.CANCELLED,
+                )
+            response.raise_for_status()
+            state["status"] = RunStatus.CANCELLED
+            return True
+        except Exception as exc:  # noqa: BLE001
+            state["error"] = self._http_error(exc, url, method="POST")
+            return False
 
 
 register_spider(ForgejoSpider())
