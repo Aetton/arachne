@@ -8,11 +8,17 @@ ENV DOCS_BASE=/wiki/ \
     DOCS_LAST_UPDATED=false
 RUN npm run docs:build
 
-FROM python:3.12-slim
+FROM python:3.12-slim-bookworm
 
 # ansible + openssh-client for playbooks that provision/deploy over SSH.
 # git/rsync are needed by hub bootstrap tasks that publish reusable Forgejo actions.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Pin the Debian release and use the reachable mirror instead of deb.debian.org.
+RUN sed -i \
+        -e 's|http://deb.debian.org/debian|https://mirror.yandex.ru/debian|g' \
+        -e 's|http://deb.debian.org/debian-security|https://mirror.yandex.ru/debian-security|g' \
+        /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
         ansible openssh-client curl ca-certificates bash git rsync \
     && rm -rf /var/lib/apt/lists/*
 
