@@ -1,68 +1,52 @@
 {% set active_runs = runs | selectattr('status', 'equalto', 'running') | list %}
 {% set recent_runs = runs | rejectattr('status', 'equalto', 'running') | list %}
 
-<div class="mt-6">
-  <div class="flex items-center justify-between mb-2 px-1">
-    <h2 class="text-sm font-semibold uppercase tracking-wide">Active runs</h2>
-    <span class="muted text-xs">{{ active_runs|length }}</span>
+<section class="web-section">
+  <div class="web-section-head">
+    <span class="eyebrow">Live threads</span>
+    <span class="web-count">{{ active_runs|length }}</span>
   </div>
-
-  <div class="surface rounded-xl divide-y" style="border-color: var(--border);">
-    {% if not active_runs %}
-      <div class="p-4 muted text-sm text-center">No active runs.</div>
-    {% endif %}
+  <div class="run-ledger">
+    {% if not active_runs %}<div class="run-empty">No active threads.</div>{% endif %}
     {% for r in active_runs %}
-    <button class="w-full px-3 py-3 flex items-center justify-between gap-3 text-left hover:surface-2"
-            style="border-color: var(--border);"
-            hx-get="/runs/{{ r.id }}/view" hx-target="#workspace" hx-swap="innerHTML">
-      <div class="min-w-0">
-        <div class="text-sm font-medium truncate">{{ r.scenario_label }}</div>
-        <div class="muted text-xs truncate">
+    <button class="run-row running" hx-get="/runs/{{ r.id }}/view" hx-target="#workspace" hx-swap="innerHTML">
+      <span class="run-node"></span>
+      <span class="run-row-main">
+        <span class="run-row-title block">{{ r.scenario_label }}</span>
+        <span class="run-row-meta block">
           {% for k, v in r.params.items() %}{{ k }}={{ v }}{% if not loop.last %} · {% endif %}{% endfor %}
-        </div>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <span class="muted text-xs">{{ r.when }}</span>
-        <span class="pill pill-run flex items-center gap-1">
-          <i class="ti ti-loader-2" style="animation:spin 1s linear infinite;"></i> running
         </span>
-      </div>
+      </span>
+      <span class="run-row-side">
+        <span>{{ r.when }}</span>
+        <span class="status-word running">live</span>
+      </span>
     </button>
     {% endfor %}
   </div>
-</div>
+</section>
 
-<div class="mt-5">
-  <div class="flex items-center justify-between mb-2 px-1">
-    <h2 class="text-sm font-semibold uppercase tracking-wide">Recent runs</h2>
-    <span class="muted text-xs">{{ recent_runs|length }}</span>
+<section class="web-section">
+  <div class="web-section-head">
+    <span class="eyebrow">Recent</span>
+    <span class="web-count">{{ recent_runs|length }}</span>
   </div>
-
-  <div class="surface rounded-xl divide-y" style="border-color: var(--border);">
-    {% if not recent_runs %}
-      <div class="p-4 muted text-sm text-center">No completed runs yet.</div>
-    {% endif %}
+  <div class="run-ledger">
+    {% if not recent_runs %}<div class="run-empty">No completed threads yet.</div>{% endif %}
     {% for r in recent_runs %}
-    <button class="w-full px-3 py-3 flex items-center justify-between gap-3 text-left hover:surface-2"
-            style="border-color: var(--border);"
-            hx-get="/runs/{{ r.id }}/view" hx-target="#workspace" hx-swap="innerHTML">
-      <div class="min-w-0">
-        <div class="text-sm font-medium truncate">{{ r.scenario_label }}</div>
-        <div class="muted text-xs truncate">
+    <button class="run-row {{ r.status }}" hx-get="/runs/{{ r.id }}/view" hx-target="#workspace" hx-swap="innerHTML">
+      <span class="run-node"></span>
+      <span class="run-row-main">
+        <span class="run-row-title block">{{ r.scenario_label }}</span>
+        <span class="run-row-meta block">
           {% for k, v in r.params.items() %}{{ k }}={{ v }}{% if not loop.last %} · {% endif %}{% endfor %}
-        </div>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <span class="muted text-xs">{{ r.when }}</span>
-        {% if r.status == "success" %}<span class="pill pill-ok">success</span>
-        {% elif r.status == "cancelled" %}<span class="pill pill-pending">cancelled</span>
-        {% else %}<span class="pill pill-fail">failed</span>{% endif %}
-      </div>
+        </span>
+      </span>
+      <span class="run-row-side">
+        <span>{{ r.when }}</span>
+        <span class="status-word {{ r.status }}">{{ r.status }}</span>
+      </span>
     </button>
     {% endfor %}
   </div>
-</div>
-
-<style>
-@keyframes spin { to { transform: rotate(360deg); } }
-</style>
+</section>
