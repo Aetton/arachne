@@ -1,0 +1,56 @@
+/* Arachne Web typography scale.
+   Keep the console dense, but never at the expense of legibility. */
+
+html { font-size: 16px; }
+
+.eyebrow { font-size: .72rem; }
+.brand-word { font-size: .96rem; }
+.nav-link,
+.nav-control summary { font-size: .86rem; }
+.theme-select { font-size: .78rem; }
+.user-chip { font-size: .82rem; }
+.web-count { font-size: .72rem; }
+.group-label { font-size: .9rem; }
+
+.scenario-title { font-size: .88rem; }
+.scenario-component { font-size: .7rem; }
+.scenario-icon { font-size: .88rem; }
+
+.run-empty { font-size: .82rem; }
+.run-row-title { font-size: .84rem; }
+.run-row-meta { font-size: .68rem; }
+.run-row-side { font-size: .72rem; }
+.status-word { font-size: .7rem; }
+
+.web-sigil p { font-size: .82rem; }
+
+.thread-field label { font-size: .78rem; }
+.field-error { font-size: .72rem; }
+.run-status { font-size: .72rem; }
+.run-param-key { font-size: .68rem; }
+.run-param-value { font-size: .72rem; }
+
+.step-title { font-size: .84rem; }
+.step-spider { font-size: .68rem; }
+.step-summary { font-size: .72rem; }
+.task-title { font-size: .76rem; }
+
+/* Logs are reading surfaces, not decorative metadata. */
+.log,
+.task-log {
+  font-family: var(--font-data);
+  font-size: .86rem;
+  line-height: 1.62;
+  letter-spacing: 0;
+}
+
+input,
+select,
+textarea { font-size: .87rem; }
+
+@media (min-width: 1600px) {
+  html { font-size: 16.5px; }
+
+  .log,
+  .task-log { font-size: .88rem; }
+}
