@@ -11,11 +11,13 @@ No Arachne callback inputs or switchboard telemetry are required.
 from __future__ import annotations
 
 import asyncio
+from io import BytesIO
 import os
 import re
 import time
 from typing import AsyncIterator
 from urllib.parse import quote, unquote
+import zipfile
 
 import httpx
 
@@ -41,6 +43,8 @@ _UPLOADED_RE = re.compile(
     r"uploaded\s+to\s+(?P<repo>[\w.-]+)/(?P<path>[^\s'\"<>]+)",
     re.IGNORECASE,
 )
+_ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
 _TRAILING_URL_JUNK = "`'\".,;:)]}"
 
 _TERMINAL_SUCCESS = {"success"}
@@ -334,6 +338,47 @@ class ForgejoSpider(BuildSpider):
             )
         return payload
 
+    @staticmethod
+    def _decode_log_bytes(data: bytes) -> str:
+        """Decode a Forgejo job log without ever interpreting archive bytes as text."""
+        if data.startswith(b"\xef\xbb\xbf"):
+            data = data[3:]
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            return data.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _normalize_log_text(text: str) -> str:
+        """Strip terminal escape/control noise while preserving tabs and newlines."""
+        text = _ANSI_ESCAPE_RE.sub("", text or "")
+        return _CONTROL_RE.sub("", text).replace("\r\n", "\n").replace("\r", "\n")
+
+    @classmethod
+    def _decode_log_response(cls, response: httpx.Response) -> str:
+        """Forgejo v16 run logs are ZIP archives; plain text remains supported."""
+        data = response.content
+        content_type = response.headers.get("content-type", "").lower()
+        is_zip = data.startswith(b"PK\x03\x04") or "zip" in content_type
+
+        if not is_zip:
+            return cls._normalize_log_text(cls._decode_log_bytes(data))
+
+        chunks: list[str] = []
+        with zipfile.ZipFile(BytesIO(data)) as archive:
+            names = sorted(
+                name for name in archive.namelist()
+                if not name.endswith("/") and name.lower().endswith(".log")
+            )
+            for name in names:
+                body = cls._normalize_log_text(cls._decode_log_bytes(archive.read(name)))
+                label = name.rsplit("/", 1)[-1]
+                chunks.append(f"::group::Forgejo job: {label}")
+                chunks.append(body.rstrip("\n"))
+                chunks.append("::endgroup::")
+
+        return "\n".join(chunk for chunk in chunks if chunk != "")
+
     async def _fetch_log_text(self, state: dict) -> str | None:
         url = self._run_url(state, "logs")
         try:
@@ -347,8 +392,8 @@ class ForgejoSpider(BuildSpider):
             if response.status_code in (404, 409):
                 return None
             response.raise_for_status()
-            return response.text
-        except httpx.HTTPError as exc:
+            return self._decode_log_response(response)
+        except (httpx.HTTPError, zipfile.BadZipFile, OSError) as exc:
             state["last_log_error"] = self._http_error(exc, url, method="GET")
             return None
 
@@ -434,6 +479,7 @@ class ForgejoSpider(BuildSpider):
     def _nexus_artifacts_from_logs(self, text: str) -> list[Artifact]:
         found: list[Artifact] = []
         seen: set[str] = set()
+        text = self._normalize_log_text(text)
 
         def add(repo: str, path: str, download_url: str) -> None:
             repo_clean = self._clean_artifact_path(repo)
