@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/nord.min.css">
   <link rel="stylesheet" href="/static/css/themes.css">
   <link rel="stylesheet" href="/static/css/monospace.css">
+  <link rel="stylesheet" href="/static/css/arachne.css?v=1">
   <style>
     body { background: var(--bg); color: var(--fg); }
     .surface { background: var(--surface); border: 1px solid var(--border); }
@@ -19,117 +20,108 @@
     .muted { color: var(--muted); }
     .btn {
       background: var(--accent); color: var(--bg-on-accent);
-      border-radius: .5rem; padding: .5rem 1rem; font-weight: 500;
-      transition: filter .15s;
+      border-radius: .5rem; padding: .5rem 1rem; font-weight: 600;
+      transition: filter .15s, transform .15s;
     }
-    .btn:hover { filter: brightness(1.1); }
+    .btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
     .btn-ghost {
       background: transparent; border: 1px solid var(--border);
       color: var(--fg); border-radius: .5rem; padding: .5rem 1rem;
     }
     .btn-ghost:hover { background: var(--surface2); }
     .pill { border-radius: .375rem; padding: .2rem .5rem; font-size: .72rem; font-weight: 500; }
-    .pill-ok      { background: var(--ok-bg);   color: var(--ok-fg); }
-    .pill-fail    { background: var(--fail-bg); color: var(--fail-fg); }
-    .pill-run     { background: var(--run-bg);  color: var(--run-fg); }
+    .pill-ok { background: var(--ok-bg); color: var(--ok-fg); }
+    .pill-fail { background: var(--fail-bg); color: var(--fail-fg); }
+    .pill-run { background: var(--run-bg); color: var(--run-fg); }
     .pill-pending { background: var(--surface2); color: var(--muted); }
     input, select, textarea {
-      background: var(--surface2); border: 1px solid var(--border);
-      color: var(--fg); border-radius: .5rem; padding: .5rem .75rem; width: 100%;
+      background: color-mix(in srgb, var(--surface2) 84%, transparent);
+      border: 1px solid var(--border); color: var(--fg);
+      border-radius: .5rem; padding: .52rem .72rem; width: 100%;
+      font-size: .82rem;
     }
-    input:not([type]), input:is(
-      [type="text"], [type="search"], [type="email"], [type="url"],
-      [type="tel"], [type="password"], [type="number"]
-    ) { text-indent: 8px; }
-    select { text-indent: 8px; }
-    select option {
-      padding-inline-start: 8px;
-      text-indent: 8px;
+    input:not([type]), input:is([type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"], [type="number"]) { text-indent: 4px; }
+    select { text-indent: 4px; }
+    input:focus, select:focus, textarea:focus {
+      outline: 1px solid var(--accent); outline-offset: 0;
+      border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
     }
-    input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
     .form-card { padding: 1.5rem; }
     .form-stack { display: grid; gap: 1rem; }
     .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
     .form-section { display: grid; gap: .5rem; }
-    .form-section-title {
-      color: var(--muted); font-size: .75rem; letter-spacing: .04em;
-      text-transform: uppercase;
-    }
+    .form-section-title { color: var(--muted); font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
     .check-control {
       display: flex; align-items: center; gap: .7rem; min-height: 2rem;
       padding: .3rem .45rem; margin: 0 -.45rem; border-radius: .45rem;
       color: var(--fg); cursor: pointer;
-      transition: background-color .15s ease, color .15s ease;
     }
     .check-control:hover { background: var(--surface2); }
     .check-control input {
       position: absolute; width: 1px; height: 1px; margin: -1px;
-      overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
-      white-space: nowrap;
+      overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
     }
     .check-control-box {
       display: grid; flex: 0 0 1.15rem; width: 1.15rem; height: 1.15rem;
       place-items: center; border: 1px solid color-mix(in srgb, var(--muted) 75%, transparent);
       border-radius: .3rem; background: var(--surface2); color: transparent;
-      transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
     }
     .check-control-box::after {
       content: ""; width: .55rem; height: .3rem;
       border-left: 2px solid currentColor; border-bottom: 2px solid currentColor;
       transform: translateY(-.06rem) rotate(-45deg);
     }
-    .check-control input:checked + .check-control-box {
-      border-color: var(--accent); background: var(--accent); color: var(--bg);
-    }
-    .check-control input:focus-visible + .check-control-box {
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
-    }
+    .check-control input:checked + .check-control-box { border-color: var(--accent); background: var(--accent); color: var(--bg); }
     .record-list { display: grid; gap: .5rem; }
     .record-card { padding: .75rem; border-radius: .5rem; background: var(--surface2); }
-    @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
     .log { font-family: var(--font-mono); font-size: .8rem; line-height: 1.55; }
     a.link { color: var(--accent); }
     a.link:hover { filter: brightness(1.15); }
+    @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body class="min-h-screen">
   {% if user %}
-  <nav class="surface px-6 py-3 flex justify-between items-center border-b" style="border-color: var(--border);">
-    <div class="flex items-center gap-6">
-      <a href="/" class="text-lg font-semibold accent flex items-center gap-2">
-        <i class="ti ti-spider"></i> Arachne
+  <nav class="app-nav">
+    <div class="app-nav-left">
+      <a href="/" class="brand" aria-label="Arachne dashboard">
+        <span class="brand-mark"><i class="ti ti-spider"></i></span>
+        <span class="brand-word">ARACHNE</span>
       </a>
-      <div class="flex gap-1 text-sm">
-        <a href="/" class="px-3 py-1.5 rounded hover:surface-2">Dashboard</a>
-        <a href="/wiki/" class="px-3 py-1.5 rounded hover:surface-2">Documentation</a>
+      <div class="app-nav-links">
+        <a href="/" class="nav-link">Web</a>
+        <a href="/wiki/" class="nav-link">Docs</a>
         {% if "admin" in (user.roles or []) %}
-        <a href="/admin/users" class="px-3 py-1.5 rounded hover:surface-2">Users</a>
-        <a href="/admin/scenarios" class="px-3 py-1.5 rounded hover:surface-2">Scenarios</a>
-        <a href="/admin/rbac" class="px-3 py-1.5 rounded hover:surface-2">Access</a>
+        <details class="nav-control">
+          <summary>Control <i class="ti ti-chevron-down text-xs"></i></summary>
+          <div class="nav-control-menu">
+            <a href="/admin/users" class="nav-link">Users</a>
+            <a href="/admin/scenarios" class="nav-link">Scenarios</a>
+            <a href="/admin/rbac" class="nav-link">Access</a>
+          </div>
+        </details>
         {% endif %}
       </div>
     </div>
-    <div class="flex items-center gap-3 text-sm">
-      <select id="theme-select" onchange="setTheme(this.value)"
-              style="width:auto; padding:.3rem .5rem;" class="text-xs">
+    <div class="app-nav-right">
+      <select id="theme-select" onchange="setTheme(this.value)" class="theme-select" aria-label="Theme">
         <option value="dracula">Dracula</option>
         <option value="nord">Nord</option>
         <option value="white">White</option>
       </select>
-      <span class="muted">{{ user.full_name or user.username }}</span>
-      <a href="/logout" class="link">Logout</a>
+      <span class="user-chip">{{ user.full_name or user.username }}</span>
+      <a href="/logout" class="nav-link" title="Logout"><i class="ti ti-logout"></i></a>
     </div>
   </nav>
   {% endif %}
 
-  <main class="max-w-6xl mx-auto p-6">
+  <main class="app-main">
     {% block content %}{% endblock %}
   </main>
 
   <script>
-    function normalizeTheme(name) {
-      return name === 'light' ? 'white' : name;
-    }
+    function normalizeTheme(name) { return name === 'light' ? 'white' : name; }
     function setTheme(name) {
       name = normalizeTheme(name);
       document.documentElement.setAttribute('data-theme', name);

@@ -1,54 +1,66 @@
-<div class="surface rounded-xl p-5 mb-2" style="border-color: var(--accent);">
-  <div class="flex items-center justify-between mb-4">
-    <h3 class="font-semibold flex items-center gap-2">
-      <i class="ti {{ s.icon or 'ti-box' }} accent"></i> {{ s.label }}
-    </h3>
-    <button class="muted hover:opacity-70" onclick="document.getElementById('workspace').innerHTML=''">
+<div class="workspace-frame thread-form">
+  <header class="thread-form-header">
+    <div>
+      <div class="eyebrow">Spin new thread</div>
+      <h3 class="thread-form-title">
+        <i class="ti {{ s.icon or 'ti-spider' }}"></i>
+        {{ s.label }}
+      </h3>
+    </div>
+    <button type="button" class="icon-button" title="Close"
+            onclick="document.getElementById('workspace').innerHTML=''">
       <i class="ti ti-x"></i>
     </button>
-  </div>
+  </header>
 
-  <form hx-post="/scenarios/{{ key }}/run" hx-target="#workspace" hx-swap="innerHTML"
-        class="space-y-4">
-    {% for p in s.params %}
-    <div>
-      <label class="block text-sm muted mb-1">
-        {{ p.label }}{% if p.required %} <span class="accent">*</span>{% endif %}
-      </label>
-      {% if p.type == "choice" or p.type == "select" %}
-        <select name="{{ p.name }}"
-                {% if p.required %}required{% endif %}
-                {% if p.source_error %}disabled{% endif %}>
-          {% if p.source_error %}
-            <option value="" selected>Unable to load options</option>
+  <form hx-post="/scenarios/{{ key }}/run" hx-target="#workspace" hx-swap="innerHTML">
+    <div class="thread-fields">
+      {% for p in s.params %}
+      <div class="thread-field {% if p.type == 'boolean' %}thread-field-wide{% endif %}">
+        {% if p.type == "boolean" %}
+          <label class="check-control">
+            <input type="checkbox" name="{{ p.name }}" value="true" {% if p.default %}checked{% endif %}>
+            <span class="check-control-box"></span>
+            <span>
+              <span class="block text-sm">{{ p.label }}</span>
+              <span class="block muted text-xs">Enabled when checked</span>
+            </span>
+          </label>
+        {% else %}
+          <label for="param-{{ p.name }}">
+            <span>{{ p.label }}</span>
+            {% if p.required %}<span class="required-mark">required</span>{% endif %}
+          </label>
+
+          {% if p.type == "choice" or p.type == "select" %}
+            <select id="param-{{ p.name }}" name="{{ p.name }}"
+                    {% if p.required %}required{% endif %}
+                    {% if p.source_error %}disabled{% endif %}>
+              {% if p.source_error %}
+                <option value="" selected>Unable to load options</option>
+              {% else %}
+                {% for opt in p.options %}
+                  <option value="{{ opt }}" {% if opt == p.default %}selected{% endif %}>{{ opt }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+            {% if p.source_error %}<div class="field-error">{{ p.source_error }}</div>{% endif %}
           {% else %}
-            {% for opt in p.options %}
-              <option value="{{ opt }}" {% if opt == p.default %}selected{% endif %}>{{ opt }}</option>
-            {% endfor %}
+            <input id="param-{{ p.name }}" type="text" name="{{ p.name }}" value="{{ p.default or '' }}"
+                   {% if p.required %}required{% endif %}>
           {% endif %}
-        </select>
-        {% if p.source_error %}
-          <div class="text-xs muted mt-1">{{ p.source_error }}</div>
         {% endif %}
-      {% elif p.type == "boolean" %}
-        <label class="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" name="{{ p.name }}" value="true" style="width:auto;"
-                 {% if p.default %}checked{% endif %}>
-          <span class="text-sm">Enabled</span>
-        </label>
-      {% else %}
-        <input type="text" name="{{ p.name }}" value="{{ p.default or '' }}"
-               {% if p.required %}required{% endif %}>
-      {% endif %}
+      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
 
-    <div class="flex gap-2 pt-1">
-      <button type="submit" class="btn flex-1">
-        <i class="ti ti-player-play"></i> Run
-      </button>
-      <button type="button" class="btn-ghost flex-1"
+    <div class="thread-form-actions">
+      <button type="button" class="btn-ghost"
               onclick="document.getElementById('workspace').innerHTML=''">Cancel</button>
+      <button type="submit" class="btn spin-button">
+        <i class="ti ti-spider"></i>
+        Spin thread
+      </button>
     </div>
   </form>
 </div>
