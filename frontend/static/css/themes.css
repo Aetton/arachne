@@ -43,3 +43,37 @@
   --fail-bg: #3f2e30; --fail-fg: #bf616a;
   --run-bg:  #3b3a2c; --run-fg:  #ebcb8b;
 }
+
+/* Keep scrollbars inside the theme instead of letting the browser bolt on a
+   bright native control. Firefox uses scrollbar-color; Chromium/WebKit use
+   the pseudo-elements below. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 48%, transparent) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 68%, var(--muted));
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
