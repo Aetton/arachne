@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/static/css/arachne.css?v=1">
   <link rel="stylesheet" href="/static/css/typography.css?v=1">
   <link rel="stylesheet" href="/static/css/organic-web.css?v=1">
+  <link rel="stylesheet" href="/static/css/log-viewer.css?v=1">
   <style>
     body { background: var(--bg); color: var(--fg); }
     .surface { background: var(--surface); border: 1px solid var(--border); }
@@ -138,6 +139,8 @@
     })();
   </script>
   {% block scripts %}{% endblock %}
+  <script src="/static/js/live-log-viewer.js?v=1"></script>
+  <script src="/static/js/log-group-hydrator.js?v=1"></script>
   <script src="/static/js/scenario-dsl-metadata.js?v=2"></script>
 </body>
 </html>
