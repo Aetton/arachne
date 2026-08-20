@@ -1,7 +1,7 @@
 <div id="run-{{ run.id }}"
-     {% if run.status == "running" %}
-     hx-get="/runs/{{ run.id }}/view" hx-trigger="load delay:2s" hx-swap="outerHTML"
-     {% endif %}>
+     data-live-run="{{ 'true' if run.status == 'running' else 'false' }}"
+     data-stream-url="/runs/{{ run.id }}/stream"
+     data-final-view-url="/runs/{{ run.id }}/view">
   <div class="workspace-frame run-view">
     <header class="run-header">
       <div>
@@ -39,33 +39,60 @@
           <button type="button" class="step-head"
                   onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.step-chevron').classList.toggle('open')">
             <span class="step-head-main">
-              <i class="ti ti-chevron-right step-chevron"></i>
+              <i class="ti ti-chevron-right step-chevron{% if step.status == 'running' %} open{% endif %}"></i>
               <span class="step-title">{{ step.id }}</span>
               <span class="step-spider">{{ step.spider }}</span>
             </span>
             <span class="step-summary">
               {% if step.status == 'running' %}running…
               {% elif step.status == 'pending' %}pending
-              {% else %}{{ step.tasks|length }} task{{ 's' if step.tasks|length != 1 }}{% endif %}
+              {% else %}{{ step.tasks|length }} group{{ 's' if step.tasks|length != 1 }}{% endif %}
             </span>
           </button>
 
-          <div class="step-body hidden">
-            {% for task in step.tasks %}
-            <div class="task-row">
-              <div class="task-title">
-                {% if task.status == 'failed' %}<i class="ti ti-x" style="color:var(--fail-fg)"></i>
-                {% else %}<i class="ti ti-check" style="color:var(--ok-fg)"></i>{% endif %}
-                {{ task.title }}
+          <div class="step-body{% if step.status != 'running' %} hidden{% endif %}">
+            <div class="log-viewer{% if run.status == 'running' %} is-live is-following{% endif %}"
+                 id="log-{{ run.id }}-{{ step.id|replace(' ', '-') }}"
+                 data-step-id="{{ step.id }}"
+                 data-rebuild-groups="true"
+                 data-follow="true">
+              <div class="log-toolbar">
+                <div class="log-toolbar-main">
+                  <span class="log-live-state">{% if run.status == 'running' %}Live{% else %}Complete{% endif %}</span>
+                  <span class="log-line-count">0 lines</span>
+                </div>
+                <input class="log-search" type="search" placeholder="Search log…" data-log-search aria-label="Search log">
+                <span class="log-search-count"></span>
+                <button class="log-tool" type="button" data-log-action="wrap" aria-pressed="false" title="Toggle line wrapping"><i class="ti ti-text-wrap"></i> Wrap</button>
+                <button class="log-tool" type="button" data-log-action="follow" aria-pressed="true" title="Follow live output"><i class="ti ti-arrow-down"></i> Follow</button>
+                <button class="log-tool" type="button" data-log-action="copy" title="Copy log"><i class="ti ti-copy"></i> Copy</button>
               </div>
-              {% if task.lines %}
-              <div class="task-log log">
-                {% for line in task.lines %}<div>{{ line }}</div>{% endfor %}
+
+              <div class="log-scroll">
+                <div class="log-lines">
+                  {% set ns = namespace(line_no=0) %}
+                  {% for task in step.tasks %}
+                    {% if task.title and task.title != 'output' %}
+                      {% set ns.line_no = ns.line_no + 1 %}
+                      <div class="log-line stream-system" data-raw="TASK [{{ task.title }}]">
+                        <a class="log-line-number" href="#log-{{ run.id }}-{{ step.id|replace(' ', '-') }}-L{{ ns.line_no }}">{{ ns.line_no }}</a>
+                        <span class="log-line-text">TASK [{{ task.title }}]</span>
+                      </div>
+                    {% endif %}
+                    {% for line in task.lines %}
+                      {% set ns.line_no = ns.line_no + 1 %}
+                      <div class="log-line{% if task.status == 'failed' %} stream-stderr{% else %} stream-stdout{% endif %}"
+                           id="log-{{ run.id }}-{{ step.id|replace(' ', '-') }}-L{{ ns.line_no }}"
+                           data-raw="{{ line|e }}">
+                        <a class="log-line-number" href="#log-{{ run.id }}-{{ step.id|replace(' ', '-') }}-L{{ ns.line_no }}">{{ ns.line_no }}</a>
+                        <span class="log-line-text">{{ line }}</span>
+                      </div>
+                    {% endfor %}
+                  {% endfor %}
+                </div>
+                <button class="log-new-lines" type="button">0 new lines ↓</button>
               </div>
-              {% endif %}
             </div>
-            {% endfor %}
-            {% if not step.tasks %}<div class="task-row muted text-xs">No output yet.</div>{% endif %}
 
             {% if step.artifacts %}
             <div class="artifact-block">
@@ -84,7 +111,7 @@
     </div>
 
     {% if run.status == "success" and artifacts %}
-    <div class="artifact-block">
+    <div class="artifact-block run-final-artifacts">
       <h4><i class="ti ti-download"></i> Captured artifacts</h4>
       {% for a in artifacts %}
       <a href="{{ a.url }}" class="link block text-sm py-0.5">
