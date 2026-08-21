@@ -9,7 +9,11 @@
   <div class="run-ledger">
     {% if not active_runs %}<div class="run-empty">No active threads.</div>{% endif %}
     {% for r in active_runs %}
-    <button class="run-row running" hx-get="/runs/{{ r.id }}/view" hx-target="#workspace" hx-swap="innerHTML">
+    <button class="run-row running"
+            data-run-id="{{ r.id }}"
+            data-run-status="{{ r.status }}"
+            data-scenario-label="{{ r.scenario_label }}"
+            hx-get="/runs/{{ r.id }}/view" hx-target="#workspace" hx-swap="innerHTML">
       <span class="run-node"></span>
       <span class="run-row-main">
         <span class="run-row-title block">{{ r.scenario_label }}</span>
@@ -34,7 +38,11 @@
   <div class="run-ledger">
     {% if not recent_runs %}<div class="run-empty">No completed threads yet.</div>{% endif %}
     {% for r in recent_runs %}
-    <button class="run-row {{ r.status }}" hx-get="/runs/{{ r.id }}/view" hx-target="#workspace" hx-swap="innerHTML">
+    <button class="run-row {{ r.status }}"
+            data-run-id="{{ r.id }}"
+            data-run-status="{{ r.status }}"
+            data-scenario-label="{{ r.scenario_label }}"
+            hx-get="/runs/{{ r.id }}/view" hx-target="#workspace" hx-swap="innerHTML">
       <span class="run-node"></span>
       <span class="run-row-main">
         <span class="run-row-title block">{{ r.scenario_label }}</span>
