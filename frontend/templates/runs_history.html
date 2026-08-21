@@ -1,7 +1,7 @@
 {% set active_runs = runs | selectattr('status', 'equalto', 'running') | list %}
 {% set recent_runs = runs | rejectattr('status', 'equalto', 'running') | list %}
 
-<section class="web-section">
+<section class="web-section run-section-live">
   <div class="web-section-head">
     <span class="eyebrow">Live threads</span>
     <span class="web-count">{{ active_runs|length }}</span>
@@ -30,7 +30,7 @@
   </div>
 </section>
 
-<section class="web-section">
+<section class="web-section run-section-recent">
   <div class="web-section-head">
     <span class="eyebrow">Recent</span>
     <span class="web-count">{{ recent_runs|length }}</span>
