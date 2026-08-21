@@ -1,5 +1,10 @@
 # Arachne Forgejo Hub
 
+> Legacy design document. The current Forgejo v16 spider polls run status, ZIP logs
+> and artifacts directly through Forgejo API. New workflows do not need hub actions
+> or `build_id` / `arachne_callback` / `arachne_token`. See
+> [the current Russian guide](/ru/integrations/forgejo).
+
 Forgejo public API can dispatch workflows and return run metadata, but current Forgejo API documentation does not expose runner log download endpoints. Arachne therefore treats Forgejo as the execution backend and uses hub actions for workflow-side telemetry.
 
 ## Goal

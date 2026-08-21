@@ -1,5 +1,9 @@
 # Arachne Actions Export
 
+> **Compatibility layer.** The current Forgejo v16 spider reads logs and artifacts
+> through the API and does not pass callback inputs. These actions are for old
+> callback workflows or standalone shell-log interception experiments.
+
 Staging folder for exporting Arachne utility-belt actions into the standalone `arachne/actions` repository.
 
 This folder is intentionally copy-friendly:
@@ -24,7 +28,7 @@ cp -a /path/to/arachne/actions/. /path/to/actions/
 
 ## PowerShell action
 
-`init-pwsh` is not stored in this repository yet. Copy it from the old `init-pwsh` repository into:
+`init-pwsh` is stored next to `init-bash`:
 
 ```text
 forgejo/init-pwsh/

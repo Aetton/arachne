@@ -1,5 +1,7 @@
 # Contributing
 
+[Русская версия](CONTRIBUTING.ru.md)
+
 Arachne is a lightweight orchestration portal for CI/CD workflows, infrastructure automation, logs, and artifacts.
 
 ## Ground rules

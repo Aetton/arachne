@@ -1,12 +1,13 @@
 # Forgejo actions
 
-Reusable Arachne utility-belt actions for Forgejo workflows.
+Legacy callback actions for Forgejo workflows. The current Forgejo v16 spider does
+not require them: it polls runs, logs and artifacts through Forgejo API.
 
 ## Actions
 
 ```text
 init-bash/
-init-pwsh/    # copied from the old init-pwsh repository during export
+init-pwsh/
 ```
 
 ## Manual runs
@@ -15,9 +16,9 @@ When a workflow is started manually from Forgejo UI, Arachne service inputs are 
 
 In that mode actions must behave as noop and let the workflow run normally.
 
-## Arachne runs
+## Legacy callback runs
 
-When Arachne dispatches a workflow, it injects:
+Old Arachne versions injected:
 
 ```text
 build_id
@@ -25,4 +26,6 @@ arachne_callback
 arachne_token
 ```
 
-The action reads these values, mirrors logs, and closes the Arachne thread from the post hook.
+The action reads these values, mirrors logs, and closes the old switchboard thread.
+With the current spider the inputs are empty unless a caller supplies them explicitly,
+so the action behaves as noop.
