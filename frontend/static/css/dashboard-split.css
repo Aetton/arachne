@@ -1,0 +1,95 @@
+/* Dashboard left rail: keep scenario catalogue and run activity independently visible.
+   The panes are intentionally invisible; only their scroll behavior separates them. */
+
+.operator-nav {
+  height: calc(100vh - 82px);
+  max-height: calc(100vh - 82px);
+  display: grid;
+  grid-template-rows: minmax(0, 55fr) minmax(0, 45fr);
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.dashboard-scenario-pane,
+.dashboard-runs-pane {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dashboard-scenario-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-scenario-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: .2rem;
+}
+
+.dashboard-scenario-pane .web-section {
+  margin-bottom: 0;
+}
+
+.dashboard-runs-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+#run-list {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+#run-list > .run-section-live {
+  min-height: 0;
+  margin-bottom: .65rem;
+  flex: none;
+}
+
+#run-list > .run-section-recent {
+  min-height: 0;
+  margin-bottom: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: .2rem;
+}
+
+/* If there are enough live runs to consume the lower pane, allow that section
+   to scroll too instead of pushing Recent out of the layout completely. */
+#run-list > .run-section-live {
+  max-height: 48%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 900px) {
+  .operator-nav {
+    height: auto;
+    max-height: none;
+    display: block;
+    overflow: visible;
+  }
+
+  .dashboard-scenario-pane,
+  .dashboard-runs-pane,
+  .dashboard-scenario-scroll,
+  #run-list,
+  #run-list > .run-section-live,
+  #run-list > .run-section-recent {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .dashboard-runs-pane {
+    margin-top: 1rem;
+  }
+}

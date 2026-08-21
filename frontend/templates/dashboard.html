@@ -2,56 +2,63 @@
 {% block title %}Web · Arachne{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="/static/css/orb-web.css?v=2">
+<link rel="stylesheet" href="/static/css/dashboard-split.css?v=1">
 <div class="operator-shell">
   <aside class="operator-column operator-nav">
-    <section class="web-section">
-      <div class="web-section-head">
-        <div>
-          <div class="eyebrow">Scenario web</div>
-        </div>
-        <span class="web-count">{{ scenario_groups | map(attribute='scenarios') | map('length') | sum }}</span>
-      </div>
-      <div class="scenario-search-shell">
-        <i class="ti ti-search"></i>
-        <input id="scenario-search" type="search" placeholder="Search the web…" aria-label="Search scenarios">
-      </div>
+    <div class="dashboard-scenario-pane">
+      <div class="dashboard-scenario-scroll">
+        <section class="web-section">
+          <div class="web-section-head">
+            <div>
+              <div class="eyebrow">Scenario web</div>
+            </div>
+            <span class="web-count">{{ scenario_groups | map(attribute='scenarios') | map('length') | sum }}</span>
+          </div>
+          <div class="scenario-search-shell">
+            <i class="ti ti-search"></i>
+            <input id="scenario-search" type="search" placeholder="Search the web…" aria-label="Search scenarios">
+          </div>
 
-      {% for group in scenario_groups %}
-      <details class="scenario-group" data-component="{{ group.component.slug }}" open>
-        <summary>
-          <i class="ti ti-chevron-right scenario-group-chevron"></i>
-          <i class="ti {{ group.component.icon or 'ti-box' }} group-icon"></i>
-          <span class="group-label">{{ group.component.label }}</span>
-          <span class="web-count scenario-group-count">{{ group.scenarios|length }}</span>
-        </summary>
-        <div class="scenario-list">
-          {% for item in group.scenarios %}
-          {% set key = item.slug %}
-          {% set s = item.definition %}
-          <button hx-get="/scenarios/{{ key }}/form" hx-target="#workspace" hx-swap="innerHTML"
-                  data-search="{{ key }} {{ s.label }} {{ group.component.slug }} {{ group.component.label }}"
-                  data-scenario="{{ key }}"
-                  data-scenario-label="{{ s.label }}"
-                  data-component="{{ group.component.slug }}"
-                  class="scenario-card scenario-accent-{{ s.accent or 'indigo' }}">
-            <span class="min-w-0">
-              <span class="scenario-title block">{{ s.label }}</span>
-              <span class="scenario-component block">{{ s.component }}</span>
-            </span>
-            <i class="ti {{ s.icon or 'ti-point' }} scenario-icon"></i>
-          </button>
+          {% for group in scenario_groups %}
+          <details class="scenario-group" data-component="{{ group.component.slug }}" open>
+            <summary>
+              <i class="ti ti-chevron-right scenario-group-chevron"></i>
+              <i class="ti {{ group.component.icon or 'ti-box' }} group-icon"></i>
+              <span class="group-label">{{ group.component.label }}</span>
+              <span class="web-count scenario-group-count">{{ group.scenarios|length }}</span>
+            </summary>
+            <div class="scenario-list">
+              {% for item in group.scenarios %}
+              {% set key = item.slug %}
+              {% set s = item.definition %}
+              <button hx-get="/scenarios/{{ key }}/form" hx-target="#workspace" hx-swap="innerHTML"
+                      data-search="{{ key }} {{ s.label }} {{ group.component.slug }} {{ group.component.label }}"
+                      data-scenario="{{ key }}"
+                      data-scenario-label="{{ s.label }}"
+                      data-component="{{ group.component.slug }}"
+                      class="scenario-card scenario-accent-{{ s.accent or 'indigo' }}">
+                <span class="min-w-0">
+                  <span class="scenario-title block">{{ s.label }}</span>
+                  <span class="scenario-component block">{{ s.component }}</span>
+                </span>
+                <i class="ti {{ s.icon or 'ti-point' }} scenario-icon"></i>
+              </button>
+              {% endfor %}
+            </div>
+          </details>
+          {% else %}
+          <div class="run-empty">No scenarios are available.</div>
           {% endfor %}
-        </div>
-      </details>
-      {% else %}
-      <div class="run-empty">No scenarios are available.</div>
-      {% endfor %}
-    </section>
+        </section>
+      </div>
+    </div>
 
-    <div id="run-list"
-         hx-get="/runs/history"
-         hx-trigger="load, every 3s, runStarted from:body delay:300ms"
-         hx-swap="innerHTML">
+    <div class="dashboard-runs-pane">
+      <div id="run-list"
+           hx-get="/runs/history"
+           hx-trigger="load, every 3s, runStarted from:body delay:300ms"
+           hx-swap="innerHTML">
+      </div>
     </div>
   </aside>
 
