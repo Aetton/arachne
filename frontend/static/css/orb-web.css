@@ -1,0 +1,203 @@
+/* Orb-web workspace layer.
+   The web is structural UI, not a background illustration: radial load-bearing
+   strands plus short capture-silk segments between neighbouring spokes. */
+
+:root {
+  --orb-web-line: color-mix(in srgb, var(--accent) 30%, var(--border));
+  --orb-web-line-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+  --orb-web-live: color-mix(in srgb, var(--accent) 86%, white 14%);
+  --orb-web-live-soft: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.operator-workspace {
+  isolation: isolate;
+}
+
+.workspace-orb-web {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: 14px 14px 14px 5px;
+}
+
+.workspace-orb-web svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: calc(100vh - 100px);
+  overflow: visible;
+}
+
+.operator-workspace > .workspace-frame,
+.operator-workspace > [data-live-run] {
+  position: relative;
+  z-index: 1;
+}
+
+.operator-workspace > [data-live-run] > .workspace-frame {
+  position: relative;
+  z-index: 1;
+}
+
+.workspace-frame {
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+}
+
+/* Kill the old radar-circle empty state. The SVG owns the geometry now. */
+.workspace-empty::before,
+.workspace-empty::after {
+  content: none !important;
+  animation: none !important;
+}
+
+.workspace-empty {
+  background:
+    radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 38%),
+    color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.orb-web-spoke,
+.orb-web-capture,
+.orb-web-frame {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.orb-web-spoke {
+  stroke: var(--orb-web-line);
+  stroke-width: 1.05;
+  opacity: .34;
+}
+
+.orb-web-capture {
+  stroke: var(--orb-web-line);
+  stroke-width: .9;
+  opacity: .31;
+}
+
+.orb-web-frame {
+  stroke: var(--orb-web-line);
+  stroke-width: 1;
+  opacity: .18;
+}
+
+.orb-web-junction {
+  fill: color-mix(in srgb, var(--surface) 92%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 58%, var(--border));
+  stroke-width: .8;
+  opacity: .76;
+  vector-effect: non-scaling-stroke;
+}
+
+.orb-web-hub-ring {
+  fill: color-mix(in srgb, var(--surface) 90%, transparent);
+  stroke: color-mix(in srgb, var(--accent) 58%, var(--border));
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.orb-web-hub-core {
+  fill: color-mix(in srgb, var(--surface) 96%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.orb-web-active-base,
+.orb-web-active-pulse {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.orb-web-active-base {
+  stroke: var(--orb-web-live);
+  stroke-width: 1.55;
+  opacity: .66;
+  filter: drop-shadow(0 0 5px var(--orb-web-live-soft));
+}
+
+.orb-web-active-pulse {
+  stroke: white;
+  stroke-width: 2.2;
+  opacity: .78;
+  stroke-dasharray: 3 54;
+  filter: drop-shadow(0 0 6px var(--accent));
+  animation: orbWebPulse 2.35s linear infinite;
+}
+
+.orb-web-entry {
+  fill: color-mix(in srgb, var(--surface) 88%, transparent);
+  stroke: var(--orb-web-live);
+  stroke-width: 1.3;
+  opacity: .9;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 5px var(--orb-web-live-soft));
+}
+
+.web-sigil {
+  transform: translateY(11%);
+}
+
+.web-sigil-node {
+  width: 38px;
+  height: 38px;
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--accent) 9%, transparent),
+    0 0 24px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.web-sigil h2 {
+  margin-top: .58rem;
+  font-size: 1.04rem;
+}
+
+.web-sigil p {
+  font-size: .82rem;
+}
+
+/* The selected source should feel tied to the active strand without drawing a
+   giant cross-column cable over the dashboard. */
+.scenario-card.is-selected,
+.run-row.web-route-selected {
+  position: relative;
+}
+
+.run-row.web-route-selected {
+  background: color-mix(in srgb, var(--run-bg) 22%, transparent);
+}
+
+.run-row.web-route-selected .run-node {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--run-fg) 14%, transparent),
+    0 0 13px color-mix(in srgb, var(--run-fg) 38%, transparent);
+}
+
+@keyframes orbWebPulse {
+  to { stroke-dashoffset: -57; }
+}
+
+@media (max-width: 980px) {
+  .workspace-orb-web svg {
+    min-height: 420px;
+  }
+
+  .orb-web-spoke,
+  .orb-web-capture,
+  .orb-web-frame {
+    opacity: .24;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-web-active-pulse {
+    animation: none;
+    stroke-dasharray: none;
+    opacity: .36;
+  }
+}
