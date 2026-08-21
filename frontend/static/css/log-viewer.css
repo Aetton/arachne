@@ -1,4 +1,19 @@
 /* Live log viewer: Actions-like ergonomics without turning the console into a clone. */
+.thread-step,
+.step-shell,
+.step-body,
+.log-viewer,
+.log-scroll {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.step-shell,
+.step-body,
+.log-viewer {
+  width: 100%;
+}
+
 .log-viewer {
   position: relative;
   margin: .35rem 0 .7rem;
@@ -12,6 +27,9 @@
   position: sticky;
   top: 0;
   z-index: 4;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 42px;
   display: flex;
   align-items: center;
@@ -20,6 +38,7 @@
   border-bottom: 1px solid var(--web-line-dim);
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(10px);
+  overflow: hidden;
 }
 
 .log-toolbar-main {
@@ -28,6 +47,7 @@
   align-items: center;
   gap: .5rem;
   margin-right: auto;
+  flex: 1 1 auto;
 }
 
 .log-live-state {
@@ -60,13 +80,16 @@
 }
 
 .log-search {
+  flex: 0 1 220px;
   width: min(220px, 28vw);
+  min-width: 120px;
   min-height: 30px;
   padding: .3rem .55rem;
   font: 500 .76rem/1.25 var(--font-ui);
 }
 
 .log-search-count {
+  flex: 0 0 auto;
   min-width: 42px;
   color: var(--muted);
   font: 600 .68rem/1 var(--font-data);
@@ -74,6 +97,7 @@
 }
 
 .log-tool {
+  flex: 0 0 auto;
   min-width: 31px;
   height: 30px;
   display: inline-flex;
@@ -98,9 +122,12 @@
 
 .log-scroll {
   position: relative;
+  width: 100%;
   max-height: min(54vh, 620px);
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   overscroll-behavior: contain;
+  contain: inline-size;
 }
 
 .log-lines {
@@ -234,9 +261,14 @@
 .log-task-group[open] > summary { color: var(--fg); }
 .log-task-group > summary .task-status-icon { margin-left: auto; }
 
+@media (max-width: 1100px) {
+  .log-toolbar { flex-wrap: wrap; overflow: visible; }
+  .log-toolbar-main { width: auto; }
+  .log-search { flex: 1 1 220px; width: auto; }
+}
+
 @media (max-width: 900px) {
-  .log-toolbar { flex-wrap: wrap; }
-  .log-toolbar-main { width: 100%; }
+  .log-toolbar-main { width: 100%; flex-basis: 100%; }
   .log-search { width: min(260px, 55vw); }
 }
 
