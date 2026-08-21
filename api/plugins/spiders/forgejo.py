@@ -314,7 +314,7 @@ class ForgejoSpider(BuildSpider):
             try:
                 rows = self._run_rows(response.json())
                 data = self._select_dispatched_run(
-                    rows, ref, started_after
+                    rows, ref, started_at
                 ) or {}
             except ValueError:
                 data = {}
