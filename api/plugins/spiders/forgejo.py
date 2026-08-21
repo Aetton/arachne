@@ -11,6 +11,7 @@ No Arachne callback inputs or switchboard telemetry are required.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from io import BytesIO
 import os
 import re
@@ -45,6 +46,9 @@ _UPLOADED_RE = re.compile(
 )
 _ANSI_ESCAPE_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f]")
+_LOG_TIMESTAMP_RE = re.compile(
+    r"^(?P<stamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\s"
+)
 _TRAILING_URL_JUNK = "`'\".,;:)]}"
 
 _TERMINAL_SUCCESS = {"success"}
@@ -192,7 +196,6 @@ class ForgejoSpider(BuildSpider):
                         return row
                     try:
                         stamp = created.replace("Z", "+00:00")
-                        from datetime import datetime
                         if datetime.fromisoformat(stamp).timestamp() >= started_after - 2:
                             return row
                     except (TypeError, ValueError):
@@ -379,8 +382,85 @@ class ForgejoSpider(BuildSpider):
 
         return "\n".join(chunk for chunk in chunks if chunk != "")
 
+    @staticmethod
+    def _parse_log_timestamp(line: str) -> float | None:
+        match = _LOG_TIMESTAMP_RE.match(line)
+        if not match:
+            return None
+        try:
+            return datetime.fromisoformat(
+                match.group("stamp").replace("Z", "+00:00")
+            ).timestamp()
+        except ValueError:
+            return None
+
+    @classmethod
+    def _group_log_by_steps(cls, text: str, steps: list[dict]) -> str:
+        """Insert viewer group commands at Forgejo step start timestamps."""
+        timeline: list[tuple[float, int, str]] = []
+        for position, step in enumerate(steps):
+            started_at = step.get("started_at")
+            if not started_at:
+                continue
+            try:
+                started = datetime.fromisoformat(
+                    str(started_at).replace("Z", "+00:00")
+                ).timestamp()
+            except ValueError:
+                continue
+            number = int(step.get("number") or position + 1)
+            name = " ".join(str(step.get("name") or f"step {number}").split())
+            timeline.append((started, number, name))
+
+        if not timeline:
+            return text
+
+        timeline.sort(key=lambda item: (item[0], item[1]))
+        output: list[str] = []
+        active = -1
+        opened = False
+
+        for line in text.splitlines():
+            stamp = cls._parse_log_timestamp(line)
+            next_active = active
+            if stamp is not None:
+                while (
+                    next_active + 1 < len(timeline)
+                    and timeline[next_active + 1][0] <= stamp
+                ):
+                    next_active += 1
+
+            if next_active != active:
+                if opened:
+                    output.append("::endgroup::")
+                active = next_active
+                if active >= 0:
+                    _, number, name = timeline[active]
+                    output.append(f"::group::Forgejo step {number}: {name}")
+                    opened = True
+
+            output.append(line)
+
+        if opened:
+            output.append("::endgroup::")
+        return "\n".join(output)
+
+    async def _fetch_jobs(
+        self,
+        client: httpx.AsyncClient,
+        state: dict,
+    ) -> list[dict]:
+        url = self._run_url(state, "jobs")
+        response = await client.get(url)
+        if response.status_code in (404, 409):
+            return []
+        response.raise_for_status()
+        payload = response.json()
+        jobs = payload.get("jobs", [])
+        return jobs if isinstance(jobs, list) else []
+
     async def _fetch_log_text(self, state: dict) -> str | None:
-        url = self._run_url(state, "logs")
+        run_log_url = self._run_url(state, "logs")
         try:
             async with httpx.AsyncClient(
                 headers=self._headers(),
@@ -388,13 +468,68 @@ class ForgejoSpider(BuildSpider):
                 verify=VERIFY_TLS,
                 follow_redirects=True,
             ) as client:
-                response = await client.get(url)
+                jobs_url = self._run_url(state, "jobs")
+                try:
+                    jobs = await self._fetch_jobs(client, state)
+                except (httpx.HTTPError, ValueError) as exc:
+                    state["last_job_log_error"] = self._http_error(
+                        exc, jobs_url, method="GET"
+                    )
+                    jobs = []
+
+                chunks: list[str] = []
+                for job in jobs:
+                    job_id = job.get("id")
+                    if job_id is None:
+                        continue
+                    job_log_url = self._api_path(
+                        state["owner"],
+                        state["repo"],
+                        f"actions/jobs/{job_id}/logs",
+                    )
+                    try:
+                        response = await client.get(job_log_url)
+                        if response.status_code in (404, 409):
+                            continue
+                        response.raise_for_status()
+                        body = self._decode_log_response(response).rstrip("\n")
+                    except (
+                        httpx.HTTPError,
+                        zipfile.BadZipFile,
+                        OSError,
+                    ) as exc:
+                        state["last_job_log_error"] = self._http_error(
+                            exc, job_log_url, method="GET"
+                        )
+                        continue
+
+                    if not body:
+                        continue
+                    body = self._group_log_by_steps(body, job.get("steps") or [])
+                    job_name = " ".join(
+                        str(job.get("name") or f"job {job_id}").split()
+                    )
+                    chunks.extend((
+                        f"::group::Forgejo job: {job_name}",
+                        body,
+                        "::endgroup::",
+                    ))
+
+                if chunks:
+                    state.pop("last_log_error", None)
+                    state.pop("last_job_log_error", None)
+                    return "\n".join(chunks)
+
+                response = await client.get(run_log_url)
+
             if response.status_code in (404, 409):
                 return None
             response.raise_for_status()
             return self._decode_log_response(response)
-        except (httpx.HTTPError, zipfile.BadZipFile, OSError) as exc:
-            state["last_log_error"] = self._http_error(exc, url, method="GET")
+        except (httpx.HTTPError, ValueError, zipfile.BadZipFile, OSError) as exc:
+            state["last_log_error"] = self._http_error(
+                exc, run_log_url, method="GET"
+            )
             return None
 
     @staticmethod
