@@ -118,12 +118,11 @@
 
     spokes.forEach(function (spoke) {
       var end = pointAlong(spoke.angle, spoke.max * 0.93);
-      var path = svgNode('path', {
+      webGroup.appendChild(svgNode('path', {
         class: 'orb-web-spoke',
         'data-spoke-index': spoke.index,
         d: 'M ' + geometry.hub.x + ' ' + geometry.hub.y + ' L ' + end.x.toFixed(2) + ' ' + end.y.toFixed(2)
-      });
-      webGroup.appendChild(path);
+      }));
     });
 
     geometry.rings.forEach(function (fraction, ringIndex) {
@@ -133,11 +132,10 @@
         if (omittedSegments.has(ringIndex + ':' + index)) return;
 
         var next = spokes[nextIndex];
-        var path = svgNode('path', {
+        captureGroup.appendChild(svgNode('path', {
           class: 'orb-web-capture',
           d: capturePath(spoke, next, fraction)
-        });
-        captureGroup.appendChild(path);
+        }));
 
         if ((ringIndex + index) % 5 === 0 && ringIndex > 0 && ringIndex < 5) {
           var junctionDistance = spoke.max * fraction;
@@ -186,12 +184,33 @@
     svg.appendChild(hubGroup);
   }
 
+  function syncHubPosition() {
+    var workspace = document.querySelector('.operator-workspace');
+    var svg = workspace && workspace.querySelector(':scope > .workspace-orb-web svg');
+    if (!workspace || !svg || !svg.getScreenCTM) return;
+
+    var matrix = svg.getScreenCTM();
+    if (!matrix) return;
+
+    var point = svg.createSVGPoint();
+    point.x = geometry.hub.x;
+    point.y = geometry.hub.y;
+    var screenPoint = point.matrixTransform(matrix);
+    var workspaceRect = workspace.getBoundingClientRect();
+
+    workspace.style.setProperty('--orb-hub-x', (screenPoint.x - workspaceRect.left).toFixed(2) + 'px');
+    workspace.style.setProperty('--orb-hub-y', (screenPoint.y - workspaceRect.top).toFixed(2) + 'px');
+  }
+
   function ensureLayer() {
     var workspace = document.querySelector('.operator-workspace');
     if (!workspace) return null;
 
     var existing = workspace.querySelector(':scope > .workspace-orb-web');
-    if (existing) return existing;
+    if (existing) {
+      syncHubPosition();
+      return existing;
+    }
 
     var layer = document.createElement('div');
     layer.className = 'workspace-orb-web';
@@ -206,6 +225,7 @@
     workspace.insertBefore(layer, workspace.firstChild);
 
     applyRoute(state.route);
+    window.requestAnimationFrame(syncHubPosition);
     return layer;
   }
 
@@ -299,14 +319,19 @@
     window.requestAnimationFrame(function () {
       ensureLayer();
       applyRoute(state.route);
+      syncHubPosition();
       if (event.target && event.target.id === 'run-list') selectFirstLiveRunIfIdle();
     });
   });
 
   window.addEventListener('resize', function () {
     ensureLayer();
+    window.requestAnimationFrame(syncHubPosition);
   }, { passive: true });
 
   ensureLayer();
-  window.requestAnimationFrame(selectFirstLiveRunIfIdle);
+  window.requestAnimationFrame(function () {
+    syncHubPosition();
+    selectFirstLiveRunIfIdle();
+  });
 })();
