@@ -468,9 +468,16 @@ class ForgejoSpider(BuildSpider):
                 verify=VERIFY_TLS,
                 follow_redirects=True,
             ) as client:
-                jobs = await self._fetch_jobs(client, state)
-                chunks: list[str] = []
+                jobs_url = self._run_url(state, "jobs")
+                try:
+                    jobs = await self._fetch_jobs(client, state)
+                except (httpx.HTTPError, ValueError) as exc:
+                    state["last_job_log_error"] = self._http_error(
+                        exc, jobs_url, method="GET"
+                    )
+                    jobs = []
 
+                chunks: list[str] = []
                 for job in jobs:
                     job_id = job.get("id")
                     if job_id is None:
@@ -480,12 +487,22 @@ class ForgejoSpider(BuildSpider):
                         state["repo"],
                         f"actions/jobs/{job_id}/logs",
                     )
-                    response = await client.get(job_log_url)
-                    if response.status_code in (404, 409):
+                    try:
+                        response = await client.get(job_log_url)
+                        if response.status_code in (404, 409):
+                            continue
+                        response.raise_for_status()
+                        body = self._decode_log_response(response).rstrip("\n")
+                    except (
+                        httpx.HTTPError,
+                        zipfile.BadZipFile,
+                        OSError,
+                    ) as exc:
+                        state["last_job_log_error"] = self._http_error(
+                            exc, job_log_url, method="GET"
+                        )
                         continue
-                    response.raise_for_status()
 
-                    body = self._decode_log_response(response).rstrip("\n")
                     if not body:
                         continue
                     body = self._group_log_by_steps(body, job.get("steps") or [])
@@ -500,6 +517,7 @@ class ForgejoSpider(BuildSpider):
 
                 if chunks:
                     state.pop("last_log_error", None)
+                    state.pop("last_job_log_error", None)
                     return "\n".join(chunks)
 
                 response = await client.get(run_log_url)
