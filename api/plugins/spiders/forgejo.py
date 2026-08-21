@@ -186,6 +186,15 @@ class ForgejoSpider(BuildSpider):
         return []
 
     @staticmethod
+    def _collection_rows(payload: object, key: str) -> list[dict]:
+        """Accept Forgejo collection envelopes and bare-list responses."""
+        if isinstance(payload, dict):
+            payload = payload.get(key, [])
+        if not isinstance(payload, list):
+            return []
+        return [row for row in payload if isinstance(row, dict)]
+
+    @staticmethod
     def _normalized_ref(value: object) -> str:
         ref = str(value or "")
         return ref.removeprefix("refs/heads/")
@@ -391,7 +400,10 @@ class ForgejoSpider(BuildSpider):
             verify=VERIFY_TLS,
         )
         response.raise_for_status()
-        payload = response.json()
+        rows = self._run_rows(response.json())
+        if not rows:
+            raise ValueError("Forgejo run response contains no run object")
+        payload = rows[0]
         state["last_run"] = payload
         state["status"] = self._map_run_status(payload)
         if state["status"] == RunStatus.FAILED:
@@ -516,9 +528,7 @@ class ForgejoSpider(BuildSpider):
         if response.status_code in (404, 409):
             return []
         response.raise_for_status()
-        payload = response.json()
-        jobs = payload.get("jobs", [])
-        return jobs if isinstance(jobs, list) else []
+        return self._collection_rows(response.json(), "jobs")
 
     async def _fetch_log_text(self, state: dict) -> str | None:
         run_log_url = self._run_url(state, "logs")
@@ -715,8 +725,8 @@ class ForgejoSpider(BuildSpider):
                 verify=VERIFY_TLS,
             )
             response.raise_for_status()
-            payload = response.json()
-            for item in payload.get("artifacts", []):
+            artifacts_payload = response.json()
+            for item in self._collection_rows(artifacts_payload, "artifacts"):
                 if item.get("expired"):
                     continue
                 artifact_id = item.get("id")
