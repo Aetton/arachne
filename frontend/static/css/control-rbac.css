@@ -1,0 +1,184 @@
+/* RBAC-specific visual layer for Arachne Control. */
+
+.rbac-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(320px, .88fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.rbac-panel-body {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.rbac-editor {
+  display: grid;
+  gap: .85rem;
+  padding: .9rem;
+  border: 1px solid var(--web-line-dim);
+  border-radius: 12px 12px 12px 4px;
+  background: color-mix(in srgb, var(--surface2) 28%, transparent);
+}
+
+.rbac-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.rbac-editor-title {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  font-size: .78rem;
+  font-weight: 720;
+}
+
+.rbac-editor-title i { color: var(--accent); }
+
+.rbac-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .7rem;
+}
+
+.rbac-form-grid .wide { grid-column: 1 / -1; }
+
+.rbac-option-block {
+  display: grid;
+  gap: .45rem;
+  padding: .7rem;
+  border: 1px solid var(--web-line-dim);
+  border-radius: .65rem;
+  background: color-mix(in srgb, var(--surface2) 32%, transparent);
+}
+
+.rbac-option-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  color: var(--muted);
+  font-size: .66rem;
+  font-weight: 720;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.rbac-option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .2rem .5rem;
+}
+
+.rbac-records {
+  display: grid;
+  gap: .55rem;
+}
+
+.rbac-record {
+  position: relative;
+  display: grid;
+  gap: .55rem;
+  padding: .8rem .85rem .82rem 1rem;
+  border: 1px solid var(--web-line-dim);
+  border-radius: 10px 10px 10px 4px;
+  background: color-mix(in srgb, var(--surface2) 24%, transparent);
+}
+
+.rbac-record::before {
+  content: "";
+  position: absolute;
+  left: .38rem;
+  top: .95rem;
+  bottom: .95rem;
+  width: 1px;
+  background: var(--web-line);
+}
+
+.rbac-record-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.rbac-record-main {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  min-width: 0;
+}
+
+.rbac-node {
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: 0 0 1.7rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--web-line);
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 4px var(--web-glow);
+  font-size: .72rem;
+}
+
+.rbac-record-name {
+  font-size: .78rem;
+  font-weight: 690;
+}
+
+.rbac-record-slug {
+  color: var(--muted);
+  font: .62rem/1.35 var(--font-data);
+}
+
+.rbac-record-description {
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.45;
+}
+
+.rbac-link-row {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  flex-wrap: wrap;
+}
+
+.rbac-link-label {
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.rbac-empty {
+  padding: .9rem;
+  color: var(--muted);
+  font-size: .72rem;
+  border: 1px dashed var(--web-line-dim);
+  border-radius: 9px;
+  text-align: center;
+}
+
+.rbac-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .55rem;
+}
+
+@media (max-width: 1050px) {
+  .rbac-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .rbac-form-grid,
+  .rbac-option-grid { grid-template-columns: 1fr; }
+  .rbac-form-grid .wide { grid-column: auto; }
+}

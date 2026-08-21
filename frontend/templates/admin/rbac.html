@@ -1,81 +1,186 @@
 {% extends "base.html" %}
 {% block title %}Access · Admin{% endblock %}
 {% block content %}
-<h1 class="text-xl font-semibold mb-1">Roles and teams</h1>
-<p class="muted text-sm mb-6">Roles compose capabilities; teams define product scope. Scenario ACLs join both axes.</p>
+<link rel="stylesheet" href="/static/css/control-ui.css?v=1">
+<link rel="stylesheet" href="/static/css/control-rbac.css?v=1">
 
-<div class="grid lg:grid-cols-2 gap-6 items-start">
-  <section class="form-card surface rounded-xl">
-    <h2 class="font-semibold mb-5">Create or update role</h2>
-    <form method="post" action="/admin/roles" class="form-stack">
-      <div class="form-row">
-        <input name="slug" required placeholder="release-engineer" aria-label="Role slug">
-        <input name="name" required placeholder="Release engineer" aria-label="Role name">
+<div class="control-page">
+  <header class="control-header">
+    <div class="control-header-copy">
+      <div class="control-kicker">Control / Access</div>
+      <h1 class="control-title"><i class="ti ti-shield-lock"></i> Roles and teams</h1>
+      <p class="control-subtitle">Roles compose capabilities. Teams define component scope. Scenario ACLs join both axes.</p>
+    </div>
+    <div class="control-actions">
+      <span class="control-chip"><i class="ti ti-key"></i>{{ roles|length }} roles</span>
+      <span class="control-chip"><i class="ti ti-topology-star-3"></i>{{ teams|length }} teams</span>
+    </div>
+  </header>
+
+  <div class="rbac-grid">
+    <section class="control-panel">
+      <div class="control-panel-head">
+        <div class="control-panel-title"><i class="ti ti-key"></i> Roles and capabilities</div>
+        <span class="control-count">{{ roles|length }}</span>
       </div>
-      <input name="description" placeholder="Description" aria-label="Role description">
 
-      <div class="form-section">
-        <p class="form-section-title">Inherits</p>
-        <div class="flex flex-wrap gap-x-4 gap-y-1">
+      <div class="rbac-panel-body">
+        <form method="post" action="/admin/roles" class="rbac-editor">
+          <div class="rbac-editor-head">
+            <div class="rbac-editor-title"><i class="ti ti-git-branch"></i> Create or update role</div>
+            <span class="control-chip">capability node</span>
+          </div>
+
+          <div class="rbac-form-grid">
+            <label class="control-field">
+              <span class="control-field-label">Role slug</span>
+              <input name="slug" required placeholder="release-engineer">
+            </label>
+            <label class="control-field">
+              <span class="control-field-label">Role name</span>
+              <input name="name" required placeholder="Release engineer">
+            </label>
+            <label class="control-field wide">
+              <span class="control-field-label">Description</span>
+              <input name="description" placeholder="What this role is allowed to do">
+            </label>
+          </div>
+
+          <section class="rbac-option-block">
+            <div class="rbac-option-title">
+              <span>Inherits</span>
+              <span>{{ roles|length }} available</span>
+            </div>
+            <div class="rbac-option-grid">
+              {% for role in roles %}
+              <label class="check-control">
+                <input type="checkbox" name="inherits" value="{{ role.slug }}">
+                <span class="check-control-box" aria-hidden="true"></span>
+                <span>{{ role.name }}</span>
+              </label>
+              {% else %}
+              <span class="muted text-xs">No parent roles available.</span>
+              {% endfor %}
+            </div>
+          </section>
+
+          <section class="rbac-option-block">
+            <div class="rbac-option-title">
+              <span>Permissions</span>
+              <span>{{ permissions|length }} capabilities</span>
+            </div>
+            <div class="rbac-option-grid">
+              {% for p in permissions %}
+              <label class="check-control">
+                <input type="checkbox" name="permissions" value="{{ p.id }}">
+                <span class="check-control-box" aria-hidden="true"></span>
+                <span class="mono">{{ p.slug }}</span>
+              </label>
+              {% else %}
+              <span class="muted text-xs">No permissions available.</span>
+              {% endfor %}
+            </div>
+          </section>
+
+          <div class="rbac-actions">
+            <button class="btn" type="submit"><i class="ti ti-device-floppy"></i> Save role</button>
+          </div>
+        </form>
+
+        <div class="rbac-records">
           {% for role in roles %}
-          <label class="check-control text-sm">
-            <input type="checkbox" name="inherits" value="{{ role.slug }}">
-            <span class="check-control-box" aria-hidden="true"></span>
-            <span>{{ role.name }}</span>
-          </label>
+          <article class="rbac-record">
+            <div class="rbac-record-head">
+              <div class="rbac-record-main">
+                <span class="rbac-node"><i class="ti ti-key"></i></span>
+                <span>
+                  <span class="rbac-record-name block">{{ role.name }}</span>
+                  <span class="rbac-record-slug block">{{ role.slug }}</span>
+                </span>
+              </div>
+              <span class="control-count">{{ role_permissions[role.id]|length }}</span>
+            </div>
+
+            {% if role.description %}<div class="rbac-record-description">{{ role.description }}</div>{% endif %}
+
+            <div class="rbac-link-row">
+              <span class="rbac-link-label">Capabilities</span>
+              {% for permission in role_permissions[role.id]|sort %}
+              <span class="control-chip"><i class="ti ti-point"></i>{{ permission }}</span>
+              {% else %}
+              <span class="muted text-xs">No direct permissions</span>
+              {% endfor %}
+            </div>
+          </article>
+          {% else %}
+          <div class="rbac-empty">No roles yet.</div>
           {% endfor %}
         </div>
       </div>
+    </section>
 
-      <div class="form-section">
-        <p class="form-section-title">Permissions</p>
-        <div>
-          {% for p in permissions %}
-          <label class="check-control text-sm">
-            <input type="checkbox" name="permissions" value="{{ p.id }}">
-            <span class="check-control-box" aria-hidden="true"></span>
-            <span>{{ p.slug }}</span>
-          </label>
+    <section class="control-panel">
+      <div class="control-panel-head">
+        <div class="control-panel-title"><i class="ti ti-topology-star-3"></i> Teams and scope</div>
+        <span class="control-count">{{ teams|length }}</span>
+      </div>
+
+      <div class="rbac-panel-body">
+        <form method="post" action="/admin/teams" class="rbac-editor">
+          <div class="rbac-editor-head">
+            <div class="rbac-editor-title"><i class="ti ti-box-multiple"></i> Create or update team</div>
+            <span class="control-chip">scope node</span>
+          </div>
+
+          <div class="rbac-form-grid">
+            <label class="control-field">
+              <span class="control-field-label">Team slug</span>
+              <input name="slug" required placeholder="backend">
+            </label>
+            <label class="control-field">
+              <span class="control-field-label">Team name</span>
+              <input name="name" required placeholder="Backend">
+            </label>
+            <label class="control-field wide">
+              <span class="control-field-label">Components</span>
+              <input name="components" placeholder="backend, rpm-modern, rpm-el7">
+            </label>
+          </div>
+
+          <div class="rbac-actions">
+            <button class="btn" type="submit"><i class="ti ti-device-floppy"></i> Save team</button>
+          </div>
+        </form>
+
+        <div class="rbac-records">
+          {% for team in teams %}
+          <article class="rbac-record">
+            <div class="rbac-record-head">
+              <div class="rbac-record-main">
+                <span class="rbac-node"><i class="ti ti-topology-star-3"></i></span>
+                <span>
+                  <span class="rbac-record-name block">{{ team.name }}</span>
+                  <span class="rbac-record-slug block">{{ team.slug }}</span>
+                </span>
+              </div>
+              <span class="control-count">{{ (team.components or [])|length }}</span>
+            </div>
+
+            <div class="rbac-link-row">
+              <span class="rbac-link-label">Component scope</span>
+              {% for component in (team.components or []) %}
+              <span class="control-chip"><i class="ti ti-box"></i>{{ component }}</span>
+              {% else %}
+              <span class="muted text-xs">No component scope</span>
+              {% endfor %}
+            </div>
+          </article>
+          {% else %}
+          <div class="rbac-empty">No teams yet.</div>
           {% endfor %}
         </div>
       </div>
-
-      <div><button class="btn" type="submit">Save role</button></div>
-    </form>
-
-    <div class="record-list mt-6">
-      {% for role in roles %}
-      <div class="record-card">
-        <b>{{ role.name }}</b>
-        <span class="muted text-xs">{{ role.slug }}</span>
-        <div class="muted text-xs mt-1">{{ role_permissions[role.id]|sort|join(", ") }}</div>
-      </div>
-      {% endfor %}
-    </div>
-  </section>
-
-  <section class="form-card surface rounded-xl">
-    <h2 class="font-semibold mb-5">Create or update team</h2>
-    <form method="post" action="/admin/teams" class="form-stack">
-      <div class="form-row">
-        <input name="slug" required placeholder="backend" aria-label="Team slug">
-        <input name="name" required placeholder="Backend" aria-label="Team name">
-      </div>
-      <input name="components" placeholder="backend, rpm-modern, rpm-el7" aria-label="Team components">
-      <div><button class="btn" type="submit">Save team</button></div>
-    </form>
-
-    <div class="record-list mt-6">
-      {% for team in teams %}
-      <div class="record-card">
-        <b>{{ team.name }}</b>
-        <span class="muted text-xs">{{ team.slug }}</span>
-        <div class="muted text-xs mt-1">{{ (team.components or [])|join(", ") }}</div>
-      </div>
-      {% else %}
-      <p class="muted text-sm">No teams yet.</p>
-      {% endfor %}
-    </div>
-  </section>
+    </section>
+  </div>
 </div>
 {% endblock %}

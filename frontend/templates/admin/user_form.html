@@ -1,63 +1,77 @@
-<form hx-post="{{ action }}" hx-target="body" hx-swap="outerHTML" class="space-y-4">
-  <div class="flex items-center justify-between">
-    <h3 class="font-semibold">{{ "Edit user" if edit else "New user" }}</h3>
-    <button type="button" class="muted hover:opacity-70"
+<form hx-post="{{ action }}" hx-target="body" hx-swap="outerHTML" class="control-form">
+  <div class="control-form-head">
+    <div>
+      <div class="control-kicker">Identity</div>
+      <h3 class="control-form-title">{{ "Edit user" if edit else "New user" }}</h3>
+    </div>
+    <button type="button" class="control-icon-action" title="Close"
             onclick="document.getElementById('modal').classList.add('hidden')">
       <i class="ti ti-x"></i>
     </button>
   </div>
 
-  <div>
-    <label class="block text-sm muted mb-1">Username</label>
-    <input type="text" name="username" value="{{ u.username if edit else '' }}"
-           {% if edit %}readonly{% endif %} required>
-  </div>
-
-  <div>
-    <label class="block text-sm muted mb-1">Full name</label>
-    <input type="text" name="full_name" value="{{ u.full_name if edit else '' }}">
-  </div>
-
-  <div>
-    <label class="block text-sm muted mb-1">
-      Password {% if edit %}<span class="text-xs">(blank = keep current)</span>{% endif %}
+  <div class="control-form-grid">
+    <label class="control-field">
+      <span class="control-field-label">Username</span>
+      <input type="text" name="username" value="{{ u.username if edit else '' }}"
+             {% if edit %}readonly{% endif %} required>
     </label>
-    <input type="password" name="password" {% if not edit %}required{% endif %}>
+
+    <label class="control-field">
+      <span class="control-field-label">Full name</span>
+      <input type="text" name="full_name" value="{{ u.full_name if edit else '' }}">
+    </label>
+
+    <label class="control-field control-field-wide">
+      <span class="control-field-label">Password {% if edit %}<span class="muted">(blank = keep current)</span>{% endif %}</span>
+      <input type="password" name="password" {% if not edit %}required{% endif %}>
+    </label>
   </div>
 
-  <div>
-    <label class="block text-sm muted mb-1">Roles</label>
-    <div class="flex flex-wrap gap-3">
+  <section class="control-option-group">
+    <div class="control-option-title">Roles</div>
+    <div class="control-option-grid">
       {% for r in all_roles %}
-      <label class="flex items-center gap-1.5 text-sm cursor-pointer">
-        <input type="checkbox" name="roles" value="{{ r.slug }}" style="width:auto;"
+      <label class="check-control">
+        <input type="checkbox" name="roles" value="{{ r.slug }}"
                {% if edit and r.slug in u.roles %}checked{% endif %}>
-        {{ r.name }}
+        <span class="check-control-box" aria-hidden="true"></span>
+        <span>{{ r.name }}</span>
       </label>
+      {% else %}
+      <span class="muted text-xs">No roles yet.</span>
       {% endfor %}
     </div>
-  </div>
+  </section>
 
-  <div>
-    <label class="block text-sm muted mb-1">Teams</label>
-    <div class="flex flex-wrap gap-3">
+  <section class="control-option-group">
+    <div class="control-option-title">Teams</div>
+    <div class="control-option-grid">
       {% for t in all_teams %}
-      <label class="flex items-center gap-1.5 text-sm cursor-pointer">
-        <input type="checkbox" name="teams" value="{{ t.id }}" style="width:auto;"
+      <label class="check-control">
+        <input type="checkbox" name="teams" value="{{ t.id }}"
                {% if edit and t.id in u.teams %}checked{% endif %}>
-        {{ t.name }}
+        <span class="check-control-box" aria-hidden="true"></span>
+        <span>{{ t.name }}</span>
       </label>
       {% else %}
       <span class="muted text-xs">No teams yet.</span>
       {% endfor %}
     </div>
+  </section>
+
+  <section class="control-option-group">
+    <div class="control-option-title">Account state</div>
+    <label class="check-control">
+      <input type="checkbox" name="is_active" value="true"
+             {% if (not edit) or u.is_active %}checked{% endif %}>
+      <span class="check-control-box" aria-hidden="true"></span>
+      <span>Active</span>
+    </label>
+  </section>
+
+  <div class="control-form-actions">
+    <button type="button" class="btn-ghost" onclick="document.getElementById('modal').classList.add('hidden')">Cancel</button>
+    <button type="submit" class="btn"><i class="ti ti-device-floppy"></i> Save user</button>
   </div>
-
-  <label class="flex items-center gap-2 text-sm cursor-pointer">
-    <input type="checkbox" name="is_active" value="true" style="width:auto;"
-           {% if (not edit) or u.is_active %}checked{% endif %}>
-    Active
-  </label>
-
-  <button type="submit" class="btn w-full">Save</button>
 </form>
