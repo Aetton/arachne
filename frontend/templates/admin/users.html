@@ -1,61 +1,111 @@
 {% extends "base.html" %}
 {% block title %}Users · Admin{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="/static/css/control-ui.css?v=1">
 
-<div class="flex items-center justify-between mb-5">
-  <h1 class="text-xl font-semibold">User management</h1>
-  <button class="btn" hx-get="/admin/users/new" hx-target="#modal-body"
-          onclick="document.getElementById('modal').classList.remove('hidden')">
-    <i class="ti ti-plus"></i> New user
-  </button>
+<div class="control-page">
+  <header class="control-header">
+    <div class="control-header-copy">
+      <div class="control-kicker">Control / Identity</div>
+      <h1 class="control-title"><i class="ti ti-users"></i> User management</h1>
+      <p class="control-subtitle">Local identities, roles, teams and account state.</p>
+    </div>
+    <div class="control-actions">
+      <button class="btn" hx-get="/admin/users/new" hx-target="#modal-body"
+              onclick="document.getElementById('modal').classList.remove('hidden')">
+        <i class="ti ti-user-plus"></i> New user
+      </button>
+    </div>
+  </header>
+
+  <section class="control-panel">
+    <div class="control-panel-head">
+      <div class="control-panel-title"><i class="ti ti-id"></i> Identities</div>
+      <span class="control-count">{{ users|length }}</span>
+    </div>
+
+    <div class="control-table-wrap">
+      <table class="control-table">
+        <colgroup>
+          <col style="width:23%">
+          <col style="width:22%">
+          <col style="width:18%">
+          <col style="width:14%">
+          <col style="width:10%">
+          <col style="width:8%">
+          <col style="width:5%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Identity</th>
+            <th>Roles</th>
+            <th>Teams</th>
+            <th>Source</th>
+            <th>Status</th>
+            <th></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>
+              <div class="control-primary">
+                <span class="control-avatar">{{ (u.full_name or u.username)[:1] }}</span>
+                <span class="control-primary-copy">
+                  <span class="control-primary-title block">{{ u.full_name or u.username }}</span>
+                  <span class="control-primary-meta block">@{{ u.username }}</span>
+                </span>
+              </div>
+            </td>
+            <td>
+              <div class="control-chip-row">
+                {% for r in u.roles %}<span class="control-chip"><i class="ti ti-key"></i>{{ r }}</span>{% endfor %}
+                {% if not u.roles %}<span class="muted">—</span>{% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="control-chip-row">
+                {% for team in u.teams %}<span class="control-chip"><i class="ti ti-topology-star-3"></i>{{ team }}</span>{% endfor %}
+                {% if not u.teams %}<span class="muted">—</span>{% endif %}
+              </div>
+            </td>
+            <td><span class="control-chip"><i class="ti ti-fingerprint"></i>{{ u.auth_source }}</span></td>
+            <td>
+              {% if u.is_active %}<span class="control-status control-status-active">active</span>
+              {% else %}<span class="control-status control-status-inactive">inactive</span>{% endif %}
+            </td>
+            <td>
+              <div class="control-row-actions">
+                <button class="control-icon-action" title="Edit {{ u.username }}"
+                        hx-get="/admin/users/{{ u.id }}/edit" hx-target="#modal-body"
+                        onclick="document.getElementById('modal').classList.remove('hidden')">
+                  <i class="ti ti-pencil"></i>
+                </button>
+              </div>
+            </td>
+            <td>
+              {% if u.username != current_user.username %}
+              <button class="control-icon-action danger" title="Delete {{ u.username }}"
+                      hx-delete="/admin/users/{{ u.id }}" hx-confirm="Delete {{ u.username }}?"
+                      hx-target="closest tr" hx-swap="outerHTML">
+                <i class="ti ti-trash"></i>
+              </button>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="muted">No users found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
 
-<div class="surface rounded-xl overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="surface-2">
-      <tr class="text-left muted">
-        <th class="px-4 py-2.5 font-medium">Username</th>
-        <th class="px-4 py-2.5 font-medium">Name</th>
-        <th class="px-4 py-2.5 font-medium">Roles</th>
-        <th class="px-4 py-2.5 font-medium">Teams</th>
-        <th class="px-4 py-2.5 font-medium">Source</th>
-        <th class="px-4 py-2.5 font-medium">Status</th>
-        <th class="px-4 py-2.5 font-medium text-right">Actions</th>
-      </tr>
-    </thead>
-    <tbody class="divide-y" style="border-color: var(--border);">
-      {% for u in users %}
-      <tr class="hover:surface-2">
-        <td class="px-4 py-2.5 font-medium">{{ u.username }}</td>
-        <td class="px-4 py-2.5 muted">{{ u.full_name or "—" }}</td>
-        <td class="px-4 py-2.5">
-          {% for r in u.roles %}<span class="pill pill-pending mr-1">{{ r }}</span>{% endfor %}
-        </td>
-        <td class="px-4 py-2.5 muted">{{ u.teams|join(", ") if u.teams else "—" }}</td>
-        <td class="px-4 py-2.5 muted">{{ u.auth_source }}</td>
-        <td class="px-4 py-2.5">
-          {% if u.is_active %}<span class="pill pill-ok">active</span>
-          {% else %}<span class="pill pill-fail">inactive</span>{% endif %}
-        </td>
-        <td class="px-4 py-2.5 text-right whitespace-nowrap">
-          <button class="link mr-3" hx-get="/admin/users/{{ u.id }}/edit" hx-target="#modal-body"
-                  onclick="document.getElementById('modal').classList.remove('hidden')">Edit</button>
-          {% if u.username != current_user.username %}
-          <button class="link" style="color: var(--fail-fg);"
-                  hx-delete="/admin/users/{{ u.id }}" hx-confirm="Delete {{ u.username }}?"
-                  hx-target="closest tr" hx-swap="outerHTML">Delete</button>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-
-<div id="modal" class="hidden fixed inset-0 flex items-center justify-center p-4"
-     style="background: rgba(0,0,0,.5);"
+<div id="modal" class="control-modal hidden"
      onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="surface rounded-xl p-6 w-full max-w-md" id="modal-body"></div>
+  <div class="control-modal-card" id="modal-body"></div>
 </div>
 
 {% endblock %}
