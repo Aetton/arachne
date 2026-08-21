@@ -3,8 +3,15 @@
 
   var SVG_NS = 'http://www.w3.org/2000/svg';
   var state = {
-    route: null,
-    source: null
+    selectedSpoke: null,
+    selectedStatus: 'selected',
+    selectedSource: null,
+    scenarioByLabel: new Map(),
+    scenarioBySlug: new Map(),
+    runStatuses: new Map(),
+    hasScannedRuns: false,
+    lastImpulseAt: 0,
+    logObserver: null
   };
 
   var geometry = {
@@ -13,8 +20,7 @@
     hub: { x: 515, y: 310 },
     bounds: { left: 80, top: 34, right: 930, bottom: 610 },
     angles: [-168, -140, -112, -83, -36, -6, 26, 63, 106, 145],
-    rings: [0.14, 0.24, 0.35, 0.47, 0.60, 0.74, 0.88],
-    routeChoices: [0, 1, 9]
+    rings: [0.14, 0.24, 0.35, 0.47, 0.60, 0.74, 0.88]
   };
 
   var omittedSegments = new Set([
@@ -32,6 +38,15 @@
       node.setAttribute(key, String(attrs[key]));
     });
     return node;
+  }
+
+  function hashText(value) {
+    var text = String(value || 'arachne');
+    var hash = 0;
+    for (var i = 0; i < text.length; i += 1) {
+      hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash);
   }
 
   function pointAlong(angle, distance) {
@@ -105,6 +120,18 @@
       ' ' + p2.x.toFixed(2) + ' ' + p2.y.toFixed(2);
   }
 
+  function routePath(index) {
+    if (index === null || index === undefined) return null;
+    var angle = geometry.angles[index];
+    if (angle === undefined) return null;
+    var distance = maxDistance(angle) * 0.93;
+    var end = pointAlong(angle, distance);
+    return {
+      d: 'M ' + end.x.toFixed(2) + ' ' + end.y.toFixed(2) + ' L ' + geometry.hub.x + ' ' + geometry.hub.y,
+      entry: end
+    };
+  }
+
   function buildWeb(svg) {
     var spokes = geometry.angles.map(function (angle, index) {
       return { index: index, angle: angle, max: maxDistance(angle) };
@@ -134,6 +161,8 @@
         var next = spokes[nextIndex];
         captureGroup.appendChild(svgNode('path', {
           class: 'orb-web-capture',
+          'data-spoke-a': index,
+          'data-spoke-b': nextIndex,
           d: capturePath(spoke, next, fraction)
         }));
 
@@ -157,10 +186,6 @@
         d: framePath(spokes[index], spokes[nextIndex])
       }));
     });
-
-    activeGroup.appendChild(svgNode('path', { class: 'orb-web-active-base' }));
-    activeGroup.appendChild(svgNode('path', { class: 'orb-web-active-pulse' }));
-    activeGroup.appendChild(svgNode('circle', { class: 'orb-web-entry', r: 5 }));
 
     var hubGroup = svgNode('g', { class: 'orb-web-hub' });
     hubGroup.appendChild(svgNode('circle', {
@@ -223,54 +248,173 @@
     buildWeb(svg);
     layer.appendChild(svg);
     workspace.insertBefore(layer, workspace.firstChild);
-
-    applyRoute(state.route);
     window.requestAnimationFrame(syncHubPosition);
     return layer;
   }
 
-  function spokePath(index) {
-    if (index === null || index === undefined) return null;
-    var angle = geometry.angles[index];
-    if (angle === undefined) return null;
-    var distance = maxDistance(angle) * 0.93;
-    var end = pointAlong(angle, distance);
+  function apportionSectors(groups) {
+    var totalSpokes = geometry.angles.length;
+    var totalScenarios = groups.reduce(function (sum, group) { return sum + group.cards.length; }, 0) || 1;
+    var shares = groups.map(function (group) {
+      var raw = group.cards.length / totalScenarios * totalSpokes;
+      return { group: group, raw: raw, count: Math.max(1, Math.floor(raw)), fraction: raw - Math.floor(raw) };
+    });
+    var used = shares.reduce(function (sum, item) { return sum + item.count; }, 0);
+
+    while (used > totalSpokes) {
+      var removable = shares.filter(function (item) { return item.count > 1; })
+        .sort(function (a, b) { return a.fraction - b.fraction; });
+      if (!removable.length) break;
+      removable[0].count -= 1;
+      used -= 1;
+    }
+
+    while (used < totalSpokes) {
+      shares.sort(function (a, b) { return b.fraction - a.fraction; });
+      shares[0].count += 1;
+      shares[0].fraction = -1;
+      used += 1;
+    }
+
+    var cursor = 0;
+    shares.forEach(function (item) {
+      item.spokes = [];
+      for (var i = 0; i < item.count; i += 1) item.spokes.push((cursor + i) % totalSpokes);
+      cursor += item.count;
+    });
+    return shares;
+  }
+
+  function buildSemanticMap() {
+    state.scenarioByLabel.clear();
+    state.scenarioBySlug.clear();
+
+    var groups = Array.from(document.querySelectorAll('.scenario-group')).map(function (group) {
+      return {
+        component: group.dataset.component || 'default',
+        cards: Array.from(group.querySelectorAll('.scenario-card'))
+      };
+    }).filter(function (group) { return group.cards.length; });
+
+    apportionSectors(groups).forEach(function (sector) {
+      sector.group.cards.forEach(function (card) {
+        var slug = card.dataset.scenario || card.dataset.search || card.textContent;
+        var label = (card.dataset.scenarioLabel || card.querySelector('.scenario-title')?.textContent || '').trim();
+        var spoke = sector.spokes[hashText(slug) % sector.spokes.length];
+        var semantic = {
+          slug: slug,
+          label: label,
+          component: sector.group.component,
+          spoke: spoke,
+          card: card,
+          sectorSpokes: sector.spokes.slice()
+        };
+        card.dataset.orbSpoke = String(spoke);
+        card.dataset.orbSector = sector.spokes.join(',');
+        state.scenarioBySlug.set(slug, semantic);
+        if (label && !state.scenarioByLabel.has(label)) state.scenarioByLabel.set(label, semantic);
+      });
+    });
+  }
+
+  function resolveRun(row) {
+    if (!row) return null;
+    var label = (row.dataset.scenarioLabel || row.querySelector('.run-row-title')?.textContent || '').trim();
+    var semantic = state.scenarioByLabel.get(label);
+    if (!semantic) return null;
     return {
-      d: 'M ' + end.x.toFixed(2) + ' ' + end.y.toFixed(2) + ' L ' + geometry.hub.x + ' ' + geometry.hub.y,
-      entry: end
+      runId: row.dataset.runId || '',
+      status: row.dataset.runStatus || (row.classList.contains('running') ? 'running' : 'selected'),
+      spoke: semantic.spoke,
+      scenario: semantic,
+      row: row
     };
   }
 
-  function applyRoute(index) {
-    var layer = document.querySelector('.operator-workspace > .workspace-orb-web');
-    if (!layer) return;
-
-    var base = layer.querySelector('.orb-web-active-base');
-    var pulse = layer.querySelector('.orb-web-active-pulse');
-    var entry = layer.querySelector('.orb-web-entry');
-    var route = spokePath(index);
-
-    if (!route) {
-      base.setAttribute('d', '');
-      pulse.setAttribute('d', '');
-      entry.setAttribute('cx', '-50');
-      entry.setAttribute('cy', '-50');
-      return;
-    }
-
-    base.setAttribute('d', route.d);
-    pulse.setAttribute('d', route.d);
-    entry.setAttribute('cx', route.entry.x.toFixed(2));
-    entry.setAttribute('cy', route.entry.y.toFixed(2));
+  function statusClass(status) {
+    if (status === 'success') return 'status-success';
+    if (status === 'failed') return 'status-failed';
+    if (status === 'cancelled') return 'status-cancelled';
+    if (status === 'running') return 'status-running';
+    return 'status-selected';
   }
 
-  function chooseRoute(seed) {
-    var text = String(seed || 'arachne');
-    var hash = 0;
-    for (var i = 0; i < text.length; i += 1) {
-      hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  function appendRoute(group, spoke, status, options) {
+    var route = routePath(spoke);
+    if (!route) return;
+    options = options || {};
+    var cls = statusClass(status);
+    var base = svgNode('path', {
+      class: 'orb-web-route-base ' + cls + (options.selected ? ' is-selected' : ''),
+      d: route.d
+    });
+    var pulse = svgNode('path', {
+      class: 'orb-web-route-pulse ' + cls + (options.selected ? ' is-selected' : ''),
+      d: route.d,
+      pathLength: 100
+    });
+    if (options.delay) pulse.style.animationDelay = options.delay + 's';
+    group.appendChild(base);
+    group.appendChild(pulse);
+    group.appendChild(svgNode('circle', {
+      class: 'orb-web-route-entry ' + cls,
+      cx: route.entry.x.toFixed(2),
+      cy: route.entry.y.toFixed(2),
+      r: options.selected ? 5.5 : 4
+    }));
+  }
+
+  function renderRoutes() {
+    var layer = ensureLayer();
+    if (!layer) return;
+    var active = layer.querySelector('.orb-web-active-group');
+    if (!active) return;
+    active.replaceChildren();
+
+    var liveRows = Array.from(document.querySelectorAll('.run-row.running'));
+    liveRows.forEach(function (row, index) {
+      var run = resolveRun(row);
+      if (!run) return;
+      row.dataset.orbSpoke = String(run.spoke);
+      appendRoute(active, run.spoke, 'running', { delay: -(index * 0.43) });
+    });
+
+    if (state.selectedSpoke !== null) {
+      appendRoute(active, state.selectedSpoke, state.selectedStatus, { selected: true, delay: -0.2 });
     }
-    return geometry.routeChoices[Math.abs(hash) % geometry.routeChoices.length];
+    highlightSelection();
+  }
+
+  function highlightSelection() {
+    var layer = document.querySelector('.operator-workspace > .workspace-orb-web');
+    if (!layer) return;
+    layer.querySelectorAll('.orb-web-spoke.is-selected, .orb-web-capture.is-selected').forEach(function (node) {
+      node.classList.remove('is-selected');
+    });
+    if (state.selectedSpoke === null) return;
+    var spoke = layer.querySelector('.orb-web-spoke[data-spoke-index="' + state.selectedSpoke + '"]');
+    if (spoke) spoke.classList.add('is-selected');
+    layer.querySelectorAll('.orb-web-capture').forEach(function (path) {
+      if (Number(path.dataset.spokeA) === state.selectedSpoke || Number(path.dataset.spokeB) === state.selectedSpoke) {
+        path.classList.add('is-selected');
+      }
+    });
+  }
+
+  function emitImpulse(spoke, status) {
+    if (spoke === null || spoke === undefined) return;
+    var layer = ensureLayer();
+    var active = layer && layer.querySelector('.orb-web-active-group');
+    var route = routePath(spoke);
+    if (!active || !route) return;
+
+    var impulse = svgNode('path', {
+      class: 'orb-web-event-impulse ' + statusClass(status || 'running'),
+      d: route.d,
+      pathLength: 100
+    });
+    active.appendChild(impulse);
+    impulse.addEventListener('animationend', function () { impulse.remove(); }, { once: true });
   }
 
   function clearRunSelection() {
@@ -281,9 +425,13 @@
 
   function selectScenario(card) {
     clearRunSelection();
-    state.source = 'scenario';
-    state.route = chooseRoute(card.dataset.search || card.textContent);
-    applyRoute(state.route);
+    var semantic = state.scenarioBySlug.get(card.dataset.scenario) || state.scenarioByLabel.get(card.dataset.scenarioLabel || '');
+    if (!semantic) return;
+    state.selectedSource = 'scenario';
+    state.selectedSpoke = semantic.spoke;
+    state.selectedStatus = 'selected';
+    renderRoutes();
+    emitImpulse(semantic.spoke, 'selected');
   }
 
   function selectRun(row) {
@@ -292,16 +440,49 @@
     });
     clearRunSelection();
     row.classList.add('web-route-selected');
-    state.source = 'run';
-    state.route = chooseRoute(row.textContent);
-    applyRoute(state.route);
+    var run = resolveRun(row);
+    if (!run) return;
+    state.selectedSource = 'run';
+    state.selectedSpoke = run.spoke;
+    state.selectedStatus = run.status;
+    renderRoutes();
+    emitImpulse(run.spoke, run.status);
   }
 
-  function selectFirstLiveRunIfIdle() {
-    if (state.source) return;
-    var live = document.querySelector('.run-row.running');
-    if (!live) return;
-    selectRun(live);
+  function scanRunStatuses() {
+    var next = new Map();
+    document.querySelectorAll('.run-row[data-run-id]').forEach(function (row) {
+      var run = resolveRun(row);
+      var id = row.dataset.runId;
+      var status = row.dataset.runStatus || 'unknown';
+      next.set(id, status);
+      var previous = state.runStatuses.get(id);
+      if (state.hasScannedRuns && run && (!previous || previous !== status)) {
+        emitImpulse(run.spoke, status);
+      }
+    });
+    state.runStatuses = next;
+    state.hasScannedRuns = true;
+  }
+
+  function observeLiveLog() {
+    var workspace = document.querySelector('.operator-workspace');
+    if (!workspace || state.logObserver) return;
+    state.logObserver = new MutationObserver(function (mutations) {
+      var hasLogLine = mutations.some(function (mutation) {
+        if (!mutation.addedNodes.length) return false;
+        if (mutation.target.closest && mutation.target.closest('.log-lines')) return true;
+        return Array.from(mutation.addedNodes).some(function (node) {
+          return node.nodeType === 1 && (node.matches?.('.log-line') || node.querySelector?.('.log-line'));
+        });
+      });
+      if (!hasLogLine || state.selectedSpoke === null) return;
+      var now = Date.now();
+      if (now - state.lastImpulseAt < 180) return;
+      state.lastImpulseAt = now;
+      emitImpulse(state.selectedSpoke, 'running');
+    });
+    state.logObserver.observe(workspace, { childList: true, subtree: true });
   }
 
   document.addEventListener('click', function (event) {
@@ -310,7 +491,6 @@
       selectScenario(scenario);
       return;
     }
-
     var run = event.target.closest('.run-row');
     if (run) selectRun(run);
   });
@@ -318,9 +498,17 @@
   document.body.addEventListener('htmx:afterSwap', function (event) {
     window.requestAnimationFrame(function () {
       ensureLayer();
-      applyRoute(state.route);
+      buildSemanticMap();
       syncHubPosition();
-      if (event.target && event.target.id === 'run-list') selectFirstLiveRunIfIdle();
+      if (event.target && event.target.id === 'run-list') {
+        scanRunStatuses();
+        renderRoutes();
+      } else if (event.target && event.target.id === 'workspace') {
+        if (event.target.querySelector('.artifact-block') && state.selectedSpoke !== null) {
+          emitImpulse(state.selectedSpoke, 'success');
+        }
+        renderRoutes();
+      }
     });
   });
 
@@ -330,8 +518,11 @@
   }, { passive: true });
 
   ensureLayer();
+  buildSemanticMap();
+  observeLiveLog();
   window.requestAnimationFrame(function () {
     syncHubPosition();
-    selectFirstLiveRunIfIdle();
+    scanRunStatuses();
+    renderRoutes();
   });
 })();
