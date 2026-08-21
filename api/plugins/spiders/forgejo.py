@@ -165,6 +165,69 @@ class ForgejoSpider(BuildSpider):
         )
         return f"{base}/{suffix.lstrip('/')}" if suffix else base
 
+    @staticmethod
+    def _run_rows(payload: object) -> list[dict]:
+        """Accept Forgejo's object, envelope, and bare-list run responses."""
+        if isinstance(payload, dict):
+            nested = payload.get("workflow_runs")
+            if isinstance(nested, list):
+                payload = nested
+            elif payload.get("id") is not None or payload.get("run_id") is not None:
+                return [payload]
+            else:
+                return []
+
+        if isinstance(payload, list):
+            return [
+                row for row in payload
+                if isinstance(row, dict)
+                and (row.get("id") is not None or row.get("run_id") is not None)
+            ]
+        return []
+
+    @staticmethod
+    def _normalized_ref(value: object) -> str:
+        ref = str(value or "")
+        return ref.removeprefix("refs/heads/")
+
+    @classmethod
+    def _select_dispatched_run(
+        cls,
+        rows: list[dict],
+        ref: str,
+        started_after: float,
+    ) -> dict | None:
+        expected_ref = cls._normalized_ref(ref)
+        timed: list[tuple[float, dict]] = []
+        undated: list[dict] = []
+
+        for row in rows:
+            actual_ref = row.get("head_branch") or row.get("ref")
+            if (
+                actual_ref
+                and cls._normalized_ref(actual_ref) != expected_ref
+            ):
+                continue
+
+            created = row.get("created_at") or row.get("run_started_at")
+            if not created:
+                undated.append(row)
+                continue
+            try:
+                stamp = datetime.fromisoformat(
+                    str(created).replace("Z", "+00:00")
+                ).timestamp()
+            except (TypeError, ValueError):
+                undated.append(row)
+                continue
+            if stamp >= started_after - 2:
+                timed.append((stamp, row))
+
+        if timed:
+            timed.sort(key=lambda item: item[0], reverse=True)
+            return timed[0][1]
+        return undated[0] if undated else None
+
     def _discover_run(
         self,
         owner: str,
@@ -173,7 +236,7 @@ class ForgejoSpider(BuildSpider):
         ref: str,
         started_after: float,
     ) -> dict | None:
-        """Fallback for servers that accepted dispatch but did not return run metadata."""
+        """Find the run when dispatch returned no directly usable metadata."""
         url = self._api_path(owner, repo, f"actions/workflows/{workflow}/runs")
         for _ in range(10):
             try:
@@ -189,17 +252,12 @@ class ForgejoSpider(BuildSpider):
                     verify=VERIFY_TLS,
                 )
                 response.raise_for_status()
-                rows = response.json().get("workflow_runs", [])
-                for row in rows:
-                    created = row.get("created_at") or row.get("run_started_at")
-                    if not created:
-                        return row
-                    try:
-                        stamp = created.replace("Z", "+00:00")
-                        if datetime.fromisoformat(stamp).timestamp() >= started_after - 2:
-                            return row
-                    except (TypeError, ValueError):
-                        return row
+                rows = self._run_rows(response.json())
+                selected = self._select_dispatched_run(
+                    rows, ref, started_after
+                )
+                if selected:
+                    return selected
             except Exception:
                 pass
             time.sleep(0.5)
@@ -251,10 +309,13 @@ class ForgejoSpider(BuildSpider):
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError(self._http_error(exc, url, body, method="POST")) from exc
 
-        data = {}
+        data: dict = {}
         if response.content:
             try:
-                data = response.json()
+                rows = self._run_rows(response.json())
+                data = self._select_dispatched_run(
+                    rows, ref, started_after
+                ) or {}
             except ValueError:
                 data = {}
 
