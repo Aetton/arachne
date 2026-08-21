@@ -20,10 +20,10 @@
         {% if p.type == "boolean" %}
           <label class="check-control">
             <input type="checkbox" name="{{ p.name }}" value="true" {% if p.default %}checked{% endif %}>
-            <span class="check-control-box"></span>
-            <span>
-              <span class="block text-sm">{{ p.label }}</span>
-              <span class="block muted text-xs">Enabled when checked</span>
+            <span class="check-control-box" aria-hidden="true"><i class="ti ti-check"></i></span>
+            <span class="check-control-copy">
+              <span class="check-control-title">{{ p.label }}</span>
+              <span class="check-control-hint">Enabled when checked</span>
             </span>
           </label>
         {% else %}
