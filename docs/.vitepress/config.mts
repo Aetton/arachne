@@ -56,16 +56,27 @@ const russianSidebar = [
   {
     text: "Руководство пользователя",
     items: [
+      { text: "Работа оператора", link: "/ru/user-guide/operator" },
       { text: "Сценарии", link: "/ru/user-guide/scenarios" },
-      { text: "Компоненты", link: "/ru/user-guide/components" }
+      { text: "Компоненты", link: "/ru/user-guide/components" },
+      { text: "Администрирование", link: "/ru/user-guide/administration" },
+      { text: "Роли и доступ", link: "/ru/user-guide/access" }
     ]
   },
   {
     text: "Справочник",
     items: [
       { text: "Синтаксис сценариев", link: "/ru/reference/scenario-syntax" },
-      { text: "Конфигурация", link: "/ru/reference/configuration" }
+      { text: "Пауки", link: "/ru/reference/spiders" },
+      { text: "Триггеры", link: "/ru/reference/triggers" },
+      { text: "HTTP API", link: "/ru/reference/api" },
+      { text: "Конфигурация", link: "/ru/reference/configuration" },
+      { text: "Ограничения", link: "/ru/reference/limitations" }
     ]
+  },
+  {
+    text: "Интеграции",
+    items: [{ text: "Forgejo Actions", link: "/ru/integrations/forgejo" }]
   },
   {
     text: "Архитектура",
@@ -73,12 +84,16 @@ const russianSidebar = [
   },
   {
     text: "Разработка",
-    items: [{ text: "Локальный запуск", link: "/ru/development/local-setup" }]
+    items: [
+      { text: "Локальный запуск", link: "/ru/development/local-setup" },
+      { text: "Расширение Arachne", link: "/ru/development/extending" }
+    ]
   },
   {
     text: "Эксплуатация",
     items: [
       { text: "Развёртывание", link: "/ru/operations/deployment" },
+      { text: "Резервные копии и миграция", link: "/ru/operations/backup-and-migration" },
       { text: "Диагностика", link: "/ru/operations/troubleshooting" }
     ]
   },

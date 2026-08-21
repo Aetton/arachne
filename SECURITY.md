@@ -1,5 +1,7 @@
 # Security Policy
 
+[Русская версия](SECURITY.ru.md)
+
 ## Reporting vulnerabilities
 
 Please do not report security issues through public GitHub issues.

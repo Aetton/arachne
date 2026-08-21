@@ -1,6 +1,9 @@
-# Reference Forgejo workflow implementing the Arachne callback contract.
+# LEGACY reference: old Forgejo callback contract.
+# The current Forgejo v16 spider polls status/logs/artifacts through the API and
+# does not inject build_id/arachne_callback/arachne_token. Do not copy this into
+# new workflows unless an old Arachne deployment still needs callback telemetry.
 #
-# Arachne (the spider) plucks this thread via the dispatch API and injects three
+# An old Arachne spider plucks this thread via the dispatch API and injects three
 # inputs: build_id, arachne_callback, arachne_token. This workflow vibrates the
 # thread back — one signal per runner block, then a final status.
 #

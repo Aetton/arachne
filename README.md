@@ -1,5 +1,7 @@
 # Arachne
 
+[Русская документация](README.ru.md) · [Полное руководство](docs/ru/index.md)
+
 Arachne is a lightweight orchestration portal for CI/CD workflows,
 infrastructure automation, live logs, and artifact links.
 

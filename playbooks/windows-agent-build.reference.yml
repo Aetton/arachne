@@ -1,3 +1,7 @@
+# LEGACY callback reference. Современный Forgejo v16 spider сам читает run, логи и
+# артефакты через API и не передаёт callback inputs. Для нового workflow эта обвязка
+# не нужна.
+#
 # .forgejo/workflows/build-windows.yml  — в репе `client`
 #
 # Рабочий билдер windows-агента + обвязка Arachne (закон нити).
