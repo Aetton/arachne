@@ -1,3 +1,4 @@
+<link rel="stylesheet" href="/static/css/branch-picker.css?v=1">
 <div class="workspace-frame thread-form">
   <header class="thread-form-header">
     <div>
@@ -32,7 +33,48 @@
             {% if p.required %}<span class="required-mark">required</span>{% endif %}
           </label>
 
-          {% if p.type == "choice" or p.type == "select" %}
+          {% if p.type == "select" and p.source and p.source.type == "git_branches" %}
+            {% if p.source_error %}
+              <input id="param-{{ p.name }}" type="text" value="Unable to load options" disabled>
+              <div class="field-error">{{ p.source_error }}</div>
+            {% else %}
+              {% set branch_value = p.default if p.default in p.options else (p.options[0] if p.options else '') %}
+              <div class="branch-picker" data-branch-picker>
+                <input type="hidden" name="{{ p.name }}" value="{{ branch_value }}" data-branch-value>
+                <div class="branch-picker-control">
+                  <i class="ti ti-search"></i>
+                  <input id="param-{{ p.name }}"
+                         class="branch-picker-search"
+                         type="search"
+                         value="{{ branch_value }}"
+                         placeholder="Поиск ветки…"
+                         autocomplete="off"
+                         role="combobox"
+                         aria-autocomplete="list"
+                         aria-expanded="false"
+                         aria-controls="branch-options-{{ p.name }}"
+                         data-branch-search>
+                  <i class="ti ti-chevron-down branch-picker-chevron"></i>
+                </div>
+                <div id="branch-options-{{ p.name }}"
+                     class="branch-picker-menu"
+                     role="listbox"
+                     data-branch-menu
+                     hidden>
+                  {% for opt in p.options %}
+                    <button id="branch-option-{{ p.name }}-{{ loop.index }}"
+                            class="branch-picker-option"
+                            type="button"
+                            role="option"
+                            aria-selected="{{ 'true' if opt == branch_value else 'false' }}"
+                            data-value="{{ opt }}"
+                            data-branch-option>{{ opt }}</button>
+                  {% endfor %}
+                  <div class="branch-picker-empty" data-branch-empty hidden>Ничего не найдено.</div>
+                </div>
+              </div>
+            {% endif %}
+          {% elif p.type == "choice" or p.type == "select" %}
             <select id="param-{{ p.name }}" name="{{ p.name }}"
                     {% if p.required %}required{% endif %}
                     {% if p.source_error %}disabled{% endif %}>
@@ -64,3 +106,4 @@
     </div>
   </form>
 </div>
+<script src="/static/js/branch-picker.js?v=1"></script>
