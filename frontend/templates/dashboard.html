@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Web · Arachne{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/css/orb-web.css?v=1">
+<link rel="stylesheet" href="/static/css/orb-web.css?v=2">
 <div class="operator-shell">
   <aside class="operator-column operator-nav">
     <section class="web-section">
@@ -30,6 +30,9 @@
           {% set s = item.definition %}
           <button hx-get="/scenarios/{{ key }}/form" hx-target="#workspace" hx-swap="innerHTML"
                   data-search="{{ key }} {{ s.label }} {{ group.component.slug }} {{ group.component.label }}"
+                  data-scenario="{{ key }}"
+                  data-scenario-label="{{ s.label }}"
+                  data-component="{{ group.component.slug }}"
                   class="scenario-card scenario-accent-{{ s.accent or 'indigo' }}">
             <span class="min-w-0">
               <span class="scenario-title block">{{ s.label }}</span>
@@ -104,5 +107,5 @@
     });
   })();
 </script>
-<script src="/static/js/orb-web.js?v=1"></script>
+<script src="/static/js/orb-web.js?v=2"></script>
 {% endblock %}
