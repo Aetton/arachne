@@ -1,4 +1,3 @@
-<link rel="stylesheet" href="/static/css/branch-picker.css?v=1">
 <div class="workspace-frame thread-form">
   <header class="thread-form-header">
     <div>
@@ -42,19 +41,20 @@
               <div class="branch-picker" data-branch-picker>
                 <input type="hidden" name="{{ p.name }}" value="{{ branch_value }}" data-branch-value>
                 <div class="branch-picker-control">
-                  <i class="ti ti-search"></i>
+                  <i class="ti ti-search" aria-hidden="true"></i>
                   <input id="param-{{ p.name }}"
                          class="branch-picker-search"
                          type="search"
                          value="{{ branch_value }}"
                          placeholder="Поиск ветки…"
                          autocomplete="off"
+                         spellcheck="false"
                          role="combobox"
                          aria-autocomplete="list"
                          aria-expanded="false"
                          aria-controls="branch-options-{{ p.name }}"
                          data-branch-search>
-                  <i class="ti ti-chevron-down branch-picker-chevron"></i>
+                  <i class="ti ti-chevron-down branch-picker-chevron" aria-hidden="true"></i>
                 </div>
                 <div id="branch-options-{{ p.name }}"
                      class="branch-picker-menu"
@@ -106,4 +106,3 @@
     </div>
   </form>
 </div>
-<script src="/static/js/branch-picker.js?v=1"></script>
