@@ -1,5 +1,5 @@
-/* Dashboard left rail: keep scenario catalogue and run activity independently visible.
-   The panes are intentionally invisible; only their scroll behavior separates them. */
+/* Dashboard left rail: two invisible vertical panes.
+   Upper pane owns scenario selection, lower pane owns the complete runtime stream. */
 
 .operator-nav {
   height: calc(100vh - 82px);
@@ -35,40 +35,34 @@
   margin-bottom: 0;
 }
 
+/* Runtime is one stream. Live threads and Recent stay in normal document flow
+   and share one scroll area instead of becoming nested panes. */
 .dashboard-runs-pane {
-  display: flex;
-  flex-direction: column;
-}
-
-#run-list {
-  min-height: 0;
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-}
-
-#run-list > .run-section-live {
-  min-height: 0;
-  margin-bottom: .65rem;
-  flex: none;
-}
-
-#run-list > .run-section-recent {
-  min-height: 0;
-  margin-bottom: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding-right: .2rem;
 }
 
-/* If there are enough live runs to consume the lower pane, allow that section
-   to scroll too instead of pushing Recent out of the layout completely. */
+#run-list {
+  min-height: 0;
+  display: block;
+  overflow: visible;
+}
+
+#run-list > .run-section-live,
+#run-list > .run-section-recent {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+}
+
 #run-list > .run-section-live {
-  max-height: 48%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  margin-bottom: 1rem;
+}
+
+#run-list > .run-section-recent {
+  margin-bottom: 0;
 }
 
 @media (max-width: 900px) {
