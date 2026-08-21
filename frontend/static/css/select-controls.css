@@ -1,17 +1,13 @@
-/* Keep every dropdown chevron on one visual grid.
-   Native select arrows vary by browser, platform and zoom, so Arachne draws its own. */
+/* Unified form control affordances.
+   Native select arrows differ by browser/platform, so Arachne owns the chevron. */
 
 select:not([multiple]) {
   -webkit-appearance: none;
   appearance: none;
-  padding-right: 2.7rem !important;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
-    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position:
-    calc(100% - 1.12rem) calc(50% - .11rem),
-    calc(100% - .82rem) calc(50% - .11rem);
-  background-size: .34rem .34rem, .34rem .34rem;
+  padding-right: 2.75rem !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238b93bd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right .82rem center;
+  background-size: 1rem 1rem;
   background-repeat: no-repeat;
 }
 
@@ -19,23 +15,123 @@ select:not([multiple]):disabled {
   opacity: .62;
 }
 
-/* Firefox can reserve native arrow space even after appearance:none. */
 select:not([multiple])::-ms-expand {
   display: none;
 }
 
-/* Theme selector uses the same chevron axis as scenario dropdowns. */
+/* The theme picker is smaller than scenario controls, but the chevron keeps
+   exactly the same inset and visual size. */
 .theme-select {
   padding-right: 2.55rem !important;
+  background-position: right .72rem center;
+  background-size: .9rem .9rem;
 }
 
-/* The searchable branch picker is custom markup, align its Tabler chevron
-   with the center of the CSS chevrons used by native selects. */
+/* Searchable branch picker uses real icon markup. Keep it on the same axis. */
 .branch-picker-control {
-  grid-template-columns: 1.35rem minmax(0, 1fr) 1.7rem;
-  padding-right: .52rem;
+  grid-template-columns: 1.35rem minmax(0, 1fr) 1.35rem;
+  padding-right: .72rem;
 }
 
 .branch-picker-chevron {
-  justify-self: center;
+  justify-self: end;
+  width: 1rem;
+  height: 1rem;
+  font-size: 1rem;
+}
+
+/* Boolean parameters are a single clickable control, not a generic field label.
+   Override the generic .thread-field label space-between layout explicitly. */
+.thread-field .check-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: .72rem;
+  width: 100%;
+  min-height: 3.2rem;
+  margin: 0;
+  padding: .62rem .72rem;
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  background: color-mix(in srgb, var(--surface2) 58%, transparent);
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+
+.thread-field .check-control:hover {
+  background: color-mix(in srgb, var(--surface2) 82%, transparent);
+}
+
+.thread-field .check-control:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.thread-field .check-control input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.thread-field .check-control-box {
+  display: grid;
+  place-items: center;
+  flex: 0 0 1.35rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 1px solid color-mix(in srgb, var(--muted) 75%, transparent);
+  border-radius: .34rem;
+  background: color-mix(in srgb, var(--surface2) 88%, transparent);
+  color: transparent;
+  transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+
+.thread-field .check-control-box::after {
+  content: none;
+}
+
+.thread-field .check-control-box i {
+  font-size: .9rem;
+  line-height: 1;
+  opacity: 0;
+  transform: scale(.72);
+  transition: opacity .12s ease, transform .12s ease;
+}
+
+.thread-field .check-control input:checked + .check-control-box {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg-on-accent);
+}
+
+.thread-field .check-control input:checked + .check-control-box i {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.thread-field .check-control-copy {
+  display: grid;
+  gap: .08rem;
+  min-width: 0;
+  text-align: left;
+}
+
+.thread-field .check-control-title {
+  color: var(--fg);
+  font-size: .82rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.thread-field .check-control-hint {
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 500;
+  line-height: 1.25;
 }
