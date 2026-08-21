@@ -196,7 +196,6 @@ class ForgejoSpider(BuildSpider):
                         return row
                     try:
                         stamp = created.replace("Z", "+00:00")
-                        from datetime import datetime
                         if datetime.fromisoformat(stamp).timestamp() >= started_after - 2:
                             return row
                     except (TypeError, ValueError):
