@@ -1,0 +1,41 @@
+/* Keep every dropdown chevron on one visual grid.
+   Native select arrows vary by browser, platform and zoom, so Arachne draws its own. */
+
+select:not([multiple]) {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.7rem !important;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.12rem) calc(50% - .11rem),
+    calc(100% - .82rem) calc(50% - .11rem);
+  background-size: .34rem .34rem, .34rem .34rem;
+  background-repeat: no-repeat;
+}
+
+select:not([multiple]):disabled {
+  opacity: .62;
+}
+
+/* Firefox can reserve native arrow space even after appearance:none. */
+select:not([multiple])::-ms-expand {
+  display: none;
+}
+
+/* Theme selector uses the same chevron axis as scenario dropdowns. */
+.theme-select {
+  padding-right: 2.55rem !important;
+}
+
+/* The searchable branch picker is custom markup, align its Tabler chevron
+   with the center of the CSS chevrons used by native selects. */
+.branch-picker-control {
+  grid-template-columns: 1.35rem minmax(0, 1fr) 1.7rem;
+  padding-right: .52rem;
+}
+
+.branch-picker-chevron {
+  justify-self: center;
+}
