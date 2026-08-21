@@ -64,8 +64,8 @@
 Строка `uploaded to <repo>/<path>` создаёт Nexus-артефакт. Отмена посылает процессу
 `SIGTERM`.
 
-Если бинарник или playbook не найден, запускается demo script. Это dev fallback;
-в production обязательно проверяйте наличие настоящего playbook.
+Если бинарник или playbook не найден, запускается demo script. Такой fallback нужен
+для разработки; в production проверяйте наличие настоящего playbook.
 
 ## `tofu-proxmox`
 
@@ -79,8 +79,8 @@
 ресурсы, backend и состояние. `redos7`/`redos8` используют SSH:22, `windows` —
 WinRM:5985.
 
-Если `tofu` не найден, паук **успешно** синтезирует VM с IP `10.81.19.200`.
-Это только режим разработки.
+Если `tofu` не найден, паук **успешно** синтезирует VM с IP `10.81.19.200` — это
+dev fallback.
 
 ## `ansible-ovirt`
 

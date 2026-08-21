@@ -1,7 +1,7 @@
 # HTTP API
 
-Arachne — в первую очередь HTML-портал. Интерактивная схема FastAPI доступна по
-`/docs`. Здесь перечислены все маршруты текущего приложения.
+Arachne работает как HTML-портал. Интерактивная схема FastAPI доступна по `/docs`,
+а ниже собраны маршруты приложения.
 
 ## Служебные и сессия
 
@@ -39,8 +39,8 @@ Cookie `arachne_session` имеет `HttpOnly` и `SameSite=Lax`, но код п
 | `POST /api/threads/{build_id}/signal` | `{step, status, output}` |
 | `POST /api/threads/{build_id}/status` | `{status, artifacts}` |
 
-Токен принимается в `X-Arachne-Token` или `?token=`. Это старый hub-контракт;
-текущий Forgejo spider его не использует.
+Токен принимается в `X-Arachne-Token` или `?token=`. Маршруты остались от старого
+hub-контракта; Forgejo spider v16 работает через Actions API.
 
 ## Администрирование
 
