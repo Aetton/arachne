@@ -3,14 +3,16 @@
    strands plus short capture-silk segments between neighbouring spokes. */
 
 :root {
-  --orb-web-line: color-mix(in srgb, var(--accent) 30%, var(--border));
-  --orb-web-line-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+  --orb-web-line: color-mix(in srgb, var(--accent) 38%, var(--border));
+  --orb-web-line-soft: color-mix(in srgb, var(--accent) 24%, transparent);
   --orb-web-live: color-mix(in srgb, var(--accent) 86%, white 14%);
   --orb-web-live-soft: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
 .operator-workspace {
   isolation: isolate;
+  --orb-hub-x: 50%;
+  --orb-hub-y: 41%;
 }
 
 .workspace-orb-web {
@@ -42,7 +44,7 @@
 }
 
 .workspace-frame {
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
 }
 
 /* Kill the old radar-circle empty state. The SVG owns the geometry now. */
@@ -54,8 +56,8 @@
 
 .workspace-empty {
   background:
-    radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 38%),
-    color-mix(in srgb, var(--surface) 78%, transparent);
+    radial-gradient(circle at var(--orb-hub-x) var(--orb-hub-y), color-mix(in srgb, var(--accent) 7%, transparent), transparent 34%),
+    color-mix(in srgb, var(--surface) 74%, transparent);
 }
 
 .orb-web-spoke,
@@ -69,34 +71,35 @@
 
 .orb-web-spoke {
   stroke: var(--orb-web-line);
-  stroke-width: 1.05;
-  opacity: .34;
+  stroke-width: 1.1;
+  opacity: .48;
 }
 
 .orb-web-capture {
   stroke: var(--orb-web-line);
-  stroke-width: .9;
-  opacity: .31;
+  stroke-width: .95;
+  opacity: .44;
 }
 
 .orb-web-frame {
   stroke: var(--orb-web-line);
-  stroke-width: 1;
-  opacity: .18;
+  stroke-width: 1.05;
+  opacity: .30;
 }
 
 .orb-web-junction {
   fill: color-mix(in srgb, var(--surface) 92%, transparent);
-  stroke: color-mix(in srgb, var(--accent) 58%, var(--border));
-  stroke-width: .8;
-  opacity: .76;
+  stroke: color-mix(in srgb, var(--accent) 68%, var(--border));
+  stroke-width: .9;
+  opacity: .92;
   vector-effect: non-scaling-stroke;
 }
 
 .orb-web-hub-ring {
   fill: color-mix(in srgb, var(--surface) 90%, transparent);
-  stroke: color-mix(in srgb, var(--accent) 58%, var(--border));
+  stroke: color-mix(in srgb, var(--accent) 68%, var(--border));
   stroke-width: 1;
+  opacity: .82;
   vector-effect: non-scaling-stroke;
 }
 
@@ -104,6 +107,7 @@
   fill: color-mix(in srgb, var(--surface) 96%, transparent);
   stroke: var(--accent);
   stroke-width: 1.25;
+  opacity: .9;
   vector-effect: non-scaling-stroke;
 }
 
@@ -118,14 +122,14 @@
 .orb-web-active-base {
   stroke: var(--orb-web-live);
   stroke-width: 1.55;
-  opacity: .66;
+  opacity: .72;
   filter: drop-shadow(0 0 5px var(--orb-web-live-soft));
 }
 
 .orb-web-active-pulse {
   stroke: white;
   stroke-width: 2.2;
-  opacity: .78;
+  opacity: .82;
   stroke-dasharray: 3 54;
   filter: drop-shadow(0 0 6px var(--accent));
   animation: orbWebPulse 2.35s linear infinite;
@@ -135,25 +139,34 @@
   fill: color-mix(in srgb, var(--surface) 88%, transparent);
   stroke: var(--orb-web-live);
   stroke-width: 1.3;
-  opacity: .9;
+  opacity: .92;
   vector-effect: non-scaling-stroke;
   filter: drop-shadow(0 0 5px var(--orb-web-live-soft));
 }
 
-.web-sigil {
-  transform: translateY(11%);
+/* Hub position is supplied by orb-web.js from the actual SVG transform.
+   This keeps the spider sigil aligned even when preserveAspectRatio crops the
+   viewBox differently on wide/tall workspaces. */
+.workspace-empty .web-sigil {
+  position: absolute;
+  left: var(--orb-hub-x);
+  top: var(--orb-hub-y);
+  transform: translate(-50%, -19px);
+  z-index: 2;
+  width: min(420px, 76%);
 }
 
 .web-sigil-node {
   width: 38px;
   height: 38px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
   box-shadow:
-    0 0 0 6px color-mix(in srgb, var(--accent) 9%, transparent),
-    0 0 24px color-mix(in srgb, var(--accent) 13%, transparent);
+    0 0 0 7px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 0 28px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .web-sigil h2 {
-  margin-top: .58rem;
+  margin-top: .78rem;
   font-size: 1.04rem;
 }
 
@@ -187,8 +200,14 @@
     min-height: 420px;
   }
 
-  .orb-web-spoke,
-  .orb-web-capture,
+  .orb-web-spoke {
+    opacity: .38;
+  }
+
+  .orb-web-capture {
+    opacity: .35;
+  }
+
   .orb-web-frame {
     opacity: .24;
   }
