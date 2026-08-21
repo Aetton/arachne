@@ -79,9 +79,8 @@ Dispatch отправляется с расширением Forgejo:
 без метаданных, Arachne до десяти раз ищет свежий run этого workflow с событием
 `workflow_dispatch` и нужной веткой.
 
-До dispatch выполняется preflight: Arachne читает файл workflow через contents API
-на выбранном ref. Поэтому ошибка «workflow существует только в main, а запускается
-feature-ветка» находится до старта, а не после танца с пустым списком runs.
+До dispatch Arachne читает файл workflow через contents API на выбранном ref.
+Отсутствие workflow в feature-ветке обнаружится ещё на этом preflight.
 
 ## Логи
 
@@ -149,10 +148,10 @@ uploaded to dev-artifacts/path/file.rpm
 - `/api/threads/{build_id}/signal` и `/status`;
 - reference workflow с `build_id`, `arachne_callback`, `arachne_token`.
 
-Это слой совместимости со старым Forgejo-пауком, который ждал сигналы от runner.
-Текущий паук не создаёт switchboard-thread, не добавляет эти три inputs и не ждёт
-callback. Не добавляйте их в новые workflow ради Arachne.
+Этот слой остался от старого Forgejo-паука, который ждал сигналы от runner. Текущий
+паук работает через Actions API: switchboard-thread и три callback-input ему не
+нужны. В новые workflow их добавлять незачем.
 
-Сами init-actions при пустых callback/token работают как noop. Их можно использовать
-отдельно как экспериментальную обвязку логов, но основной портал от присланных ими
-сигналов не свяжет данные с современным Forgejo run.
+При пустых callback/token init-actions работают как noop. Экспериментальную обвязку
+логов можно запускать отдельно; основной портал её сигналы с современным Forgejo run
+не связывает.

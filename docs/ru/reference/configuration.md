@@ -50,13 +50,13 @@
 | `BUS_BACKEND` | `inmemory` | `inmemory` или `nats` |
 | `NATS_URL` | `nats://127.0.0.1:4222` | адрес NATS |
 
-`inmemory` подходит для одного процесса. `nats` выносит транспорт наружу, но
-готового отдельного процесса spider-worker репозиторий пока не поставляет.
+`inmemory` подходит для одного процесса. `nats` выносит транспорт наружу. Отдельный
+процесс spider-worker придётся собирать самостоятельно: готового CLI в репозитории нет.
 
 ## `ARACHNE_URL`
 
-Переменная осталась в `.env.example` для старых callback workflow/actions. Текущий
-Forgejo v16 spider сам читает состояние и логи через API и `ARACHNE_URL` не использует.
+Переменная нужна старым callback workflow/actions из `.env.example`. Forgejo spider
+v16 читает состояние и логи через API, поэтому работает без `ARACHNE_URL`.
 
 ## TLS и внутренний CA
 
