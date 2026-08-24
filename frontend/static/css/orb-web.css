@@ -212,7 +212,7 @@
   position: absolute;
   left: var(--orb-hub-x);
   top: var(--orb-hub-y);
-  transform: translate(-50%, -129px);
+  transform: translate(-50%, -128px);
   z-index: 2;
   width: min(420px, 76%);
 }
@@ -220,7 +220,7 @@
 .workspace-empty .web-sigil-node {
   width: min(226px, 48vw);
   height: auto;
-  aspect-ratio: 710 / 807;
+  aspect-ratio: 736 / 833;
   background: transparent;
   box-shadow: none;
 }
