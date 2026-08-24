@@ -387,65 +387,15 @@ body::before {
 }
 .arachne-spider {
   width: 100%;
-  height: auto;
-  overflow: visible;
-}
-.arachne-spider-silkscreen {
-  fill: none;
-  stroke: var(--web-line);
-  stroke-width: .8;
-  opacity: .32;
-}
-.arachne-spider-silkscreen circle:nth-child(2) { opacity: .66; }
-.arachne-spider-silkscreen circle:nth-child(3) { opacity: .4; }
-.arachne-spider-circuit {
-  color: var(--web-node);
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--web-node) 24%, transparent));
-}
-.arachne-spider-traces {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 8;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
-}
-.arachne-spider-pads {
-  fill: currentColor;
-  stroke: none;
-}
-.arachne-spider-vias {
-  fill: var(--surface);
-  stroke: currentColor;
-  stroke-width: 3;
-}
-.arachne-spider-chip {
-  fill: currentColor;
-  stroke: currentColor;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
-}
-.arachne-spider-bridges,
-.arachne-spider-antennae {
-  fill: none;
-  stroke-width: 7;
-}
-.arachne-spider-bus {
-  fill: none;
-  stroke: color-mix(in srgb, var(--surface) 92%, var(--fg));
-  stroke-width: 3.5;
-  stroke-dasharray: 36 7 3 7 47;
-  animation: sigilCurrent 5.5s linear infinite;
+  height: 100%;
+  display: block;
+  background: var(--web-node);
+  -webkit-mask: url("/static/img/arachne-sigil.svg") center / contain no-repeat;
+  mask: url("/static/img/arachne-sigil.svg") center / contain no-repeat;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--web-node) 28%, transparent));
 }
 .web-sigil h2 { margin: .15rem 0 0; font-size: 1rem; font-weight: 720; }
 .web-sigil p { margin: 0; color: var(--muted); font-size: .78rem; }
-
-@keyframes sigilCurrent {
-  to { stroke-dashoffset: -100; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .arachne-spider-bus { animation: none; }
-}
 
 /* Scenario form */
 .thread-form { padding: 1.2rem 1.25rem 1.35rem; }
