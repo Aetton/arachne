@@ -33,6 +33,7 @@ _live: dict[str, list[dict]] = defaultdict(list)
 _done: dict[str, bool] = {}
 _status: dict[str, RunStatus] = {}
 _arts: dict[str, list[dict]] = defaultdict(list)
+_art_keys: dict[str, set[str]] = defaultdict(set)
 
 _initialized = False
 
@@ -110,6 +111,11 @@ def _log_sink(run_id: str, line: LogLine):
             typ = body.split("[", 1)[1].split("]", 1)[0]
         if "→" in body:
             url = body.split("→", 1)[1].strip()
+
+        artifact_key = url or f"{typ}:{name}"
+        if artifact_key in _art_keys[run_id]:
+            return
+        _art_keys[run_id].add(artifact_key)
         _arts[run_id].append({"name": name, "type": typ, "download_url": url})
 
 
@@ -140,6 +146,7 @@ async def fire_async(scenario_key: str, params: dict, source: str = "manual") ->
     _done[run_id] = False
     _status[run_id] = RunStatus.RUNNING
     _arts[run_id] = []
+    _art_keys[run_id] = set()
     _start_task(run_id, scenario_key, scenario, params)
     return run_id
 
@@ -153,6 +160,7 @@ def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
     _done[run_id] = False
     _status[run_id] = RunStatus.RUNNING
     _arts[run_id] = []
+    _art_keys[run_id] = set()
     _start_task(run_id, scenario_key, scenario, params)
     return run_id
 
