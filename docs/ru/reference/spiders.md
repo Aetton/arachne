@@ -69,18 +69,69 @@
 
 ## `tofu-proxmox`
 
-В `TOFU_ROOT/stand` выполняет `tofu init`, `tofu apply` с `stand_name` и `os`,
-затем читает output `vm_ip`.
+Создаёт временную VM клонированием Proxmox template через OpenTofu. Сценарий задаёт
+логическую ОС и ресурсы, а ID шаблона и параметры Proxmox берутся из окружения.
 
-Входы: `name`, `os`, `vcpus`, `ram_mb`, `disk_gb`. Ресурсы сейчас попадают только
-в metadata результата и не передаются модулю как vars.
+```yaml
+- id: vm
+  spider: tofu-proxmox
+  action: provision
+  with:
+    name: arachne-test-001
+    os: redos8
+    vcpus: 4
+    ram_mb: 8192
+    disk_gb: 40
+```
 
-Артефакт `vm` содержит IP, hostname, ОС, архитектуру, тип подключения, порт,
-ресурсы, backend и состояние. `redos7`/`redos8` используют SSH:22, `windows` —
-WinRM:5985.
+Поддерживаемые ОС: `redos7`, `redos8`, `windows`. Соответствие шаблонам задаётся
+через `TOFU_TEMPLATE_REDOS7`, `TOFU_TEMPLATE_REDOS8` и
+`TOFU_TEMPLATE_WINDOWS`. Для диагностики ID шаблона можно явно передать как
+`with.template_vm_id`, но обычным сценариям Proxmox VM ID знать не нужно.
 
-Если `tofu` не найден, паук **успешно** синтезирует VM с IP `10.81.19.200` — это
-dev fallback.
+Параметры инфраструктуры по умолчанию:
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `TOFU_NODE_NAME` | `pve` | Proxmox node |
+| `TOFU_DATASTORE` | `local-lvm` | datastore для клона и дисков |
+| `TOFU_BRIDGE` | `vmbr0` | сетевой bridge |
+| `TOFU_DISK_INTERFACE` | `scsi0` | системный диск шаблона |
+| `TOFU_STATE_ROOT` | `/tmp/arachne-tofu-state` | каталог локальных state |
+
+Endpoint и учётные данные провайдера берутся из стандартных переменных
+`bpg/proxmox`, прежде всего `PROXMOX_VE_ENDPOINT` и `PROXMOX_VE_API_TOKEN`.
+
+Каждый стенд получает отдельный `terraform.tfstate` и отдельный `TF_DATA_DIR` в
+`TOFU_STATE_ROOT/<name>`. Поэтому параллельные стенды не используют один local
+state.
+
+После `apply` паук читает outputs `vm_id` и `vm_ip`. Артефакт `vm` содержит IP,
+VM ID, hostname, ОС, архитектуру, тип подключения, порт, ресурсы, template VM ID,
+backend и состояние. `redos7`/`redos8` используют SSH:22, `windows` — WinRM:5985.
+
+Шаблон должен быть подготовлен к клонированию: системный диск ожидается на
+`TOFU_DISK_INTERFACE`, сеть получает адрес по DHCP, а qemu-guest-agent должен быть
+установлен и запущен. Для Windows нужен эквивалентный Cloudbase-Init setup.
+Без рабочего guest agent OpenTofu не сможет вернуть `vm_ip`, и шаг завершится
+ошибкой.
+
+Удаление стенда выполняется отдельным шагом с тем же `name` и `os`:
+
+```yaml
+- id: cleanup
+  spider: tofu-proxmox
+  action: destroy
+  with:
+    name: arachne-test-001
+    os: redos8
+```
+
+`destroy` использует state этого имени. Если state отсутствует, шаг падает вместо
+того, чтобы молча изображать успешную уборку.
+
+Если бинарник `tofu` не найден, production-поведение — ошибка. Старый синтетический
+VM fallback включается только явно через `TOFU_DEV_FALLBACK=true`.
 
 ## `ansible-ovirt`
 
