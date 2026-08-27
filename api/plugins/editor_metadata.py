@@ -41,8 +41,8 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
     },
     "tofu-proxmox": {
-        "description": "Provision a Proxmox VM through OpenTofu.",
-        "actions": ["provision"],
+        "description": "Provision or destroy an ephemeral Proxmox VM through OpenTofu.",
+        "actions": ["provision", "destroy"],
         "inputs": {
             "name": {"default": "test-stand"},
             "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"]},
