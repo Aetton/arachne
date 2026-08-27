@@ -1,9 +1,9 @@
 """ProvisionSpider: manage ephemeral Proxmox VMs through OpenTofu.
 
 The scenario talks in infrastructure terms (OS/resources), while the spider maps
-those values to concrete Proxmox templates and keeps one isolated local state per
-stand.  The OpenTofu module remains backend-specific; scenarios do not need to
-know VM IDs, datastore names or bridges.
+those values to concrete Proxmox templates and keeps one isolated local state and
+working directory per stand. The OpenTofu module remains backend-specific;
+scenarios do not need to know VM IDs, datastore names or bridges.
 """
 from __future__ import annotations
 
@@ -43,16 +43,14 @@ class TofuProxmoxSpider(ProvisionSpider):
     def __init__(self):
         self._runs: dict[str, dict] = {}
 
-    def _tofu_dir(self) -> str:
+    def _tofu_dir(self) -> Path:
         for candidate in [
-            os.path.join(TOFU_ROOT, "stand"),
-            os.path.join(
-                os.path.dirname(__file__), "..", "..", "..", "tofu", "stand"
-            ),
+            Path(TOFU_ROOT) / "stand",
+            Path(__file__).resolve().parents[3] / "tofu" / "stand",
         ]:
-            if os.path.isdir(candidate):
-                return os.path.abspath(candidate)
-        return os.path.abspath(os.path.join(TOFU_ROOT, "stand"))
+            if candidate.is_dir():
+                return candidate.resolve()
+        return (Path(TOFU_ROOT) / "stand").resolve()
 
     @staticmethod
     def _dev_fallback_enabled() -> bool:
@@ -81,12 +79,37 @@ class TofuProxmoxSpider(ProvisionSpider):
     def _state_dir(self, name: str) -> Path:
         return Path(TOFU_STATE_ROOT).expanduser().resolve() / name
 
-    def _tofu_env(self, name: str) -> tuple[dict[str, str], Path]:
+    def _prepare_workdir(self, name: str, source_dir: Path) -> tuple[Path, Path]:
+        """Create an isolated module directory and state path for one stand.
+
+        We copy only OpenTofu configuration files. This keeps `.terraform`, the
+        dependency lock file and local state away from other concurrent stands.
+        Existing workdirs are refreshed with current config but keep their state.
+        """
         state_dir = self._state_dir(name)
-        state_dir.mkdir(parents=True, exist_ok=True)
+        work_dir = state_dir / "module"
+        work_dir.mkdir(parents=True, exist_ok=True)
+
+        copied = False
+        for pattern in ("*.tf", "*.tf.json"):
+            for src in source_dir.glob(pattern):
+                shutil.copy2(src, work_dir / src.name)
+                copied = True
+
+        source_lock = source_dir / ".terraform.lock.hcl"
+        if source_lock.exists():
+            shutil.copy2(source_lock, work_dir / source_lock.name)
+
+        if not copied:
+            raise ValueError(f"No OpenTofu configuration files found in {source_dir}")
+
+        return work_dir, state_dir / "terraform.tfstate"
+
+    @staticmethod
+    def _tofu_env(work_dir: Path) -> dict[str, str]:
         env = os.environ.copy()
-        env["TF_DATA_DIR"] = str(state_dir / ".terraform")
-        return env, state_dir / "terraform.tfstate"
+        env["TF_DATA_DIR"] = str(work_dir / ".terraform")
+        return env
 
     @staticmethod
     def _vars(st: dict) -> list[str]:
@@ -149,13 +172,13 @@ class TofuProxmoxSpider(ProvisionSpider):
         self,
         cmd: list[str],
         *,
-        cwd: str,
+        cwd: Path,
         env: dict[str, str],
     ) -> AsyncIterator[LogLine]:
         yield LogLine(f"$ {' '.join(cmd)}", "system")
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=cwd,
+            cwd=str(cwd),
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
@@ -171,7 +194,7 @@ class TofuProxmoxSpider(ProvisionSpider):
         self,
         key: str,
         *,
-        cwd: str,
+        cwd: Path,
         env: dict[str, str],
         state_path: Path,
     ) -> str:
@@ -181,7 +204,7 @@ class TofuProxmoxSpider(ProvisionSpider):
             f"-state={state_path}",
             "-raw",
             key,
-            cwd=cwd,
+            cwd=str(cwd),
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -193,7 +216,7 @@ class TofuProxmoxSpider(ProvisionSpider):
         st = self._runs[handle.external_id]
         st["status"] = RunStatus.RUNNING
         name, vm_os, action = st["name"], st["os"], st["action"]
-        tofu_dir = self._tofu_dir()
+        source_dir = self._tofu_dir()
 
         if not shutil.which("tofu"):
             if self._dev_fallback_enabled():
@@ -212,27 +235,29 @@ class TofuProxmoxSpider(ProvisionSpider):
             yield LogLine("tofu binary not found", "stderr")
             return
 
-        if not os.path.isdir(tofu_dir):
+        if not source_dir.is_dir():
             st["status"] = RunStatus.FAILED
-            yield LogLine(f"OpenTofu module not found: {tofu_dir}", "stderr")
+            yield LogLine(f"OpenTofu module not found: {source_dir}", "stderr")
             return
 
-        env, state_path = self._tofu_env(name)
-        vars_ = self._vars(st)
-
         try:
+            work_dir, state_path = self._prepare_workdir(name, source_dir)
+            env = self._tofu_env(work_dir)
+            vars_ = self._vars(st)
+
+            if action == "destroy" and not state_path.exists():
+                st["status"] = RunStatus.FAILED
+                yield LogLine(
+                    f"No OpenTofu state for stand {name}: {state_path}", "stderr"
+                )
+                return
+
             async for line in self._run_cmd(
-                ["tofu", "init", "-input=false"], cwd=tofu_dir, env=env
+                ["tofu", "init", "-input=false"], cwd=work_dir, env=env
             ):
                 yield line
 
             if action == "destroy":
-                if not state_path.exists():
-                    st["status"] = RunStatus.FAILED
-                    yield LogLine(
-                        f"No OpenTofu state for stand {name}: {state_path}", "stderr"
-                    )
-                    return
                 cmd = [
                     "tofu",
                     "destroy",
@@ -241,7 +266,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                     f"-state={state_path}",
                     *vars_,
                 ]
-                async for line in self._run_cmd(cmd, cwd=tofu_dir, env=env):
+                async for line in self._run_cmd(cmd, cwd=work_dir, env=env):
                     yield line
                 st["status"] = RunStatus.SUCCESS
                 st["artifacts"] = []
@@ -256,14 +281,14 @@ class TofuProxmoxSpider(ProvisionSpider):
                 f"-state={state_path}",
                 *vars_,
             ]
-            async for line in self._run_cmd(cmd, cwd=tofu_dir, env=env):
+            async for line in self._run_cmd(cmd, cwd=work_dir, env=env):
                 yield line
 
             ip = await self._output(
-                "vm_ip", cwd=tofu_dir, env=env, state_path=state_path
+                "vm_ip", cwd=work_dir, env=env, state_path=state_path
             )
             vm_id = await self._output(
-                "vm_id", cwd=tofu_dir, env=env, state_path=state_path
+                "vm_id", cwd=work_dir, env=env, state_path=state_path
             )
             if not ip:
                 st["status"] = RunStatus.FAILED
