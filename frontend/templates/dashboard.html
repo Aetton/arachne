@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Web · Arachne{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/css/orb-web.css?v=2">
+<link rel="stylesheet" href="/static/css/orb-web.css?v=3">
 <link rel="stylesheet" href="/static/css/dashboard-split.css?v=1">
 <div class="operator-shell">
   <aside class="operator-column operator-nav">
@@ -65,7 +65,9 @@
   <section id="workspace" class="operator-column operator-workspace">
     <div class="workspace-frame workspace-empty">
       <div class="web-sigil">
-        <div class="web-sigil-node"><i class="ti ti-spider"></i></div>
+        <div class="web-sigil-node">
+          <span class="arachne-spider" role="img" aria-label="Arachne"></span>
+        </div>
         <h2>No thread selected</h2>
         <p>Pick a scenario to spin a new thread.</p>
       </div>
