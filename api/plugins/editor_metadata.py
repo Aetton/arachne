@@ -18,10 +18,14 @@ from main import app
 # Editor-facing contracts live on the backend so the browser never needs to
 # know which plugins are installed. Inputs marked required are validated by the
 # plugin itself; the rest are useful completion hints.
+#
+# Canonical DSL terminology is Weave / Brood / Command. Legacy backend action
+# aliases (build/provision/run/deploy) remain accepted by spiders but are not
+# advertised by the editor.
 SPIDER_CONTRACTS: dict[str, dict] = {
     "forgejo": {
         "description": "Dispatch a Forgejo Actions workflow and collect telemetry/artifacts.",
-        "actions": ["build", "run"],
+        "actions": ["weave"],
         "inputs": {
             "repo": {"required": True, "description": "Forgejo repository name"},
             "workflow": {"required": True, "description": "Workflow file name"},
@@ -33,19 +37,19 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
     },
     "ansible-local": {
-        "description": "Run ansible-playbook on the Arachne host.",
-        "actions": ["build", "deploy", "run"],
+        "description": "Run ansible-playbook on a target or as a local command.",
+        "actions": ["command"],
         "inputs": {
             "playbook": {"description": "Playbook path; inferred from component when omitted"},
             "component": {},
-            "target": {},
+            "target": {"description": "Brood target artifact or explicit host"},
             "os": {},
             "version": {},
         },
     },
     "tofu-proxmox": {
         "description": "Create or destroy an ephemeral stand from a Golden Image profile.",
-        "actions": ["provision", "destroy"],
+        "actions": ["brood", "destroy"],
         "inputs": {
             "name": {"default": "test-stand"},
             "os": {
@@ -65,8 +69,8 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
     },
     "ansible-ovirt": {
-        "description": "Provision an oVirt VM through the ovirt.ovirt Ansible collection.",
-        "actions": ["provision"],
+        "description": "Create an oVirt VM through the ovirt.ovirt Ansible collection.",
+        "actions": ["brood"],
         "inputs": {
             "name": {"default": "test-stand"},
             "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"]},
@@ -87,14 +91,15 @@ def scenario_dsl_metadata(user=Depends(require_role("admin"))):
             ]
         spiders.append({
             "name": name,
-            "kind": spider.KIND,
+            "family": getattr(spider, "FAMILY", "weave"),
             "description": contract.get("description", "Installed Arachne spider"),
-            "actions": contract.get("actions", ["run"]),
+            "actions": contract.get("actions", [getattr(spider, "FAMILY", "weave")]),
             "inputs": contract.get("inputs", {}),
         })
 
     return {
         "spiders": spiders,
+        "families": ["weave", "brood", "command"],
         "triggers": sorted(all_triggers()),
         "param_types": ["string", "choice", "boolean"],
     }
