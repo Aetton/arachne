@@ -1,22 +1,22 @@
 """Orchestration loop — Arachne's job.
 
-Arachne owns the scenario graph. Spiders own one external operation. Brood output
-is normalized to the shared target contract before it enters the run context so
-Command spiders can consume it without backend-specific knowledge.
+Arachne owns the scenario graph. Spiders own one external operation. Artifacts
+feed downstream steps; RunOutputs feed the bottom result rail.
 """
 from __future__ import annotations
 
 from typing import Callable
 
 from core import events, wire_codec
-from core.brood import normalize_brood_artifact
+from core.brood import normalize_brood_artifact, brood_target_outputs
 from core.context import RunContext
 from core.thread_client import run_step
 from core.registry import get_spider
-from core.types import Artifact, StepSpec, StepResult, RunStatus, LogLine
+from core.types import Artifact, RunOutput, StepSpec, StepResult, RunStatus, LogLine
 
 LogSink = Callable[[str, LogLine], None]
 ArtifactSink = Callable[[str, str, Artifact], None]
+OutputSink = Callable[[str, str, RunOutput], None]
 
 _FAMILY_TO_WIRE_KIND = {
     "weave": "build",
@@ -26,7 +26,6 @@ _FAMILY_TO_WIRE_KIND = {
 
 
 def _kind_of(spider_name: str) -> str:
-    """Resolve legacy wire kind used in bus subjects."""
     try:
         return get_spider(spider_name).KIND
     except KeyError:
@@ -34,7 +33,6 @@ def _kind_of(spider_name: str) -> str:
 
 
 def _family_of(spider_name: str, kind: str) -> str:
-    """Resolve the domain family independently from the wire kind."""
     try:
         return get_spider(spider_name).FAMILY
     except KeyError:
@@ -42,12 +40,6 @@ def _family_of(spider_name: str, kind: str) -> str:
 
 
 def _wire_kind(raw: dict, spider_name: str) -> str:
-    """Translate public DSL family to the legacy bus routing kind.
-
-    `kind` is accepted only as a compatibility input for old stored scenarios.
-    New scenarios should use `family: weave|brood|command` or omit it and let the
-    registered spider declare its family.
-    """
     family = str(raw.get("family") or "").strip().lower()
     if family:
         if family not in _FAMILY_TO_WIRE_KIND:
@@ -80,7 +72,8 @@ def parse_steps(scenario: dict) -> list[StepSpec]:
 async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
                        params: dict, log_sink: LogSink,
                        user_id: int | None = None,
-                       artifact_sink: ArtifactSink | None = None) -> RunStatus:
+                       artifact_sink: ArtifactSink | None = None,
+                       output_sink: OutputSink | None = None) -> RunStatus:
     ctx = RunContext(params, user_id=user_id)
     steps = parse_steps(scenario)
 
@@ -104,20 +97,30 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
 
         status = result["status"]
         artifacts = result["artifacts"]
+        outputs = result.get("outputs") or []
         handle = result.get("handle")
         err = wire_codec.error_from_dict(result.get("error"))
+        family = _family_of(step.spider, step.kind)
 
-        if _family_of(step.spider, step.kind) == "brood":
+        if family == "brood":
             artifacts = [
                 normalize_brood_artifact(artifact, spider_name=step.spider)
                 for artifact in artifacts
             ]
+            # Legacy Brood responders naturally return one artifact card. Replace
+            # that with the shared three-part target view: machine/access/console.
+            if not outputs or all(output.kind == "artifact" for output in outputs):
+                outputs = [
+                    output
+                    for artifact in artifacts
+                    for output in brood_target_outputs(artifact)
+                ]
 
         if err:
             log_sink(run_id, LogLine(
                 f"error [{err.type}]: {err.message}", "stderr", step_id=step.id))
 
-        ctx.record(StepResult(step.id, status, handle, artifacts, err))
+        ctx.record(StepResult(step.id, status, handle, artifacts, err, outputs))
 
         for artifact in artifacts:
             if artifact_sink:
@@ -128,6 +131,10 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
                 "system",
                 step_id=step.id,
             ))
+
+        if output_sink:
+            for output in outputs:
+                output_sink(run_id, step.id, output)
 
         if status != RunStatus.SUCCESS:
             log_sink(run_id, LogLine(f"step '{step.id}' ended: {status.value}",
