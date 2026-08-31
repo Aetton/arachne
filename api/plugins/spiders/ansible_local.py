@@ -12,15 +12,16 @@ import re
 import shutil
 from typing import AsyncIterator
 
-from core.brood import command_target_vars, is_brood_target
+from core.brood import command_target_vars, is_brood_target, preferred_endpoint
 from core.spider import CommandSpider
 from core.registry import register_spider
-from core.types import RunHandle, LogLine, RunStatus, Artifact, StepSpec
+from core.types import RunHandle, LogLine, RunStatus, Artifact, RunOutput, StepSpec
 
 PLAYBOOKS_DIR = os.getenv("ANSIBLE_PLAYBOOKS_DIR", "../playbooks")
 NEXUS_URL = os.getenv("NEXUS_URL", "https://nexus.redsoft.internal").rstrip("/")
 
 _ART = re.compile(r"uploaded to (?P<repo>[\w\-]+)/(?P<path>\S+)")
+_SENSITIVE = ("token", "secret", "password")
 
 
 def _playbooks_dir() -> str:
@@ -39,11 +40,6 @@ def _scalar(value) -> str:
 
 
 def _artifact_vars(key: str, artifact: Artifact) -> list[tuple[str, str]]:
-    """Flatten an Artifact for ansible-playbook -e.
-
-    Brood artifacts use their versioned target contract. Other build artifacts
-    keep the legacy generic flattening used for packages and download links.
-    """
     if is_brood_target(artifact):
         return command_target_vars(key, artifact)
 
@@ -72,6 +68,23 @@ def _extra_vars(params: dict) -> list[str]:
     return out
 
 
+def _output_params(params: dict) -> dict:
+    """Small, safe run summary for the UI panel."""
+    out = {}
+    for key, value in params.items():
+        if any(word in key.lower() for word in _SENSITIVE):
+            out[key] = "***"
+        elif isinstance(value, Artifact):
+            if is_brood_target(value):
+                endpoint = preferred_endpoint(value, require_address=False)
+                out[key] = endpoint.get("host") or value.name
+            else:
+                out[key] = value.name
+        elif isinstance(value, (str, int, float, bool)):
+            out[key] = value
+    return out
+
+
 class AnsibleLocalSpider(CommandSpider):
     NAME = "ansible-local"
 
@@ -89,8 +102,15 @@ class AnsibleLocalSpider(CommandSpider):
         playbook = step.with_.get("playbook") or f"build-{step.with_.get('component','x')}.yml"
         cmd = self._command(playbook, step.with_)
         ext = f"{step.id}-{id(self):x}"
-        self._runs[ext] = {"cmd": cmd, "lines": [], "status": RunStatus.PENDING,
-                           "artifacts": [], "params": step.with_}
+        self._runs[ext] = {
+            "cmd": cmd,
+            "playbook": playbook,
+            "runner": "ansible-playbook" if cmd and cmd[0] == "ansible-playbook" else "demo",
+            "lines": [],
+            "status": RunStatus.PENDING,
+            "artifacts": [],
+            "params": step.with_,
+        }
         return RunHandle(spider=self.NAME, external_id=ext, metadata={"cmd": cmd})
 
     async def stream_logs(self, handle: RunHandle) -> AsyncIterator[LogLine]:
@@ -126,6 +146,18 @@ class AnsibleLocalSpider(CommandSpider):
 
     def get_artifacts(self, handle: RunHandle) -> list[Artifact]:
         return self._runs[handle.external_id]["artifacts"]
+
+    def get_outputs(self, handle: RunHandle) -> list[RunOutput]:
+        st = self._runs[handle.external_id]
+        return [RunOutput(
+            kind="ansible",
+            title=st["playbook"],
+            data={
+                "status": st["status"].value,
+                "runner": st["runner"],
+                "params": _output_params(st["params"]),
+            },
+        )]
 
     def cancel(self, handle: RunHandle) -> bool:
         st = self._runs.get(handle.external_id, {})
