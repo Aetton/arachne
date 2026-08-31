@@ -1,7 +1,8 @@
-"""BuildSpider: runs ansible-playbook locally, streams output.
+"""CommandSpider: runs ansible-playbook locally against explicit targets.
 
-Falls back to a demo script when ansible/playbook is absent so the whole
-pipeline is exercisable on a dev box.
+A Brood artifact can be passed directly as a scenario input. The spider resolves
+its preferred endpoint through the shared Brood target contract and exposes
+stable scalar vars to playbooks.
 """
 from __future__ import annotations
 
@@ -11,7 +12,8 @@ import re
 import shutil
 from typing import AsyncIterator
 
-from core.spider import BuildSpider
+from core.brood import command_target_vars, is_brood_target
+from core.spider import CommandSpider
 from core.registry import register_spider
 from core.types import RunHandle, LogLine, RunStatus, Artifact, StepSpec
 
@@ -39,12 +41,12 @@ def _scalar(value) -> str:
 def _artifact_vars(key: str, artifact: Artifact) -> list[tuple[str, str]]:
     """Flatten an Artifact for ansible-playbook -e.
 
-    Scenario references like `${build-web.artifact}` intentionally resolve to the
-    full Artifact object. Before the bus wrapper this stayed in-process often
-    enough to work by accident; after serialization it must be converted into
-    explicit vars so deploy playbooks can fetch from Nexus instead of receiving
-    an opaque object or nothing.
+    Brood artifacts use their versioned target contract. Other build artifacts
+    keep the legacy generic flattening used for packages and download links.
     """
+    if is_brood_target(artifact):
+        return command_target_vars(key, artifact)
+
     out = [
         (f"{key}_name", artifact.name),
         (f"{key}_type", artifact.type),
@@ -70,11 +72,10 @@ def _extra_vars(params: dict) -> list[str]:
     return out
 
 
-class AnsibleLocalSpider(BuildSpider):
+class AnsibleLocalSpider(CommandSpider):
     NAME = "ansible-local"
 
     def __init__(self):
-        # per-handle state: external_id -> dict(proc, lines, status, artifacts)
         self._runs: dict[str, dict] = {}
 
     def _command(self, playbook: str, params: dict) -> list[str]:
@@ -127,7 +128,6 @@ class AnsibleLocalSpider(BuildSpider):
         return self._runs[handle.external_id]["artifacts"]
 
     def cancel(self, handle: RunHandle) -> bool:
-        """Cut the thread: SIGTERM the ansible process."""
         st = self._runs.get(handle.external_id, {})
         proc = st.get("proc")
         if proc and proc.returncode is None:

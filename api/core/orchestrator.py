@@ -1,33 +1,43 @@
-"""Orchestration loop — Arachne's job. Runs a scenario's steps in order, threads
-each step's artifacts into the shared context for ${...} resolution, and plucks
-each thread through the bus.
+"""Orchestration loop — Arachne's job.
 
-Arachne owns the scenario (steps, needs, params, error propagation). The thread
-adapter owns one step's execution through one spider. The core knows nothing of
-Forgejo/Ansible/Proxmox — only contracts.
+Arachne owns the scenario graph. Spiders own one external operation. Brood output
+is normalized to the shared target contract before it enters the run context so
+Command spiders can consume it without backend-specific knowledge.
 """
 from __future__ import annotations
 
 from typing import Callable
 
 from core import events, wire_codec
+from core.brood import normalize_brood_artifact
 from core.context import RunContext
 from core.thread_client import run_step
 from core.registry import get_spider
-from core.types import Artifact, StepSpec, StepResult, RunStatus, LogLine, RunError
+from core.types import Artifact, StepSpec, StepResult, RunStatus, LogLine
 
-# sink(run_id, LogLine) — where live log lines go (UI buffer + DB)
 LogSink = Callable[[str, LogLine], None]
 ArtifactSink = Callable[[str, str, Artifact], None]
 
 
 def _kind_of(spider_name: str) -> str:
-    """Resolve a spider's kind for subject routing. Falls back to 'build' if the
-    spider isn't locally registered (multi-process: Arachne may not host it)."""
+    """Resolve legacy wire kind used in bus subjects."""
     try:
         return get_spider(spider_name).KIND
     except KeyError:
         return "build"
+
+
+def _family_of(spider_name: str, kind: str) -> str:
+    """Resolve the domain family independently from the wire kind.
+
+    For remote spiders that are not registered in this process, legacy provision
+    still unambiguously maps to Brood. Other unknown remote spiders remain Weave
+    unless their scenario/plugin metadata is upgraded later.
+    """
+    try:
+        return get_spider(spider_name).FAMILY
+    except KeyError:
+        return "brood" if kind == "provision" else "weave"
 
 
 def parse_steps(scenario: dict) -> list[StepSpec]:
@@ -49,25 +59,21 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
                        params: dict, log_sink: LogSink,
                        user_id: int | None = None,
                        artifact_sink: ArtifactSink | None = None) -> RunStatus:
-    """Execute all steps. Returns the overall status."""
     ctx = RunContext(params, user_id=user_id)
     steps = parse_steps(scenario)
 
     await events.emit(events.RUN_STARTED, {"scenario": scenario_key, "run_id": run_id})
-
     overall = RunStatus.SUCCESS
 
     for step in steps:
         log_sink(run_id, LogLine(f"━━━ step '{step.id}' via {step.spider} ━━━",
                                  "system", step_id=step.id))
 
-        # resolve ${...} in this step's `with` against accumulated context
         resolved = ctx.resolve_dict(step.with_)
         resolved_step = StepSpec(step.id, step.spider, step.action, step.kind,
                                  resolved, step.needs)
         step_dict = wire_codec.step_to_dict(resolved_step)
 
-        # bridge bus log lines (with seq + step_id) into the run's sink
         def _on_log(text, stream, seq, step_id, _rid=run_id):
             log_sink(_rid, LogLine(text, stream, seq=seq, step_id=step_id))
 
@@ -78,6 +84,12 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
         artifacts = result["artifacts"]
         handle = result.get("handle")
         err = wire_codec.error_from_dict(result.get("error"))
+
+        if _family_of(step.spider, step.kind) == "brood":
+            artifacts = [
+                normalize_brood_artifact(artifact, spider_name=step.spider)
+                for artifact in artifacts
+            ]
 
         if err:
             log_sink(run_id, LogLine(
@@ -105,5 +117,4 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
     await events.emit(events.RUN_COMPLETED, payload)
     if overall == RunStatus.FAILED:
         await events.emit(events.RUN_FAILED, payload)
-
     return overall

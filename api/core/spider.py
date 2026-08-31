@@ -1,17 +1,15 @@
-"""Spider contracts — Arachne's brood.
+"""Spider contracts and the three Arachne operation families.
 
-Arachne is the queen spider in the centre. Spiders are her brood: small spiders
-that run along threads to foreign anchors (Forgejo, Ansible, oVirt) and haul the
-catch back to the centre. Each spider runs ONE step on ONE thread; it knows
-nothing of scenarios, needs, params, or the web's overall shape — that is
-Arachne's (the orchestrator's) job.
+Domain family and transport kind are intentionally separate. FAMILY is the public
+Arachne taxonomy; KIND is the legacy bus subject class kept stable during the
+migration of distributed responders.
 
-Two kinds share one lifecycle:
-  build     — produce artifacts (tarball, rpm, installer)
-  provision — produce a host/VM
+Families:
+  weave   — produce build artifacts
+  brood   — provision environments or machines
+  command — execute work against resources produced by Brood
 
-Contract methods (the spider implements these; it never touches the bus):
-  dispatch / stream_logs / get_status / get_artifacts / cancel / healthcheck
+Wire kinds remain ``build`` and ``provision`` for compatibility.
 """
 from __future__ import annotations
 
@@ -22,22 +20,20 @@ from core.types import RunHandle, LogLine, RunStatus, Artifact, StepSpec
 
 
 class BaseSpider(ABC):
-    KIND: str = "base"      # "build" | "provision"  — part of the subject
-    NAME: str = "base"      # unique key used in scenario YAML
+    FAMILY: str = "base"
+    KIND: str = "build"
+    NAME: str = "base"
 
     def healthcheck(self) -> bool:
-        """Is the anchor reachable / are runners online? Default: assume yes."""
         return True
 
     @abstractmethod
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
-        """Pluck the thread: kick off the work, return a handle to track it."""
         ...
 
     @abstractmethod
     async def stream_logs(self, handle: RunHandle) -> AsyncIterator[LogLine]:
-        """Yield log lines (vibrations) until the work terminates."""
-        if False:        # pragma: no cover  (typing: make it an async-gen)
+        if False:  # pragma: no cover
             yield LogLine("")
 
     @abstractmethod
@@ -48,14 +44,29 @@ class BaseSpider(ABC):
         return []
 
     def cancel(self, handle: RunHandle) -> bool:
-        """Cut the thread. Each spider knows how to kill its own anchor's work
-        (Forgejo: cancel the run; Ansible: signal the process). Default: no-op."""
         return False
 
 
-class BuildSpider(BaseSpider):
+class WeaveSpider(BaseSpider):
+    FAMILY = "weave"
     KIND = "build"
 
 
-class ProvisionSpider(BaseSpider):
+class BroodSpider(BaseSpider):
+    FAMILY = "brood"
     KIND = "provision"
+
+
+class CommandSpider(BaseSpider):
+    FAMILY = "command"
+    KIND = "build"
+
+
+# Compatibility names. Existing third-party spiders can migrate inheritance when
+# convenient without changing their current bus subjects.
+class BuildSpider(WeaveSpider):
+    pass
+
+
+class ProvisionSpider(BroodSpider):
+    pass
