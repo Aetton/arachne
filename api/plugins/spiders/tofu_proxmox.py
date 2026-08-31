@@ -1,8 +1,9 @@
 """ProvisionSpider: manage ephemeral Proxmox VMs through OpenTofu.
 
-Normal scenario contract is intentionally small: a stand name and a logical OS.
-The spider maps the OS to a golden Proxmox template and OpenTofu clones it without
-redefining CPU, memory, disks or network settings from the template.
+Normal scenario contract is intentionally small: a stand name, a logical OS and,
+optionally, user-facing resource wishes. The spider maps those wishes to backend
+specific OpenTofu variables; scenarios never need to know Proxmox VM IDs, nodes,
+storages, disk interfaces or provider details.
 """
 from __future__ import annotations
 
@@ -38,8 +39,27 @@ _TEMPLATE_NODE_ENV = {
     "windows": "TOFU_TEMPLATE_WINDOWS_NODE",
 }
 
+_TEMPLATE_DISK_INTERFACE_ENV = {
+    "redos7": "TOFU_TEMPLATE_REDOS7_DISK_INTERFACE",
+    "redos8": "TOFU_TEMPLATE_REDOS8_DISK_INTERFACE",
+    "windows": "TOFU_TEMPLATE_WINDOWS_DISK_INTERFACE",
+}
+
+_TEMPLATE_DISK_DATASTORE_ENV = {
+    "redos7": "TOFU_TEMPLATE_REDOS7_DISK_DATASTORE",
+    "redos8": "TOFU_TEMPLATE_REDOS8_DISK_DATASTORE",
+    "windows": "TOFU_TEMPLATE_WINDOWS_DISK_DATASTORE",
+}
+
+_TEMPLATE_DISK_SIZE_ENV = {
+    "redos7": "TOFU_TEMPLATE_REDOS7_DISK_GB",
+    "redos8": "TOFU_TEMPLATE_REDOS8_DISK_GB",
+    "windows": "TOFU_TEMPLATE_WINDOWS_DISK_GB",
+}
+
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
 _TRUE = {"1", "true", "yes", "on"}
+_RESOURCE_KEYS = {"cpu", "memory_gb", "disk_gb"}
 
 
 class TofuProxmoxSpider(ProvisionSpider):
@@ -65,14 +85,90 @@ class TofuProxmoxSpider(ProvisionSpider):
     def _validate_name(name: str) -> None:
         if not _NAME_RE.fullmatch(name):
             raise ValueError(
-                "OpenTofu stand name must start with an alphanumeric character "
-                "and contain only letters, digits, '.', '_' or '-' (max 63 chars)"
+                "Stand name must start with an alphanumeric character and contain "
+                "only letters, digits, '.', '_' or '-' (max 63 chars)"
             )
 
     @staticmethod
+    def _positive_int(value, *, field: str) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"resources.{field} must be an integer") from exc
+        if parsed <= 0:
+            raise ValueError(f"resources.{field} must be greater than zero")
+        return parsed
+
+    @classmethod
+    def _resources(cls, values: dict, vm_os: str) -> dict[str, int | str | None]:
+        raw = values.get("resources")
+        if raw in (None, ""):
+            raw = {}
+        if not isinstance(raw, dict):
+            raise ValueError("resources must be a mapping")
+
+        unknown = sorted(set(raw) - _RESOURCE_KEYS)
+        if unknown:
+            raise ValueError(
+                "Unknown resource options: " + ", ".join(unknown) + ". "
+                "Supported: cpu, memory_gb, disk_gb"
+            )
+
+        cpu = cls._positive_int(raw.get("cpu"), field="cpu")
+        memory_gb = cls._positive_int(raw.get("memory_gb"), field="memory_gb")
+        disk_gb = cls._positive_int(raw.get("disk_gb"), field="disk_gb")
+
+        disk_interface = ""
+        disk_datastore = ""
+        if disk_gb is not None:
+            base_disk_raw = (
+                os.getenv(_TEMPLATE_DISK_SIZE_ENV[vm_os])
+                or os.getenv("TOFU_DEFAULT_GOLDEN_DISK_GB")
+                or "40"
+            )
+            try:
+                base_disk_gb = int(base_disk_raw)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Backend configuration {_TEMPLATE_DISK_SIZE_ENV[vm_os]} "
+                    "must be an integer"
+                ) from exc
+            if disk_gb < base_disk_gb:
+                raise ValueError(
+                    f"resources.disk_gb={disk_gb} cannot be smaller than the "
+                    f"{vm_os} stand baseline ({base_disk_gb} GiB)"
+                )
+
+            disk_interface = (
+                os.getenv(_TEMPLATE_DISK_INTERFACE_ENV[vm_os])
+                or os.getenv("TOFU_SYSTEM_DISK_INTERFACE")
+                or "scsi0"
+            ).strip()
+            disk_datastore = (
+                os.getenv(_TEMPLATE_DISK_DATASTORE_ENV[vm_os])
+                or os.getenv("TOFU_CLONE_DATASTORE")
+                or ""
+            ).strip()
+            if not disk_datastore:
+                raise ValueError(
+                    "Disk growth was requested, but the backend does not know the "
+                    f"system disk datastore for {vm_os}. Configure "
+                    f"{_TEMPLATE_DISK_DATASTORE_ENV[vm_os]}."
+                )
+
+        return {
+            "cpu": cpu,
+            "memory_gb": memory_gb,
+            "memory_mb": memory_gb * 1024 if memory_gb is not None else None,
+            "disk_gb": disk_gb,
+            "disk_interface": disk_interface,
+            "disk_datastore": disk_datastore,
+        }
+
+    @staticmethod
     def _template_vm_id(vm_os: str, values: dict) -> int | None:
-        # Explicit overrides are kept for diagnostics/manual runs. Published
-        # scenarios should normally rely on the per-OS environment mapping.
         raw = values.get("template_vm_id")
         if raw in (None, ""):
             env_name = _TEMPLATE_ENV.get(vm_os)
@@ -92,8 +188,6 @@ class TofuProxmoxSpider(ProvisionSpider):
     @staticmethod
     def _target_node_name(values: dict, template_node_name: str) -> str:
         raw = values.get("node_name") or os.getenv("TOFU_NODE_NAME")
-        # A single-node installation needs no duplicate setting: when the
-        # template node is known, use it as the target by default.
         return str(raw or template_node_name or "").strip()
 
     @staticmethod
@@ -133,7 +227,7 @@ class TofuProxmoxSpider(ProvisionSpider):
 
     @staticmethod
     def _vars(st: dict) -> list[str]:
-        return [
+        args = [
             f"-var=stand_name={st['name']}",
             f"-var=os={st['os']}",
             f"-var=template_vm_id={st['template_vm_id']}",
@@ -141,6 +235,18 @@ class TofuProxmoxSpider(ProvisionSpider):
             f"-var=template_node_name={st['template_node_name']}",
             f"-var=clone_datastore_id={st['clone_datastore_id']}",
         ]
+        resources = st["resources"]
+        if resources["cpu"] is not None:
+            args.append(f"-var=override_cpu={resources['cpu']}")
+        if resources["memory_mb"] is not None:
+            args.append(f"-var=override_memory_mb={resources['memory_mb']}")
+        if resources["disk_gb"] is not None:
+            args.extend([
+                f"-var=override_disk_gb={resources['disk_gb']}",
+                f"-var=override_disk_interface={resources['disk_interface']}",
+                f"-var=override_disk_datastore_id={resources['disk_datastore']}",
+            ])
+        return args
 
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
         name = str(step.with_.get("name", "test-stand"))
@@ -150,7 +256,7 @@ class TofuProxmoxSpider(ProvisionSpider):
         self._validate_name(name)
         if vm_os not in CONN_BY_OS:
             raise ValueError(
-                f"Unsupported OpenTofu OS {vm_os!r}; expected one of "
+                f"Unsupported stand OS {vm_os!r}; expected one of "
                 f"{', '.join(sorted(CONN_BY_OS))}"
             )
         if action not in {"provision", "destroy"}:
@@ -158,21 +264,19 @@ class TofuProxmoxSpider(ProvisionSpider):
                 f"Unsupported tofu-proxmox action {action!r}; use provision or destroy"
             )
 
+        resources = self._resources(step.with_, vm_os)
         template_vm_id = self._template_vm_id(vm_os, step.with_)
         template_node_name = self._template_node_name(vm_os, step.with_)
         node_name = self._target_node_name(step.with_, template_node_name)
         clone_datastore_id = self._clone_datastore_id(step.with_)
 
         if template_vm_id is None and not self._dev_fallback_enabled():
-            env_name = _TEMPLATE_ENV[vm_os]
             raise ValueError(
-                f"No Proxmox template configured for {vm_os}: set {env_name} "
-                "or with.template_vm_id"
+                f"Stand profile {vm_os!r} is not configured on the Arachne backend"
             )
         if not node_name and not self._dev_fallback_enabled():
             raise ValueError(
-                "No Proxmox target node configured: set TOFU_NODE_NAME or the "
-                f"template node variable {_TEMPLATE_NODE_ENV[vm_os]}"
+                f"Stand profile {vm_os!r} has no target host configured on the backend"
             )
 
         ext = f"vm-{name}-{action}"
@@ -184,6 +288,7 @@ class TofuProxmoxSpider(ProvisionSpider):
             "template_node_name": template_node_name,
             "node_name": node_name,
             "clone_datastore_id": clone_datastore_id,
+            "resources": resources,
             "status": RunStatus.PENDING,
             "with": step.with_,
             "artifacts": [],
@@ -258,12 +363,12 @@ class TofuProxmoxSpider(ProvisionSpider):
                     self._finish(handle, ip="10.81.19.200", vm_id="dev")
                 return
             st["status"] = RunStatus.FAILED
-            yield LogLine("tofu binary not found", "stderr")
+            yield LogLine("Stand backend is unavailable: tofu binary not found", "stderr")
             return
 
         if not source_dir.is_dir():
             st["status"] = RunStatus.FAILED
-            yield LogLine(f"OpenTofu module not found: {source_dir}", "stderr")
+            yield LogLine("Stand backend configuration is unavailable", "stderr")
             return
 
         try:
@@ -273,9 +378,7 @@ class TofuProxmoxSpider(ProvisionSpider):
 
             if action == "destroy" and not state_path.exists():
                 st["status"] = RunStatus.FAILED
-                yield LogLine(
-                    f"No OpenTofu state for stand {name}: {state_path}", "stderr"
-                )
+                yield LogLine(f"No managed stand state found for {name}", "stderr")
                 return
 
             async for line in self._run_cmd(
@@ -296,7 +399,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                     yield line
                 st["status"] = RunStatus.SUCCESS
                 st["artifacts"] = []
-                yield LogLine(f"VM destroyed: {name}", "system")
+                yield LogLine(f"Stand destroyed: {name}", "system")
                 return
 
             cmd = [
@@ -319,14 +422,13 @@ class TofuProxmoxSpider(ProvisionSpider):
             if not ip:
                 st["status"] = RunStatus.FAILED
                 yield LogLine(
-                    "VM was created, but OpenTofu did not return vm_ip. "
-                    "Check qemu-guest-agent in the golden template.",
+                    "Stand was created, but its IP address is not available yet",
                     "stderr",
                 )
                 return
 
             self._finish(handle, ip=ip, vm_id=vm_id)
-            yield LogLine(f"VM ready: {name} @ {ip} ({vm_os})", "system")
+            yield LogLine(f"Stand ready: {name} @ {ip} ({vm_os})", "system")
         except (OSError, RuntimeError, ValueError) as exc:
             st["status"] = RunStatus.FAILED
             yield LogLine(str(exc), "stderr")
@@ -335,6 +437,15 @@ class TofuProxmoxSpider(ProvisionSpider):
         st = self._runs[handle.external_id]
         vm_os = st["os"]
         conn, port = CONN_BY_OS.get(vm_os, ("ssh", 22))
+        requested = {
+            key: value
+            for key, value in {
+                "cpu": st["resources"]["cpu"],
+                "memory_gb": st["resources"]["memory_gb"],
+                "disk_gb": st["resources"]["disk_gb"],
+            }.items()
+            if value is not None
+        }
         st["artifacts"] = [
             Artifact(
                 name=st["name"],
@@ -351,6 +462,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                     "template_vm_id": st["template_vm_id"],
                     "node_name": st["node_name"],
                     "template_node_name": st["template_node_name"],
+                    "requested_resources": requested,
                     "backend": self.NAME,
                     "state": "running",
                 },
