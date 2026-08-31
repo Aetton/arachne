@@ -363,7 +363,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                     self._finish_destroy(handle)
                     yield LogLine(f"VM destroyed (dev mode): {name}", "system")
                 else:
-                    self._finish(handle, ip="10.81.19.200", vm_id="dev")
+                    self._finish(handle, ip="10.81.19.200", vm_id=f"dev-{name}")
                 return
             st["status"] = RunStatus.FAILED
             yield LogLine("Stand backend is unavailable: tofu binary not found", "stderr")
@@ -421,6 +421,11 @@ class TofuProxmoxSpider(ProvisionSpider):
             vm_id = await self._output(
                 "vm_id", cwd=work_dir, env=env, state_path=state_path
             )
+
+            # Once the backend has a VM ID, lifecycle ownership must be preserved
+            # even if guest-agent/IP discovery fails. Failed steps still return
+            # their artifacts through the thread adapter.
+            self._finish(handle, ip=ip, vm_id=vm_id)
             if not ip:
                 st["status"] = RunStatus.FAILED
                 yield LogLine(
@@ -429,7 +434,6 @@ class TofuProxmoxSpider(ProvisionSpider):
                 )
                 return
 
-            self._finish(handle, ip=ip, vm_id=vm_id)
             yield LogLine(f"Stand ready: {name} @ {ip} ({vm_os})", "system")
         except (OSError, RuntimeError, ValueError) as exc:
             st["status"] = RunStatus.FAILED
@@ -480,6 +484,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                     "template_vm_id": st["template_vm_id"],
                     "node_name": st["node_name"],
                     "template_node_name": st["template_node_name"],
+                    "clone_datastore_id": st["clone_datastore_id"],
                     "requested_resources": requested,
                     "lifetime": st["lifetime"],
                     "backend": self.NAME,
