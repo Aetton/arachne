@@ -151,8 +151,8 @@ def _claim(machine_id: int) -> dict | None:
             return None
 
         if machine.state == "destroying":
-            claimed = _as_aware(machine.destroy_claimed_at)
-            if claimed is not None and claimed > stale_before:
+            claimed_at = _as_aware(machine.destroy_claimed_at)
+            if claimed_at is not None and claimed_at > stale_before:
                 return None
         elif machine.state not in {"running", "reap_failed"}:
             return None
@@ -165,6 +165,7 @@ def _claim(machine_id: int) -> dict | None:
             "name": machine.name,
             "os": machine.os,
             "backend": machine.backend,
+            "backend_metadata": dict(machine.backend_metadata or {}),
         }
     finally:
         db.close()
@@ -215,12 +216,23 @@ async def destroy_expired_machine(machine_id: int) -> None:
 
     try:
         spider = get_spider("tofu-proxmox")
+        md = claimed["backend_metadata"]
+        destroy_with = {"name": claimed["name"], "os": claimed["os"]}
+        for key in (
+            "template_vm_id",
+            "template_node_name",
+            "node_name",
+            "clone_datastore_id",
+        ):
+            if md.get(key) not in (None, ""):
+                destroy_with[key] = md[key]
+
         step = StepSpec(
             id=f"ttl-{machine_id}",
             spider="tofu-proxmox",
             action="destroy",
             kind=spider.KIND,
-            with_={"name": claimed["name"], "os": claimed["os"]},
+            with_=destroy_with,
         )
         result = await run_step(
             f"ttl:{machine_id}:{uuid.uuid4()}",
