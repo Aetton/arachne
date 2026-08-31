@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -158,3 +159,45 @@ def inspect_template(vm_id: int) -> dict:
         if not details["template"]:
             raise ProxmoxAPIError(f"VM {vm_id} exists but is not a template")
         return details
+
+
+def create_spice_vv(node: str, vm_id: int, title: str = "") -> str:
+    """Request a fresh SPICE ticket and render the virt-viewer .vv payload.
+
+    SPICE tickets are intentionally generated on demand. They are short-lived and
+    must never be persisted in run artifacts or exposed through unauthenticated
+    static files.
+    """
+    endpoint, _, _ = _settings()
+    proxy_host = urlparse(endpoint).hostname or endpoint.split(":", 1)[0]
+    with _client() as client:
+        data = _data(client.post(
+            f"/nodes/{node}/qemu/{int(vm_id)}/spiceproxy",
+            data={"proxy": proxy_host},
+        ))
+
+    if not isinstance(data, dict):
+        raise ProxmoxAPIError("Proxmox SPICE proxy returned an unexpected response")
+
+    values = dict(data)
+    values.setdefault("type", "spice")
+    values.setdefault("delete-this-file", 1)
+    values.setdefault("secure-attention", "Ctrl+Alt+Ins")
+    values.setdefault("release-cursor", "Ctrl+Alt+R")
+    values.setdefault("toggle-fullscreen", "Shift+F11")
+    if title:
+        values["title"] = title
+
+    preferred_order = [
+        "type", "title", "host", "proxy", "tls-port", "password", "ca",
+        "host-subject", "secure-attention", "release-cursor",
+        "toggle-fullscreen", "delete-this-file",
+    ]
+    ordered = preferred_order + sorted(key for key in values if key not in preferred_order)
+    lines = ["[virt-viewer]"]
+    for key in ordered:
+        if key not in values or values[key] in (None, ""):
+            continue
+        value = str(values[key]).replace("\r", "").replace("\n", "\\n")
+        lines.append(f"{key}={value}")
+    return "\n".join(lines) + "\n"
