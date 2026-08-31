@@ -81,6 +81,12 @@ resource "proxmox_virtual_environment_vm" "stand" {
     full          = true
   }
 
+  # Runtime stands expose a SPICE console regardless of the golden image's
+  # display adapter. QXL enables Proxmox spiceproxy and fresh .vv downloads.
+  vga {
+    type = "qxl"
+  }
+
   # No block means inherit that resource dimension from the golden template.
   dynamic "cpu" {
     for_each = var.override_cpu == null ? [] : [var.override_cpu]
