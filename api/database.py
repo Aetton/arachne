@@ -173,9 +173,33 @@ class Run(Base):
     status = Column(String(16), default="running")   # running|success|failed|cancelled
     created_at = Column(DateTime, default=utcnow)
     completed_at = Column(DateTime, nullable=True)
-    log = Column(Text, default="")           # raw stdout, appended live
-    artifacts = Column(JSON, default=list)   # [{name, repo, path}]
+    log = Column(Text, default="")
+    artifacts = Column(JSON, default=list)
 
+    user = relationship("User")
+
+
+class ManagedMachine(Base):
+    """A VM/resource owned by Arachne rather than by a particular hypervisor UI."""
+    __tablename__ = "managed_machines"
+
+    id = Column(Integer, primary_key=True)
+    run_id = Column(String(36), ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    name = Column(String(128), nullable=False, index=True)
+    vm_id = Column(String(64), nullable=True, index=True)
+    ip = Column(String(128), default="")
+    os = Column(String(32), default="")
+    backend = Column(String(64), nullable=False, index=True)
+    state = Column(String(24), default="running", nullable=False, index=True)
+    credentials_ref = Column(String(255), nullable=True)
+    backend_metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    destroy_claimed_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    destroyed_at = Column(DateTime(timezone=True), nullable=True)
+
+    run = relationship("Run")
     user = relationship("User")
 
 

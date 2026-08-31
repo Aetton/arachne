@@ -41,14 +41,17 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
     },
     "tofu-proxmox": {
-        "description": "Provision or destroy an ephemeral Proxmox VM through OpenTofu.",
+        "description": "Create or destroy an ephemeral stand from a configured golden image.",
         "actions": ["provision", "destroy"],
         "inputs": {
             "name": {"default": "test-stand"},
             "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"]},
-            "vcpus": {"default": 4},
-            "ram_mb": {"default": 8192},
-            "disk_gb": {"default": 40},
+            "lifetime": {
+                "description": "Optional lifetime before automatic cleanup: 30m, 2h, 1d"
+            },
+            "resources": {
+                "description": "Optional resource overrides: cpu, memory_gb, disk_gb"
+            },
         },
     },
     "ansible-ovirt": {

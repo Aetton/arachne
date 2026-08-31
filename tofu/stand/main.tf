@@ -1,8 +1,11 @@
 # Ephemeral stand provisioning for Arachne.
 #
+# The golden template is the source of truth. Optional resource overrides are
+# applied only when the scenario explicitly asks for them. Scenario authors never
+# need to know Proxmox nodes, VM IDs, datastores or disk interfaces.
+#
 # Credentials and endpoint are intentionally not stored here. bpg/proxmox reads
-# PROXMOX_VE_ENDPOINT and PROXMOX_VE_API_TOKEN (or username/password) from the
-# environment inherited by the tofu-proxmox spider.
+# PROXMOX_VE_ENDPOINT and PROXMOX_VE_API_TOKEN from the inherited environment.
 
 terraform {
   required_providers {
@@ -28,85 +31,84 @@ variable "template_vm_id" {
 }
 
 variable "node_name" {
-  type    = string
-  default = "pve"
+  type = string
 }
 
-variable "datastore_id" {
+variable "template_node_name" {
   type    = string
-  default = "local-lvm"
+  default = ""
 }
 
-variable "bridge" {
+variable "clone_datastore_id" {
   type    = string
-  default = "vmbr0"
+  default = ""
 }
 
-variable "disk_interface" {
-  type    = string
-  default = "scsi0"
-}
-
-variable "vcpus" {
+variable "override_cpu" {
   type    = number
-  default = 4
+  default = null
 }
 
-variable "ram_mb" {
+variable "override_memory_mb" {
   type    = number
-  default = 8192
+  default = null
 }
 
-variable "disk_gb" {
+variable "override_disk_gb" {
   type    = number
-  default = 40
+  default = null
+}
+
+variable "override_disk_interface" {
+  type    = string
+  default = ""
+}
+
+variable "override_disk_datastore_id" {
+  type    = string
+  default = ""
 }
 
 resource "proxmox_virtual_environment_vm" "stand" {
   name      = var.stand_name
   node_name = var.node_name
+  started   = true
 
   clone {
     vm_id        = var.template_vm_id
-    datastore_id = var.datastore_id
+    node_name    = var.template_node_name != "" ? var.template_node_name : null
+    datastore_id = var.clone_datastore_id != "" ? var.clone_datastore_id : null
+    full          = true
+  }
+
+  # No block means inherit that resource dimension from the golden template.
+  dynamic "cpu" {
+    for_each = var.override_cpu == null ? [] : [var.override_cpu]
+    content {
+      cores = cpu.value
+    }
+  }
+
+  dynamic "memory" {
+    for_each = var.override_memory_mb == null ? [] : [var.override_memory_mb]
+    content {
+      dedicated = memory.value
+    }
+  }
+
+  # Disk growth is backend-resolved: the scenario gives only the desired size,
+  # while Arachne supplies the template's datastore and system-disk interface.
+  dynamic "disk" {
+    for_each = var.override_disk_gb == null ? [] : [var.override_disk_gb]
+    content {
+      datastore_id = var.override_disk_datastore_id
+      interface    = var.override_disk_interface
+      size         = disk.value
+    }
   }
 
   agent {
     enabled = true
-  }
-
-  cpu {
-    cores = var.vcpus
-  }
-
-  memory {
-    dedicated = var.ram_mb
-  }
-
-  # CI templates are expected to expose their system disk on disk_interface.
-  # OpenTofu may grow that disk, but Proxmox cannot shrink it below the template
-  # size. Keep template disks deliberately small.
-  disk {
-    datastore_id = var.datastore_id
-    interface    = var.disk_interface
-    size         = var.disk_gb
-  }
-
-  network_device {
-    bridge = var.bridge
-  }
-
-  # Linux templates need cloud-init; Windows templates need an equivalent
-  # Cloudbase-Init setup. DHCP plus qemu-guest-agent gives Arachne the resulting
-  # address without baking an IP into the template.
-  initialization {
-    datastore_id = var.datastore_id
-
-    ip_config {
-      ipv4 {
-        address = "dhcp"
-      }
-    }
   }
 
   tags = ["arachne", "ephemeral", var.os]

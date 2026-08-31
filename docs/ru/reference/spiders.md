@@ -69,8 +69,11 @@
 
 ## `tofu-proxmox`
 
-Создаёт временную VM клонированием Proxmox template через OpenTofu. Сценарий задаёт
-логическую ОС и ресурсы, а ID шаблона и параметры Proxmox берутся из окружения.
+Создаёт временный стенд полным клонированием заранее подготовленного golden image.
+Пользователь сценария работает с логическими параметрами стенда, а Proxmox и
+OpenTofu остаются внутренней реализацией backend-а.
+
+Минимальный сценарий:
 
 ```yaml
 - id: vm
@@ -79,44 +82,99 @@
   with:
     name: arachne-test-001
     os: redos8
-    vcpus: 4
-    ram_mb: 8192
-    disk_gb: 40
 ```
 
-Поддерживаемые ОС: `redos7`, `redos8`, `windows`. Соответствие шаблонам задаётся
-через `TOFU_TEMPLATE_REDOS7`, `TOFU_TEMPLATE_REDOS8` и
-`TOFU_TEMPLATE_WINDOWS`. Для диагностики ID шаблона можно явно передать как
-`with.template_vm_id`, но обычным сценариям Proxmox VM ID знать не нужно.
+В таком виде CPU, RAM, диск и сеть наследуются от golden image без изменений, а
+машина живёт до явного `destroy`.
 
-Параметры инфраструктуры по умолчанию:
+### Сколько машине жить
 
-| Переменная | По умолчанию | Назначение |
-|---|---|---|
-| `TOFU_NODE_NAME` | `pve` | Proxmox node |
-| `TOFU_DATASTORE` | `local-lvm` | datastore для клона и дисков |
-| `TOFU_BRIDGE` | `vmbr0` | сетевой bridge |
-| `TOFU_DISK_INTERFACE` | `scsi0` | системный диск шаблона |
-| `TOFU_STATE_ROOT` | `/tmp/arachne-tofu-state` | каталог локальных state |
+Для временного теста можно сразу задать срок жизни:
 
-Endpoint и учётные данные провайдера берутся из стандартных переменных
-`bpg/proxmox`, прежде всего `PROXMOX_VE_ENDPOINT` и `PROXMOX_VE_API_TOKEN`.
+```yaml
+- id: vm
+  spider: tofu-proxmox
+  action: provision
+  with:
+    name: quick-install-test
+    os: redos8
+    lifetime: 30m
+```
 
-Каждый стенд получает отдельный `terraform.tfstate` и отдельный `TF_DATA_DIR` в
-`TOFU_STATE_ROOT/<name>`. Поэтому параллельные стенды не используют один local
-state.
+Поддерживаются компактные значения:
 
-После `apply` паук читает outputs `vm_id` и `vm_ip`. Артефакт `vm` содержит IP,
-VM ID, hostname, ОС, архитектуру, тип подключения, порт, ресурсы, template VM ID,
-backend и состояние. `redos7`/`redos8` используют SSH:22, `windows` — WinRM:5985.
+| Значение | Смысл |
+|---|---|
+| `30m` | 30 минут |
+| `2h` | 2 часа |
+| `1d` | 1 день |
 
-Шаблон должен быть подготовлен к клонированию: системный диск ожидается на
-`TOFU_DISK_INTERFACE`, сеть получает адрес по DHCP, а qemu-guest-agent должен быть
-установлен и запущен. Для Windows нужен эквивалентный Cloudbase-Init setup.
-Без рабочего guest agent OpenTofu не сможет вернуть `vm_ip`, и шаг завершится
-ошибкой.
+`lifetime` необязателен. Если его нет, автоматическое удаление не назначается.
+При создании машины Арахна вычисляет абсолютный `expires_at` и сохраняет его в
+PostgreSQL. Фоновый lifecycle reaper раз в минуту проверяет просроченные машины и
+запускает тот же штатный `destroy`, что используется обычным сценарием.
 
-Удаление стенда выполняется отдельным шагом с тем же `name` и `os`:
+Срок жизни переживает рестарт Арахны: после запуска reaper продолжает работать с
+`expires_at` из базы. Прерванный cleanup имеет lease и может быть подобран заново,
+если процесс умер во время удаления.
+
+### Дополнительные ресурсы
+
+Для разового теста можно запросить дополнительные ресурсы одновременно с TTL:
+
+```yaml
+- id: vm
+  spider: tofu-proxmox
+  action: provision
+  with:
+    name: arachne-heavy-test
+    os: redos8
+    lifetime: 2h
+    resources:
+      cpu: 8
+      memory_gb: 16
+      disk_gb: 80
+```
+
+Все поля `resources` необязательны и независимы:
+
+| Поле | Назначение |
+|---|---|
+| `cpu` | желаемое количество vCPU |
+| `memory_gb` | RAM в GiB |
+| `disk_gb` | размер системного диска в GiB |
+
+Если поле не указано, соответствующий ресурс наследуется от golden image.
+Системный диск разрешено только увеличивать. Для текущих golden image базовый
+размер — 40 GiB.
+
+Поддерживаемые ОС: `redos7`, `redos8`, `windows`. Соответствие golden image,
+source node и дисковой конфигурации хранится в backend environment. Обычному
+сценарию не нужны VM ID, node, datastore или disk interface.
+
+Endpoint и учётные данные provider также остаются backend-конфигурацией:
+
+- `PROXMOX_VE_ENDPOINT`;
+- `PROXMOX_VE_API_TOKEN`;
+- `PROXMOX_VE_INSECURE` при необходимости.
+
+Каждый стенд получает отдельный `terraform.tfstate`, `.terraform` и рабочий каталог
+в `TOFU_STATE_ROOT/<name>`. В контейнерной установке state вынесен в persistent
+volume.
+
+После `apply` паук читает `vm_id` и `vm_ip`. Артефакт `vm` содержит IP, VM ID,
+ОС, архитектуру, тип подключения, порт, backend, состояние,
+`requested_resources` и `lifetime`. Структура артефакта сохраняется в run целиком,
+а не восстанавливается потом из текстовой строки лога.
+
+`redos7`/`redos8` используют SSH:22, `windows` — WinRM:5985.
+
+Golden image должен получать сеть по DHCP и иметь работающий `qemu-guest-agent`.
+Guest hostname сейчас отдельно не меняется: downstream шаги используют IP из
+артефакта.
+
+Удаление стенда выполняется отдельным шагом с тем же `name` и `os`; `resources` и
+`lifetime` повторять не требуется:
 
 ```yaml
 - id: cleanup
@@ -127,11 +185,15 @@ backend и состояние. `redos7`/`redos8` используют SSH:22, `w
     os: redos8
 ```
 
-`destroy` использует state этого имени. Если state отсутствует, шаг падает вместо
-того, чтобы молча изображать успешную уборку.
+Успешный explicit destroy помечает соответствующую запись `managed_machines` как
+`destroyed`. Если state отсутствует, шаг падает вместо попытки угадывать VM по
+имени.
 
-Если бинарник `tofu` не найден, production-поведение — ошибка. Старый синтетический
-VM fallback включается только явно через `TOFU_DEV_FALLBACK=true`.
+Если бинарник `tofu` не найден, production-поведение — ошибка. Синтетический VM
+fallback включается только явно через `TOFU_DEV_FALLBACK=true`.
+
+Полная настройка backend-а, API token, ACL, TLS, golden image и disk override
+описана в [`operations/proxmox-opentofu.md`](../operations/proxmox-opentofu.md).
 
 ## `ansible-ovirt`
 

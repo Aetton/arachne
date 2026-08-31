@@ -1,9 +1,11 @@
-"""Schedule trigger — cron-fire a scenario with default params.
+"""Schedule trigger — cron-fire scenarios and host shared lifecycle jobs.
 
     triggers:
       - {type: schedule, cron: "0 2 * * *"}
 
-Uses a shared AsyncIOScheduler started by the app lifespan.
+Uses a shared AsyncIOScheduler started by the app lifespan. Managed-machine TTL
+cleanup is registered on the same scheduler so there is one timing engine inside
+Arachne rather than a second hidden cron mechanism.
 """
 from __future__ import annotations
 
@@ -27,6 +29,11 @@ def start_scheduler():
     sch = get_scheduler()
     if not sch.running:
         sch.start()
+
+    # Import lazily to avoid a module cycle: managed_machines uses this scheduler
+    # only when the application has already loaded plugins and the bus.
+    from managed_machines import start_reaper
+    start_reaper()
 
 
 @register_trigger

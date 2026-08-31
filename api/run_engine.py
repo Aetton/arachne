@@ -1,7 +1,8 @@
 """Bridge between the HTTP layer and the orchestrator core.
 
-Keeps a live in-memory log buffer (for SSE/polling), persists runs + artifacts
-to the DB, and exposes fire() as the single entrypoint every trigger uses.
+Keeps a live in-memory log buffer (for SSE/polling), persists runs + structured
+artifacts to the DB, and exposes fire() as the single entrypoint every trigger
+uses.
 
 Public interface:
     start_run(user_id, scenario_key, params) -> run_id
@@ -24,10 +25,11 @@ from collections import defaultdict
 from database import SessionLocal, Run, utcnow
 import config_loader
 import scenario_store
+import managed_machines
 
 from core.registry import load_plugins, all_triggers
 from core import orchestrator
-from core.types import LogLine, RunStatus
+from core.types import Artifact, LogLine, RunStatus
 
 _live: dict[str, list[dict]] = defaultdict(list)
 _done: dict[str, bool] = {}
@@ -101,16 +103,20 @@ def _log_sink(run_id: str, line: LogLine):
         "stream": line.stream,
         "text": line.text,
     })
-    if line.stream == "system" and line.text.startswith("artifact: "):
-        body = line.text[len("artifact: "):]
-        name = body.split(" [", 1)[0].strip()
-        typ = ""
-        url = None
-        if "[" in body and "]" in body:
-            typ = body.split("[", 1)[1].split("]", 1)[0]
-        if "→" in body:
-            url = body.split("→", 1)[1].strip()
-        _arts[run_id].append({"name": name, "type": typ, "download_url": url})
+
+
+def _artifact_sink(run_id: str, user_id: int | None, step_id: str, artifact: Artifact) -> None:
+    """Preserve the artifact itself instead of reconstructing it from a log line."""
+    item = {
+        "name": artifact.name,
+        "type": artifact.type,
+        "location": artifact.location,
+        "download_url": artifact.download_url,
+        "metadata": dict(artifact.metadata or {}),
+        "step_id": step_id,
+    }
+    _arts[run_id].append(item)
+    managed_machines.register_artifact(run_id, user_id, artifact)
 
 
 def _prepare_params(params: dict, user_id: int | None = None) -> dict:
@@ -170,7 +176,16 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
     user_id = params.get("__user_id__")
     try:
         status = await orchestrator.run_scenario(
-            run_id, scenario_key, scenario, clean, _log_sink, user_id=user_id)
+            run_id,
+            scenario_key,
+            scenario,
+            clean,
+            _log_sink,
+            user_id=user_id,
+            artifact_sink=lambda rid, sid, artifact: _artifact_sink(
+                rid, user_id, sid, artifact
+            ),
+        )
     except Exception as exc:  # noqa: BLE001
         _live[run_id].append({"step_id": "", "seq": 0, "stream": "stderr",
                               "text": f"ARACHNE ERROR: {exc}"})

@@ -14,10 +14,11 @@ from core import events, wire_codec
 from core.context import RunContext
 from core.thread_client import run_step
 from core.registry import get_spider
-from core.types import StepSpec, StepResult, RunStatus, LogLine, RunError
+from core.types import Artifact, StepSpec, StepResult, RunStatus, LogLine, RunError
 
 # sink(run_id, LogLine) — where live log lines go (UI buffer + DB)
 LogSink = Callable[[str, LogLine], None]
+ArtifactSink = Callable[[str, str, Artifact], None]
 
 
 def _kind_of(spider_name: str) -> str:
@@ -46,7 +47,8 @@ def parse_steps(scenario: dict) -> list[StepSpec]:
 
 async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
                        params: dict, log_sink: LogSink,
-                       user_id: int | None = None) -> RunStatus:
+                       user_id: int | None = None,
+                       artifact_sink: ArtifactSink | None = None) -> RunStatus:
     """Execute all steps. Returns the overall status."""
     ctx = RunContext(params, user_id=user_id)
     steps = parse_steps(scenario)
@@ -83,10 +85,15 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
 
         ctx.record(StepResult(step.id, status, handle, artifacts, err))
 
-        for a in artifacts:
-            tail = f" → {a.download_url}" if a.download_url else ""
-            log_sink(run_id, LogLine(f"artifact: {a.name} [{a.type}]{tail}",
-                                     "system", step_id=step.id))
+        for artifact in artifacts:
+            if artifact_sink:
+                artifact_sink(run_id, step.id, artifact)
+            tail = f" → {artifact.download_url}" if artifact.download_url else ""
+            log_sink(run_id, LogLine(
+                f"artifact: {artifact.name} [{artifact.type}]{tail}",
+                "system",
+                step_id=step.id,
+            ))
 
         if status != RunStatus.SUCCESS:
             log_sink(run_id, LogLine(f"step '{step.id}' ended: {status.value}",
