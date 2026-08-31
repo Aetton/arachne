@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.types import Artifact
+from core.types import Artifact, RunOutput
 
 BROOD_TARGET_CONTRACT = "arachne.brood-target/v1"
 
@@ -79,12 +79,7 @@ def is_brood_target(artifact: Artifact) -> bool:
 
 
 def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Artifact:
-    """Upgrade an old flat provision artifact to Brood target v1 in-place.
-
-    This is the compatibility bridge while provisioning plugins migrate to
-    emitting the contract themselves. Legacy scalar fields stay in metadata so
-    existing scenario references such as `${stand.ip}` keep working.
-    """
+    """Upgrade an old flat provision artifact to Brood target v1 in-place."""
     if is_brood_target(artifact):
         return artifact
 
@@ -165,13 +160,79 @@ def preferred_endpoint(artifact: Artifact, *, require_address: bool = True) -> d
     return endpoint
 
 
-def command_target_vars(key: str, artifact: Artifact) -> list[tuple[str, str]]:
-    """Translate a Brood artifact into stable scalar vars for Command spiders.
+def artifact_output_key(artifact: Artifact) -> str:
+    return f"{artifact.type}:{artifact.location}:{artifact.name}"
 
-    The plain ``key`` variable resolves to the preferred endpoint host. Existing
-    playbooks that consumed ``target=${stand.ip}`` can migrate to
-    ``target=${stand.artifact}`` without being rewritten at the same time.
-    """
+
+def brood_target_outputs(artifact: Artifact) -> list[RunOutput]:
+    """Render-neutral output panels for a normalized Brood target."""
+    md = validate_brood_target(artifact, require_address=False)
+    identity = md["identity"]
+    platform = md["platform"]
+    lifecycle = md["lifecycle"]
+    backend = md["backend"]
+    access = md["access"]
+    preferred = str(access.get("preferred") or "")
+    endpoint = (access.get("endpoints") or {}).get(preferred) or {}
+    credentials = access.get("credentials") or {}
+    key = artifact_output_key(artifact)
+
+    machine = RunOutput(
+        kind="machine",
+        title=str(identity.get("name") or artifact.name),
+        data={
+            "id": str(identity.get("id") or artifact.location),
+            "kind": str(identity.get("kind") or artifact.type),
+            "os": str(platform.get("os") or ""),
+            "family": str(platform.get("family") or ""),
+            "arch": str(platform.get("arch") or ""),
+            "state": str(lifecycle.get("state") or ""),
+            "lifetime": lifecycle.get("lifetime"),
+            "backend": str(backend.get("spider") or ""),
+        },
+        artifact=artifact,
+        metadata={"artifact_key": key},
+    )
+
+    access_links = []
+    host = str(endpoint.get("host") or "")
+    if host and preferred == "ssh":
+        access_links.append({"label": "Open SSH", "href": f"ssh://{host}", "kind": "connect"})
+    access_output = RunOutput(
+        kind="access",
+        title="Access",
+        data={
+            "host": host,
+            "port": endpoint.get("port"),
+            "connection": preferred,
+            "credentials_ref": credentials.get("ref") if isinstance(credentials, dict) else None,
+        },
+        links=access_links,
+        metadata={"artifact_key": key},
+    )
+
+    outputs = [machine, access_output]
+    if backend.get("spider") == "tofu-proxmox" and artifact.type == "vm":
+        outputs.append(RunOutput(
+            kind="console",
+            title="Console",
+            data={
+                "provider": "Proxmox",
+                "protocol": "noVNC",
+                "target_id": str(identity.get("id") or artifact.location),
+            },
+            links=[{
+                "label": "Open VNC ↗",
+                "href": "__arachne_vm_console__",
+                "kind": "console",
+            }],
+            metadata={"artifact_key": key},
+        ))
+    return outputs
+
+
+def command_target_vars(key: str, artifact: Artifact) -> list[tuple[str, str]]:
+    """Translate a Brood artifact into stable scalar vars for Command spiders."""
     md = validate_brood_target(artifact)
     endpoint = preferred_endpoint(artifact)
     identity = md["identity"]
