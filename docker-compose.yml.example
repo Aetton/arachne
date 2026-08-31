@@ -23,12 +23,14 @@ services:
       SCENARIOS_CONFIG: /app/config/scenarios.yaml
       TOFU_ROOT: /app/tofu
       TOFU_STATE_ROOT: /var/lib/arachne/tofu-state
-      SSL_CERT_FILE: /etc/ssl/certs/ca.crt
-      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
     volumes:
       - ./config:/app/config:ro
       - ./playbooks:/app/playbooks:ro
-      - ./certs/:/etc/ssl/certs/:ro
+      # Custom corporate CAs are merged into Debian's system trust store at startup.
+      # Keep one certificate per *.crt file. This mount must not cover /etc/ssl/certs.
+      - ./certs/:/usr/local/share/ca-certificates/arachne/:ro
       - tofu-state:/var/lib/arachne/tofu-state
       # mount your ssh key if playbooks provision remote VMs
       # - ~/.ssh/arachne_id_ed25519:/root/.ssh/id_ed25519:ro
