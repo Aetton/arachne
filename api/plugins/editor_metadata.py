@@ -41,11 +41,14 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
     },
     "tofu-proxmox": {
-        "description": "Clone or destroy an ephemeral VM from a configured Proxmox golden template.",
+        "description": "Create or destroy an ephemeral stand from a configured golden image.",
         "actions": ["provision", "destroy"],
         "inputs": {
             "name": {"default": "test-stand"},
             "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"]},
+            "resources": {
+                "description": "Optional resource overrides: cpu, memory_gb, disk_gb"
+            },
         },
     },
     "ansible-ovirt": {
