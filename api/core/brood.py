@@ -1,7 +1,7 @@
 """Shared Brood -> Command target contract.
 
 Brood spiders may provision through any backend, but downstream Command spiders
-must not need to know which backend created the target.  They consume this
+must not need to know which backend created the target. They consume this
 structured metadata contract instead.
 """
 from __future__ import annotations
@@ -78,6 +78,59 @@ def is_brood_target(artifact: Artifact) -> bool:
     return artifact.metadata.get("contract") == BROOD_TARGET_CONTRACT
 
 
+def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Artifact:
+    """Upgrade an old flat provision artifact to Brood target v1 in-place.
+
+    This is the compatibility bridge while provisioning plugins migrate to
+    emitting the contract themselves. Legacy scalar fields stay in metadata so
+    existing scenario references such as `${stand.ip}` keep working.
+    """
+    if is_brood_target(artifact):
+        return artifact
+
+    md = artifact.metadata or {}
+    ip = str(md.get("ip") or "")
+    os_name = str(md.get("os") or "")
+    connection = str(md.get("conn") or ("winrm" if os_name == "windows" else "ssh"))
+    default_port = 5985 if connection == "winrm" else 22
+    try:
+        port = int(md.get("port") or default_port)
+    except (TypeError, ValueError):
+        port = default_port
+
+    backend_data = {
+        key: value
+        for key, value in md.items()
+        if key in {
+            "image",
+            "vm_id",
+            "template_vm_id",
+            "node_name",
+            "template_node_name",
+            "clone_datastore_id",
+            "golden",
+            "requested_resources",
+        }
+    }
+    contract = build_brood_target_metadata(
+        name=artifact.name,
+        target_id=str(md.get("vm_id") or artifact.location or artifact.name),
+        target_type=artifact.type or "target",
+        os_name=os_name,
+        arch=str(md.get("arch") or "x86_64"),
+        ip=ip,
+        connection=connection,
+        port=port,
+        state=str(md.get("state") or "ready"),
+        lifetime=md.get("lifetime"),
+        backend_spider=str(md.get("backend") or spider_name),
+        backend_data=backend_data,
+        credentials_ref=md.get("credentials_ref"),
+    )
+    artifact.metadata = {**md, **contract}
+    return artifact
+
+
 def validate_brood_target(artifact: Artifact, *, require_address: bool = True) -> dict[str, Any]:
     if not isinstance(artifact, Artifact):
         raise BroodContractError("Brood target must be an Artifact")
@@ -115,10 +168,9 @@ def preferred_endpoint(artifact: Artifact, *, require_address: bool = True) -> d
 def command_target_vars(key: str, artifact: Artifact) -> list[tuple[str, str]]:
     """Translate a Brood artifact into stable scalar vars for Command spiders.
 
-    The plain ``key`` variable intentionally resolves to the preferred endpoint's
-    host.  Existing playbooks that previously consumed ``target=${stand.ip}`` can
-    therefore migrate to ``target=${stand.artifact}`` without being rewritten at
-    the same time.
+    The plain ``key`` variable resolves to the preferred endpoint host. Existing
+    playbooks that consumed ``target=${stand.ip}`` can migrate to
+    ``target=${stand.artifact}`` without being rewritten at the same time.
     """
     md = validate_brood_target(artifact)
     endpoint = preferred_endpoint(artifact)
