@@ -30,16 +30,16 @@ class RunHandle:
 @dataclass
 class LogLine:
     text: str
-    stream: str = "stdout"        # stdout | stderr | system
-    seq: int = 0                  # per-step monotonic sequence (ordering)
-    step_id: str = ""             # which step emitted it
+    stream: str = "stdout"
+    seq: int = 0
+    step_id: str = ""
     ts: float = 0.0
 
 
 @dataclass
 class RunError:
     """Structured failure — so a failed run isn't a dull brick."""
-    type: str = "Error"           # BackendError | DispatchError | Timeout | ...
+    type: str = "Error"
     message: str = ""
     details: dict = field(default_factory=dict)
 
@@ -49,11 +49,10 @@ class RunError:
 
 @dataclass
 class Artifact:
-    """Unified artifact across all backends. `type` drives UI rendering and how
-    downstream steps consume it."""
+    """Machine-consumable output threaded between scenario steps."""
     name: str
-    type: str                      # nexus | forgejo | vm | host | ...
-    location: str = ""             # repo/path, run_id, vm-id — backend specific
+    type: str
+    location: str = ""
     download_url: str | None = None
     metadata: dict = field(default_factory=dict)
 
@@ -67,12 +66,45 @@ class Artifact:
 
 
 @dataclass
+class RunOutput:
+    """One user-visible result panel produced by a spider run.
+
+    `kind` selects the UI renderer. `data` is JSON-shaped and backend-neutral.
+    `links` contains actions such as downloads or consoles. `artifact` optionally
+    anchors the panel to a machine-consumable Artifact for downstream steps.
+    """
+    kind: str
+    title: str
+    data: dict = field(default_factory=dict)
+    links: list[dict] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
+    artifact: Artifact | None = None
+
+    @classmethod
+    def from_artifact(cls, artifact: Artifact) -> "RunOutput":
+        links = []
+        if artifact.download_url:
+            links.append({
+                "label": "Download",
+                "href": artifact.download_url,
+                "kind": "download",
+            })
+        return cls(
+            kind="artifact",
+            title=artifact.name,
+            data={"artifact_type": artifact.type, "location": artifact.location},
+            links=links,
+            artifact=artifact,
+        )
+
+
+@dataclass
 class StepSpec:
     """One step parsed from a scenario."""
     id: str
     spider: str
-    action: str                    # build | provision | deploy | ...
-    kind: str = "build"            # build | provision — for subject routing
+    action: str
+    kind: str = "build"
     with_: dict = field(default_factory=dict)
     needs: list[str] = field(default_factory=list)
 
@@ -84,6 +116,7 @@ class StepResult:
     handle: RunHandle | None = None
     artifacts: list[Artifact] = field(default_factory=list)
     error: "RunError | None" = None
+    outputs: list[RunOutput] = field(default_factory=list)
 
     @property
     def primary(self) -> Artifact | None:
