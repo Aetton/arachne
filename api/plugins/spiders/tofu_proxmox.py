@@ -1,9 +1,9 @@
 """ProvisionSpider: manage ephemeral Proxmox VMs through OpenTofu.
 
 Normal scenario contract is intentionally small: a stand name, a logical OS and,
-optionally, user-facing resource wishes. The spider maps those wishes to backend
-specific OpenTofu variables; scenarios never need to know Proxmox VM IDs, nodes,
-storages, disk interfaces or provider details.
+optionally, user-facing resource wishes and lifetime. The spider maps those wishes
+to backend-specific OpenTofu variables; scenarios never need to know Proxmox VM
+IDs, nodes, storages, disk interfaces or provider details.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import shutil
 from pathlib import Path
 from typing import AsyncIterator
 
+from core.lifetime import normalize_lifetime
 from core.registry import register_spider
 from core.spider import ProvisionSpider
 from core.types import Artifact, LogLine, RunHandle, RunStatus, StepSpec
@@ -265,6 +266,7 @@ class TofuProxmoxSpider(ProvisionSpider):
             )
 
         resources = self._resources(step.with_, vm_os)
+        lifetime = normalize_lifetime(step.with_.get("lifetime")) if action == "provision" else None
         template_vm_id = self._template_vm_id(vm_os, step.with_)
         template_node_name = self._template_node_name(vm_os, step.with_)
         node_name = self._target_node_name(step.with_, template_node_name)
@@ -289,6 +291,7 @@ class TofuProxmoxSpider(ProvisionSpider):
             "node_name": node_name,
             "clone_datastore_id": clone_datastore_id,
             "resources": resources,
+            "lifetime": lifetime,
             "status": RunStatus.PENDING,
             "with": step.with_,
             "artifacts": [],
@@ -357,7 +360,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                 )
                 await asyncio.sleep(0.1)
                 if action == "destroy":
-                    st["status"] = RunStatus.SUCCESS
+                    self._finish_destroy(handle)
                     yield LogLine(f"VM destroyed (dev mode): {name}", "system")
                 else:
                     self._finish(handle, ip="10.81.19.200", vm_id="dev")
@@ -397,8 +400,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                 ]
                 async for line in self._run_cmd(cmd, cwd=work_dir, env=env):
                     yield line
-                st["status"] = RunStatus.SUCCESS
-                st["artifacts"] = []
+                self._finish_destroy(handle)
                 yield LogLine(f"Stand destroyed: {name}", "system")
                 return
 
@@ -433,6 +435,22 @@ class TofuProxmoxSpider(ProvisionSpider):
             st["status"] = RunStatus.FAILED
             yield LogLine(str(exc), "stderr")
 
+    def _finish_destroy(self, handle: RunHandle) -> None:
+        st = self._runs[handle.external_id]
+        st["artifacts"] = [
+            Artifact(
+                name=st["name"],
+                type="vm",
+                location=st["name"],
+                metadata={
+                    "os": st["os"],
+                    "backend": self.NAME,
+                    "state": "destroyed",
+                },
+            )
+        ]
+        st["status"] = RunStatus.SUCCESS
+
     def _finish(self, handle: RunHandle, ip: str, vm_id: str = "") -> None:
         st = self._runs[handle.external_id]
         vm_os = st["os"]
@@ -463,6 +481,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                     "node_name": st["node_name"],
                     "template_node_name": st["template_node_name"],
                     "requested_resources": requested,
+                    "lifetime": st["lifetime"],
                     "backend": self.NAME,
                     "state": "running",
                 },
