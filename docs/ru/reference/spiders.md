@@ -69,10 +69,11 @@
 
 ## `tofu-proxmox`
 
-Создаёт временную VM полным клонированием заранее подготовленного Proxmox golden
-template через OpenTofu.
+Создаёт временный стенд полным клонированием заранее подготовленного golden image.
+Пользователь сценария работает с логическими параметрами стенда, а Proxmox и
+OpenTofu остаются внутренней реализацией backend-а.
 
-Обычный сценарий задаёт только имя стенда и логическую ОС:
+Минимальный сценарий:
 
 ```yaml
 - id: vm
@@ -83,50 +84,60 @@ template через OpenTofu.
     os: redos8
 ```
 
-CPU, RAM, диски и сеть **не переопределяются**. Их источником правды остаётся
-золотой шаблон. Для наших золотых образов системный диск принят равным 40 GiB.
+В таком виде CPU, RAM, диск и сеть наследуются от golden image без изменений.
 
-Поддерживаемые ОС: `redos7`, `redos8`, `windows`. Соответствие шаблонам задаётся
-через `TOFU_TEMPLATE_REDOS7`, `TOFU_TEMPLATE_REDOS8` и
-`TOFU_TEMPLATE_WINDOWS`. Значение — Proxmox VM ID template.
+Для разового теста можно запросить дополнительные ресурсы:
 
-Source node шаблона задаётся соответствующей переменной:
+```yaml
+- id: vm
+  spider: tofu-proxmox
+  action: provision
+  with:
+    name: arachne-heavy-test
+    os: redos8
+    resources:
+      cpu: 8
+      memory_gb: 16
+      disk_gb: 80
+```
 
-- `TOFU_TEMPLATE_REDOS7_NODE`;
-- `TOFU_TEMPLATE_REDOS8_NODE`;
-- `TOFU_TEMPLATE_WINDOWS_NODE`.
+Все поля `resources` необязательны и независимы:
 
-На single-node Proxmox этот node одновременно используется как target node. В
-multi-node окружении target можно переопределить глобально через
-`TOFU_NODE_NAME`. Для cross-node clone на non-shared storage можно задать
-`TOFU_CLONE_DATASTORE`.
+| Поле | Назначение |
+|---|---|
+| `cpu` | желаемое количество vCPU |
+| `memory_gb` | RAM в GiB |
+| `disk_gb` | размер системного диска в GiB |
 
-Для диагностики те же значения можно передать через `with.template_vm_id`,
-`with.template_node_name`, `with.node_name` и `with.clone_datastore_id`, но в
-обычных опубликованных сценариях Proxmox-внутренности держать не надо.
+Если поле не указано, соответствующий ресурс наследуется от golden image.
+Системный диск разрешено только увеличивать. Для текущих golden image базовый
+размер — 40 GiB.
 
-Endpoint и учётные данные provider берутся из стандартных переменных
-`bpg/proxmox`:
+Поддерживаемые ОС: `redos7`, `redos8`, `windows`. Соответствие golden image,
+source node и дисковой конфигурации хранится в backend environment. Обычному
+сценарию не нужны VM ID, node, datastore или disk interface.
+
+Endpoint и учётные данные provider также остаются backend-конфигурацией:
 
 - `PROXMOX_VE_ENDPOINT`;
 - `PROXMOX_VE_API_TOKEN`;
 - `PROXMOX_VE_INSECURE` при необходимости.
 
 Каждый стенд получает отдельный `terraform.tfstate`, `.terraform` и рабочий каталог
-в `TOFU_STATE_ROOT/<name>`. В контейнерной установке каталог state вынесен в
-persistent volume, поэтому рестарт Арахны не лишает её возможности уничтожить
-созданную VM.
+в `TOFU_STATE_ROOT/<name>`. В контейнерной установке state вынесен в persistent
+volume.
 
-После `apply` паук читает outputs `vm_id` и `vm_ip`. Артефакт `vm` содержит IP,
-VM ID, ОС, архитектуру, тип подключения, порт, template VM ID, node, backend и
-состояние. `redos7`/`redos8` используют SSH:22, `windows` — WinRM:5985.
+После `apply` паук читает `vm_id` и `vm_ip`. Артефакт `vm` содержит IP, VM ID,
+ОС, архитектуру, тип подключения, порт, backend, состояние и
+`requested_resources`. `redos7`/`redos8` используют SSH:22, `windows` —
+WinRM:5985.
 
-Golden template должен получать сеть по DHCP и иметь работающий
-`qemu-guest-agent`. Без guest agent provider не вернёт IPv4, и шаг завершится
-ошибкой. Guest hostname сейчас отдельно не меняется: downstream шаги используют IP
-из артефакта.
+Golden image должен получать сеть по DHCP и иметь работающий `qemu-guest-agent`.
+Guest hostname сейчас отдельно не меняется: downstream шаги используют IP из
+артефакта.
 
-Удаление стенда выполняется отдельным шагом с тем же `name` и `os`:
+Удаление стенда выполняется отдельным шагом с тем же `name` и `os`; `resources`
+повторять не требуется:
 
 ```yaml
 - id: cleanup
@@ -137,14 +148,13 @@ Golden template должен получать сеть по DHCP и иметь �
     os: redos8
 ```
 
-`destroy` использует state этого имени. Если state отсутствует, шаг падает вместо
-того, чтобы угадывать VM по имени и удалять что-нибудь напрямую через API.
+Если state отсутствует, шаг падает вместо попытки угадывать VM по имени.
 
 Если бинарник `tofu` не найден, production-поведение — ошибка. Синтетический VM
 fallback включается только явно через `TOFU_DEV_FALLBACK=true`.
 
-Полная настройка Proxmox, API token, ACL, TLS и golden templates описана в
-[`operations/proxmox-opentofu.md`](../operations/proxmox-opentofu.md).
+Полная настройка backend-а, API token, ACL, TLS, golden image и disk override
+описана в [`operations/proxmox-opentofu.md`](../operations/proxmox-opentofu.md).
 
 ## `ansible-ovirt`
 
