@@ -18,8 +18,23 @@
 
 ## Пользовательский контракт
 
-Golden image остаётся профилем по умолчанию. Если дополнительных ресурсов не
-нужно, блок `resources` вообще отсутствует.
+Golden image остаётся профилем по умолчанию. Если дополнительных ресурсов или TTL
+не нужно, блок `resources` и поле `lifetime` вообще отсутствуют.
+
+Для короткого теста пользователь может задать срок жизни машины:
+
+```yaml
+- id: vm
+  spider: tofu-proxmox
+  action: provision
+  with:
+    name: quick-install-test
+    os: redos8
+    lifetime: 30m
+```
+
+Поддерживаются `30m`, `2h`, `1d` и другие значения в тех же единицах. Отсутствие
+`lifetime` означает: автоматическое удаление не назначается.
 
 Для отдельного тестового запуска можно попросить больше ресурсов:
 
@@ -30,6 +45,7 @@ Golden image остаётся профилем по умолчанию. Если
   with:
     name: redvrm-heavy-test
     os: redos8
+    lifetime: 2h
     resources:
       cpu: 8
       memory_gb: 16
@@ -52,13 +68,14 @@ backend-настройки.
 
 | Поле | Значение |
 |---|---|
+| `lifetime` | срок жизни машины: `30m`, `2h`, `1d` |
 | `resources.cpu` | число vCPU |
 | `resources.memory_gb` | RAM в GiB |
 | `resources.disk_gb` | размер системного диска в GiB |
 
-Если поле не указано, соответствующая характеристика наследуется от golden image.
-Системный диск можно только увеличить. Для наших текущих golden image базовый
-размер — **40 GiB**.
+Если resource-поле не указано, соответствующая характеристика наследуется от
+golden image. Системный диск можно только увеличить. Для наших текущих golden
+image базовый размер — **40 GiB**.
 
 ## Как идёт подключение
 
@@ -296,6 +313,18 @@ docker compose exec arachne sh -lc '
     os: redos8
 ```
 
+Короткоживущий:
+
+```yaml
+- id: vm
+  spider: tofu-proxmox
+  action: provision
+  with:
+    name: quick-test
+    os: redos8
+    lifetime: 30m
+```
+
 Тестовый увеличенный:
 
 ```yaml
@@ -305,13 +334,14 @@ docker compose exec arachne sh -lc '
   with:
     name: redvrm-heavy-test
     os: redos8
+    lifetime: 2h
     resources:
       cpu: 8
       memory_gb: 16
       disk_gb: 80
 ```
 
-Lifecycle:
+Lifecycle provision:
 
 ```text
 tofu init
@@ -321,12 +351,43 @@ tofu init
   -> start VM
   -> qemu guest agent reports IPv4
   -> Artifact(type=vm)
+  -> managed_machines row in PostgreSQL
 ```
 
-Artifact содержит также `requested_resources`, чтобы в истории запуска было видно,
-что именно запросил сценарий.
+VM artifact содержит `requested_resources` и `lifetime`, чтобы в истории запуска
+было видно, что именно запросил сценарий. Run хранит artifact целиком, включая
+metadata, а не восстанавливает его из строки лога.
 
-## 8. Уничтожить стенд
+## 8. Автоматический TTL cleanup
+
+При регистрации VM Арахна вычисляет абсолютный `expires_at`:
+
+```text
+created_at + lifetime -> expires_at
+```
+
+В PostgreSQL хранится отдельная запись `managed_machines` с пользовательской
+идентичностью машины и backend metadata, нужной для управления ею.
+
+Lifecycle reaper работает на общем APScheduler Арахны раз в минуту:
+
+```text
+PostgreSQL
+  -> expired managed_machines
+  -> claim: running -> destroying
+  -> tofu-proxmox destroy
+  -> destroyed
+```
+
+Если backend destroy завершился ошибкой, машина получает `reap_failed` и будет
+повторно подобрана следующим проходом. Claim имеет пятиминутный lease: если Арахна
+умерла посреди удаления и запись осталась `destroying`, после истечения lease её
+можно подобрать снова.
+
+Так как `expires_at` хранится в PostgreSQL, рестарт приложения не продлевает жизнь
+машины.
+
+## 9. Уничтожить стенд вручную
 
 Используйте то же имя:
 
@@ -339,8 +400,10 @@ Artifact содержит также `requested_resources`, чтобы в ист
     os: redos8
 ```
 
-`resources` при destroy повторять не нужно. State хранится отдельно для каждого
-имени стенда в persistent Docker volume.
+`resources` и `lifetime` при destroy повторять не нужно. State хранится отдельно
+для каждого имени стенда в persistent Docker volume. Успешный destroy возвращает
+lifecycle VM artifact со `state: destroyed`, поэтому запись `managed_machines`
+закрывается и при ручном удалении тоже.
 
 ## Переменные целиком
 
@@ -362,6 +425,9 @@ Artifact содержит также `requested_resources`, чтобы в ист
 | `TOFU_STATE_ROOT` | обычно нет | persistent state directory |
 | `TOFU_DEV_FALLBACK` | только dev | synthetic VM fallback |
 
+Для TTL дополнительных `.env` переменных не требуется. Срок жизни задаётся
+пользователем на уровне сценария, абсолютный `expires_at` хранится в PostgreSQL.
+
 ## Что не надо прокидывать в scenario YAML
 
 Не кладите туда API token, Proxmox user/password, VM ID шаблонов, node, datastore,
@@ -371,6 +437,7 @@ disk interface или provider/OpenTofu-параметры.
 
 ```yaml
 os: redos8
+lifetime: 30m
 resources:
   memory_gb: 16
 ```
