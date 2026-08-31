@@ -153,9 +153,11 @@
           </div>
           <div style="display:flex;align-items:center;gap:.4rem">
             {% if a.get('type') == 'vm' and backend.get('spider') == 'tofu-proxmox' %}
-            <a href="/runs/{{ run.id }}/artifacts/{{ loop.index0 }}/console.vv"
-               class="btn-ghost text-xs" download title="Download a fresh SPICE console ticket">
-              <i class="ti ti-device-desktop"></i> SPICE .vv
+            <a href="/runs/{{ run.id }}/artifacts/{{ loop.index0 }}/console"
+               class="btn-ghost text-xs"
+               title="Open Proxmox noVNC console in a separate window"
+               onclick="window.open(this.href, 'arachne-vnc-{{ identity.get('id') or loop.index0 }}', 'popup=yes,width=1280,height=800,resizable=yes,scrollbars=yes'); return false;">
+              <i class="ti ti-device-desktop"></i> Open VNC ↗
             </a>
             {% endif %}
           </div>
