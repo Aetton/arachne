@@ -355,19 +355,46 @@ body::before {
   opacity: .65;
 }
 .workspace-empty::after { width: min(310px, 56%); opacity: .5; }
-.web-sigil { position: relative; z-index: 1; display: grid; justify-items: center; gap: .45rem; }
+.web-sigil {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: .45rem;
+  isolation: isolate;
+}
 .web-sigil-node {
-  width: 42px;
-  height: 42px;
+  position: relative;
+  width: min(226px, 48vw);
+  aspect-ratio: 10 / 11;
   display: grid;
   place-items: center;
-  border-radius: 50%;
   color: var(--web-node);
-  border: 1px solid var(--web-line);
-  background: var(--surface);
-  box-shadow: 0 0 0 8px var(--web-glow), 0 0 36px var(--web-glow);
+  filter: drop-shadow(0 0 18px var(--web-glow));
 }
-.web-sigil h2 { margin: .45rem 0 0; font-size: 1rem; font-weight: 720; }
+.web-sigil-node::before {
+  content: "";
+  position: absolute;
+  inset: 24% 17%;
+  z-index: -1;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--surface) 94%, var(--web-node)) 0 34%,
+    color-mix(in srgb, var(--web-node) 9%, transparent) 35% 58%,
+    transparent 72%
+  );
+  filter: blur(5px);
+}
+.arachne-spider {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: var(--web-node);
+  -webkit-mask: url("/static/img/arachne-sigil.svg?v=2") center / contain no-repeat;
+  mask: url("/static/img/arachne-sigil.svg?v=2") center / contain no-repeat;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--web-node) 28%, transparent));
+}
+.web-sigil h2 { margin: .15rem 0 0; font-size: 1rem; font-weight: 720; }
 .web-sigil p { margin: 0; color: var(--muted); font-size: .78rem; }
 
 /* Scenario form */

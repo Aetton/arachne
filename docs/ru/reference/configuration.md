@@ -33,6 +33,37 @@
 Токен должен читать репозитории и workflow, запускать и отменять Actions run,
 читать логи и артефакты. Точный набор прав зависит от версии Forgejo.
 
+## GitLab CI
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `GITLAB_URL` | адрес-заглушка | базовый URL GitLab |
+| `GITLAB_TOKEN` | пусто | токен сервисной учётной записи |
+| `GITLAB_VERIFY_TLS` | `true` | проверка TLS |
+| `GITLAB_DEADLINE` | `3600` | максимум ожидания pipeline, секунд |
+| `GITLAB_POLL_INTERVAL` | `2` | интервал чтения статуса и job trace, секунд |
+
+GitLab spider создаёт pipeline через API v4, читает job trace, собирает job artifacts
+и умеет отменять pipeline. В шаге используется `with.project` с ID проекта или путём
+вида `group/subgroup/repo`; `with.repo` работает как короткий алиас. `with.ref` или
+`with.branch` задаёт ветку или тег. Остальные поля `with` передаются в pipeline как
+CI/CD variables.
+
+Пример:
+
+```yaml
+spider: gitlab
+with:
+  project: group/subgroup/repo
+  ref: main
+  VERSION: 1.2.3
+  DEBUG: false
+```
+
+Токену нужны права на чтение проекта, создание и отмену pipeline, чтение jobs,
+trace и artifacts. Если в GitLab запрещены pipeline variables для роли сервисной
+учётки, разрешите их или переведите конкретный pipeline на GitLab inputs.
+
 ## Артефакты и локальные исполнители
 
 | Переменная | По умолчанию | Назначение |
@@ -68,7 +99,7 @@ REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca.crt
 ```
 
 Проверьте, что файл `ca.crt` действительно существует. В production лучше добавить
-CA, чем выставлять `FORGEJO_VERIFY_TLS=false`.
+CA, чем выставлять `FORGEJO_VERIFY_TLS=false` или `GITLAB_VERIFY_TLS=false`.
 
 ## Приоритет источников
 
