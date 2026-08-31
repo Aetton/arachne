@@ -16,7 +16,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
-from core.types import RunHandle, LogLine, RunStatus, Artifact, StepSpec
+from core.types import RunHandle, LogLine, RunStatus, Artifact, RunOutput, StepSpec
 
 
 class BaseSpider(ABC):
@@ -43,6 +43,14 @@ class BaseSpider(ABC):
     def get_artifacts(self, handle: RunHandle) -> list[Artifact]:
         return []
 
+    def get_outputs(self, handle: RunHandle) -> list[RunOutput]:
+        """Return user-visible results.
+
+        Legacy spiders can keep implementing only get_artifacts(): the thread
+        adapter automatically wraps uncovered artifacts into output panels.
+        """
+        return []
+
     def cancel(self, handle: RunHandle) -> bool:
         return False
 
@@ -62,8 +70,6 @@ class CommandSpider(BaseSpider):
     KIND = "build"
 
 
-# Compatibility names. Existing third-party spiders can migrate inheritance when
-# convenient without changing their current bus subjects.
 class BuildSpider(WeaveSpider):
     pass
 
