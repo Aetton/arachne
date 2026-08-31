@@ -1,9 +1,8 @@
 """ProvisionSpider: manage ephemeral Proxmox VMs through OpenTofu.
 
-Normal scenario contract is intentionally small: a stand name, a logical OS and,
-optionally, user-facing resource wishes and lifetime. The spider maps those wishes
-to backend-specific OpenTofu variables; scenarios never need to know Proxmox VM
-IDs, nodes, storages, disk interfaces or provider details.
+Scenario authors choose a human golden-image profile. The profile stores only the
+selected Proxmox template VM ID; node, storage, disk layout and baseline resources
+are discovered from Proxmox at dispatch time.
 """
 from __future__ import annotations
 
@@ -18,6 +17,9 @@ from core.lifetime import normalize_lifetime
 from core.registry import register_spider
 from core.spider import ProvisionSpider
 from core.types import Artifact, LogLine, RunHandle, RunStatus, StepSpec
+from database import ManagedMachine, SessionLocal
+from golden_images import get_profile
+from proxmox_api import ProxmoxAPIError, inspect_template
 
 TOFU_ROOT = os.getenv("TOFU_ROOT", "../tofu")
 TOFU_STATE_ROOT = os.getenv("TOFU_STATE_ROOT", "/tmp/arachne-tofu-state")
@@ -28,39 +30,10 @@ CONN_BY_OS = {
     "windows": ("winrm", 5985),
 }
 
-_TEMPLATE_ENV = {
-    "redos7": "TOFU_TEMPLATE_REDOS7",
-    "redos8": "TOFU_TEMPLATE_REDOS8",
-    "windows": "TOFU_TEMPLATE_WINDOWS",
-}
-
-_TEMPLATE_NODE_ENV = {
-    "redos7": "TOFU_TEMPLATE_REDOS7_NODE",
-    "redos8": "TOFU_TEMPLATE_REDOS8_NODE",
-    "windows": "TOFU_TEMPLATE_WINDOWS_NODE",
-}
-
-_TEMPLATE_DISK_INTERFACE_ENV = {
-    "redos7": "TOFU_TEMPLATE_REDOS7_DISK_INTERFACE",
-    "redos8": "TOFU_TEMPLATE_REDOS8_DISK_INTERFACE",
-    "windows": "TOFU_TEMPLATE_WINDOWS_DISK_INTERFACE",
-}
-
-_TEMPLATE_DISK_DATASTORE_ENV = {
-    "redos7": "TOFU_TEMPLATE_REDOS7_DISK_DATASTORE",
-    "redos8": "TOFU_TEMPLATE_REDOS8_DISK_DATASTORE",
-    "windows": "TOFU_TEMPLATE_WINDOWS_DISK_DATASTORE",
-}
-
-_TEMPLATE_DISK_SIZE_ENV = {
-    "redos7": "TOFU_TEMPLATE_REDOS7_DISK_GB",
-    "redos8": "TOFU_TEMPLATE_REDOS8_DISK_GB",
-    "windows": "TOFU_TEMPLATE_WINDOWS_DISK_GB",
-}
-
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
 _TRUE = {"1", "true", "yes", "on"}
 _RESOURCE_KEYS = {"cpu", "memory_gb", "disk_gb"}
+_ACTIVE_MACHINE_STATES = {"running", "ready", "destroying", "reap_failed"}
 
 
 class TofuProxmoxSpider(ProvisionSpider):
@@ -103,7 +76,7 @@ class TofuProxmoxSpider(ProvisionSpider):
         return parsed
 
     @classmethod
-    def _resources(cls, values: dict, vm_os: str) -> dict[str, int | str | None]:
+    def _resources(cls, values: dict, template: dict) -> dict[str, int | str | None]:
         raw = values.get("resources")
         if raw in (None, ""):
             raw = {}
@@ -124,39 +97,21 @@ class TofuProxmoxSpider(ProvisionSpider):
         disk_interface = ""
         disk_datastore = ""
         if disk_gb is not None:
-            base_disk_raw = (
-                os.getenv(_TEMPLATE_DISK_SIZE_ENV[vm_os])
-                or os.getenv("TOFU_DEFAULT_GOLDEN_DISK_GB")
-                or "40"
-            )
-            try:
-                base_disk_gb = int(base_disk_raw)
-            except ValueError as exc:
+            base_disk_gb = template.get("disk_gb")
+            if base_disk_gb is None:
                 raise ValueError(
-                    f"Backend configuration {_TEMPLATE_DISK_SIZE_ENV[vm_os]} "
-                    "must be an integer"
-                ) from exc
-            if disk_gb < base_disk_gb:
+                    "The selected golden image has no discoverable system disk size"
+                )
+            if disk_gb < int(base_disk_gb):
                 raise ValueError(
                     f"resources.disk_gb={disk_gb} cannot be smaller than the "
-                    f"{vm_os} stand baseline ({base_disk_gb} GiB)"
+                    f"golden image system disk ({base_disk_gb} GiB)"
                 )
-
-            disk_interface = (
-                os.getenv(_TEMPLATE_DISK_INTERFACE_ENV[vm_os])
-                or os.getenv("TOFU_SYSTEM_DISK_INTERFACE")
-                or "scsi0"
-            ).strip()
-            disk_datastore = (
-                os.getenv(_TEMPLATE_DISK_DATASTORE_ENV[vm_os])
-                or os.getenv("TOFU_CLONE_DATASTORE")
-                or ""
-            ).strip()
-            if not disk_datastore:
+            disk_interface = str(template.get("disk_interface") or "")
+            disk_datastore = str(template.get("disk_datastore") or "")
+            if not disk_interface or not disk_datastore:
                 raise ValueError(
-                    "Disk growth was requested, but the backend does not know the "
-                    f"system disk datastore for {vm_os}. Configure "
-                    f"{_TEMPLATE_DISK_DATASTORE_ENV[vm_os]}."
+                    "The selected golden image system disk placement could not be discovered"
                 )
 
         return {
@@ -169,38 +124,102 @@ class TofuProxmoxSpider(ProvisionSpider):
         }
 
     @staticmethod
-    def _template_vm_id(vm_os: str, values: dict) -> int | None:
-        raw = values.get("template_vm_id")
-        if raw in (None, ""):
-            env_name = _TEMPLATE_ENV.get(vm_os)
-            raw = os.getenv(env_name, "") if env_name else ""
-        if raw in (None, ""):
-            return None
-        return int(raw)
+    def _managed_backend(name: str) -> dict | None:
+        """Return the original backend facts for a managed VM before destroy.
 
-    @staticmethod
-    def _template_node_name(vm_os: str, values: dict) -> str:
-        raw = values.get("template_node_name")
-        if raw in (None, ""):
-            env_name = _TEMPLATE_NODE_ENV.get(vm_os)
-            raw = os.getenv(env_name, "") if env_name else ""
-        return str(raw or "").strip()
+        This keeps destroy stable if an admin changes the golden-image mapping
+        after the stand has already been created.
+        """
+        db = SessionLocal()
+        try:
+            row = db.query(ManagedMachine).filter(
+                ManagedMachine.backend == "tofu-proxmox",
+                ManagedMachine.name == name,
+                ManagedMachine.state.in_(_ACTIVE_MACHINE_STATES),
+            ).order_by(ManagedMachine.id.desc()).first()
+            if not row:
+                return None
+            md = dict(row.backend_metadata or {})
+            if not md.get("template_vm_id") or not md.get("template_node_name"):
+                return None
+            return {
+                "image": str(md.get("image") or md.get("os") or ""),
+                "os": str(md.get("os") or "redos8"),
+                "template_vm_id": int(md["template_vm_id"]),
+                "template_node_name": str(md["template_node_name"]),
+                "node_name": str(md.get("node_name") or md["template_node_name"]),
+                "clone_datastore_id": str(md.get("clone_datastore_id") or ""),
+                "template": {
+                    "vm_id": int(md["template_vm_id"]),
+                    "node": str(md["template_node_name"]),
+                    "disk_gb": None,
+                    "disk_interface": "",
+                    "disk_datastore": "",
+                },
+            }
+        finally:
+            db.close()
 
-    @staticmethod
-    def _target_node_name(values: dict, template_node_name: str) -> str:
-        raw = values.get("node_name") or os.getenv("TOFU_NODE_NAME")
-        return str(raw or template_node_name or "").strip()
+    def _resolve_backend(self, values: dict, *, action: str, name: str) -> dict:
+        if action == "destroy":
+            original = self._managed_backend(name)
+            if original:
+                return original
 
-    @staticmethod
-    def _clone_datastore_id(values: dict) -> str:
-        raw = values.get("clone_datastore_id") or os.getenv("TOFU_CLONE_DATASTORE")
-        return str(raw or "").strip()
+        profile_key = str(values.get("image") or values.get("os") or "redos8").strip().lower()
+        profile = get_profile(profile_key)
+        if not profile:
+            if self._dev_fallback_enabled():
+                vm_os = str(values.get("os") or "redos8")
+                return {
+                    "image": profile_key,
+                    "os": vm_os,
+                    "template_vm_id": 0,
+                    "template_node_name": "dev",
+                    "node_name": "dev",
+                    "clone_datastore_id": "",
+                    "template": {
+                        "vm_id": 0,
+                        "node": "dev",
+                        "disk_gb": 40,
+                        "disk_interface": "scsi0",
+                        "disk_datastore": "dev",
+                    },
+                }
+            raise ValueError(
+                f"Golden image profile {profile_key!r} is not configured. "
+                "Ask an Arachne administrator to map it in Control → Golden Images."
+            )
+
+        vm_os = str(profile["os"])
+        if vm_os not in CONN_BY_OS:
+            raise ValueError(f"Golden image profile {profile_key!r} has unsupported OS {vm_os!r}")
+
+        try:
+            template = inspect_template(int(profile["vm_id"]))
+        except ProxmoxAPIError as exc:
+            raise ValueError(
+                f"Golden image profile {profile_key!r} is unavailable: {exc}"
+            ) from exc
+
+        node = str(template.get("node") or "")
+        if not node:
+            raise ValueError(f"Golden image profile {profile_key!r} has no Proxmox node")
+
+        return {
+            "image": profile_key,
+            "os": vm_os,
+            "template_vm_id": int(template["vm_id"]),
+            "template_node_name": node,
+            "node_name": node,
+            "clone_datastore_id": "",
+            "template": template,
+        }
 
     def _state_dir(self, name: str) -> Path:
         return Path(TOFU_STATE_ROOT).expanduser().resolve() / name
 
     def _prepare_workdir(self, name: str, source_dir: Path) -> tuple[Path, Path]:
-        """Create an isolated module directory and state path for one stand."""
         state_dir = self._state_dir(name)
         work_dir = state_dir / "module"
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -217,7 +236,6 @@ class TofuProxmoxSpider(ProvisionSpider):
 
         if not copied:
             raise ValueError(f"No OpenTofu configuration files found in {source_dir}")
-
         return work_dir, state_dir / "terraform.tfstate"
 
     @staticmethod
@@ -251,45 +269,36 @@ class TofuProxmoxSpider(ProvisionSpider):
 
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
         name = str(step.with_.get("name", "test-stand"))
-        vm_os = str(step.with_.get("os", "redos8"))
         action = (step.action or "provision").strip().lower()
-
         self._validate_name(name)
-        if vm_os not in CONN_BY_OS:
-            raise ValueError(
-                f"Unsupported stand OS {vm_os!r}; expected one of "
-                f"{', '.join(sorted(CONN_BY_OS))}"
-            )
         if action not in {"provision", "destroy"}:
             raise ValueError(
                 f"Unsupported tofu-proxmox action {action!r}; use provision or destroy"
             )
 
-        resources = self._resources(step.with_, vm_os)
+        backend = self._resolve_backend(step.with_, action=action, name=name)
+        vm_os = backend["os"]
+        resources = self._resources(step.with_, backend["template"]) if action == "provision" else {
+            "cpu": None,
+            "memory_gb": None,
+            "memory_mb": None,
+            "disk_gb": None,
+            "disk_interface": "",
+            "disk_datastore": "",
+        }
         lifetime = normalize_lifetime(step.with_.get("lifetime")) if action == "provision" else None
-        template_vm_id = self._template_vm_id(vm_os, step.with_)
-        template_node_name = self._template_node_name(vm_os, step.with_)
-        node_name = self._target_node_name(step.with_, template_node_name)
-        clone_datastore_id = self._clone_datastore_id(step.with_)
-
-        if template_vm_id is None and not self._dev_fallback_enabled():
-            raise ValueError(
-                f"Stand profile {vm_os!r} is not configured on the Arachne backend"
-            )
-        if not node_name and not self._dev_fallback_enabled():
-            raise ValueError(
-                f"Stand profile {vm_os!r} has no target host configured on the backend"
-            )
 
         ext = f"vm-{name}-{action}"
         self._runs[ext] = {
             "name": name,
+            "image": backend["image"],
             "os": vm_os,
             "action": action,
-            "template_vm_id": template_vm_id,
-            "template_node_name": template_node_name,
-            "node_name": node_name,
-            "clone_datastore_id": clone_datastore_id,
+            "template_vm_id": backend["template_vm_id"],
+            "template_node_name": backend["template_node_name"],
+            "node_name": backend["node_name"],
+            "clone_datastore_id": backend["clone_datastore_id"],
+            "template": backend["template"],
             "resources": resources,
             "lifetime": lifetime,
             "status": RunStatus.PENDING,
@@ -299,7 +308,7 @@ class TofuProxmoxSpider(ProvisionSpider):
         return RunHandle(
             spider=self.NAME,
             external_id=ext,
-            metadata={"name": name, "action": action},
+            metadata={"name": name, "action": action, "image": backend["image"]},
         )
 
     async def _run_cmd(
@@ -333,13 +342,8 @@ class TofuProxmoxSpider(ProvisionSpider):
         state_path: Path,
     ) -> str:
         proc = await asyncio.create_subprocess_exec(
-            "tofu",
-            "output",
-            f"-state={state_path}",
-            "-raw",
-            key,
-            cwd=str(cwd),
-            env=env,
+            "tofu", "output", f"-state={state_path}", "-raw", key,
+            cwd=str(cwd), env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -391,12 +395,8 @@ class TofuProxmoxSpider(ProvisionSpider):
 
             if action == "destroy":
                 cmd = [
-                    "tofu",
-                    "destroy",
-                    "-auto-approve",
-                    "-input=false",
-                    f"-state={state_path}",
-                    *vars_,
+                    "tofu", "destroy", "-auto-approve", "-input=false",
+                    f"-state={state_path}", *vars_,
                 ]
                 async for line in self._run_cmd(cmd, cwd=work_dir, env=env):
                     yield line
@@ -405,26 +405,15 @@ class TofuProxmoxSpider(ProvisionSpider):
                 return
 
             cmd = [
-                "tofu",
-                "apply",
-                "-auto-approve",
-                "-input=false",
-                f"-state={state_path}",
-                *vars_,
+                "tofu", "apply", "-auto-approve", "-input=false",
+                f"-state={state_path}", *vars_,
             ]
             async for line in self._run_cmd(cmd, cwd=work_dir, env=env):
                 yield line
 
-            ip = await self._output(
-                "vm_ip", cwd=work_dir, env=env, state_path=state_path
-            )
-            vm_id = await self._output(
-                "vm_id", cwd=work_dir, env=env, state_path=state_path
-            )
+            ip = await self._output("vm_ip", cwd=work_dir, env=env, state_path=state_path)
+            vm_id = await self._output("vm_id", cwd=work_dir, env=env, state_path=state_path)
 
-            # Once the backend has a VM ID, lifecycle ownership must be preserved
-            # even if guest-agent/IP discovery fails. Failed steps still return
-            # their artifacts through the thread adapter.
             self._finish(handle, ip=ip, vm_id=vm_id)
             if not ip:
                 st["status"] = RunStatus.FAILED
@@ -447,6 +436,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                 type="vm",
                 location=st["name"],
                 metadata={
+                    "image": st["image"],
                     "os": st["os"],
                     "backend": self.NAME,
                     "state": "destroyed",
@@ -474,6 +464,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                 type="vm",
                 location=vm_id or st["name"],
                 metadata={
+                    "image": st["image"],
                     "os": vm_os,
                     "arch": "x86_64",
                     "ip": ip,
@@ -485,6 +476,13 @@ class TofuProxmoxSpider(ProvisionSpider):
                     "node_name": st["node_name"],
                     "template_node_name": st["template_node_name"],
                     "clone_datastore_id": st["clone_datastore_id"],
+                    "golden": {
+                        "cpu": st["template"].get("cpu"),
+                        "memory_gb": st["template"].get("memory_gb"),
+                        "disk_gb": st["template"].get("disk_gb"),
+                        "disk_interface": st["template"].get("disk_interface"),
+                        "disk_datastore": st["template"].get("disk_datastore"),
+                    },
                     "requested_resources": requested,
                     "lifetime": st["lifetime"],
                     "backend": self.NAME,
