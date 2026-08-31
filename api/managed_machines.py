@@ -30,13 +30,21 @@ def _as_aware(dt):
     return dt
 
 
+def _backend_identity(metadata: dict) -> str:
+    """Return the stable backend spider name from legacy or Brood v1 metadata."""
+    backend = metadata.get("backend")
+    if isinstance(backend, dict):
+        return str(backend.get("spider") or "unknown")
+    return str(backend or "unknown")
+
+
 def register_artifact(run_id: str, user_id: int | None, artifact: Artifact) -> None:
     """Persist VM lifecycle state from one structured artifact."""
     if artifact.type != "vm":
         return
 
     md = dict(artifact.metadata or {})
-    backend = str(md.get("backend") or "unknown")
+    backend = _backend_identity(md)
     state = str(md.get("state") or "running")
     vm_id = str(md.get("vm_id") or artifact.location or "") or None
     name = artifact.name
