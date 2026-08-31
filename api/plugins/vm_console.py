@@ -1,18 +1,13 @@
-"""Authenticated VM console downloads for runtime Brood artifacts."""
+"""Authenticated VM console redirects for runtime Brood artifacts."""
 from __future__ import annotations
 
-import re
-
 from fastapi import Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse
 
 from auth.deps import get_current_user
 from database import Run, SessionLocal
 from main import app
-from proxmox_api import ProxmoxAPIError, create_spice_vv
-
-
-_SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+from proxmox_api import novnc_console_url
 
 
 def _run_for_user(run_id: str, user):
@@ -53,8 +48,8 @@ def _vm_console_target(artifact: dict) -> tuple[str, int, str]:
     return node, vm_id, str(artifact.get("name") or f"vm-{vm_id}")
 
 
-@app.get("/runs/{run_id}/artifacts/{artifact_index}/console.vv")
-def download_vm_console(
+@app.get("/runs/{run_id}/artifacts/{artifact_index}/console")
+def open_vm_console(
     run_id: str,
     artifact_index: int,
     user=Depends(get_current_user),
@@ -65,18 +60,8 @@ def download_vm_console(
         raise HTTPException(404, "Artifact not found")
 
     node, vm_id, name = _vm_console_target(artifacts[artifact_index])
-    try:
-        payload = create_spice_vv(node, vm_id, title=f"{name} · VM {vm_id}")
-    except ProxmoxAPIError as exc:
-        raise HTTPException(502, str(exc)) from exc
-
-    filename = (_SAFE_NAME.sub("-", name).strip("-._") or f"vm-{vm_id}") + ".vv"
-    return Response(
-        payload,
-        media_type="application/x-virt-viewer",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Cache-Control": "no-store, max-age=0",
-            "Pragma": "no-cache",
-        },
+    return RedirectResponse(
+        novnc_console_url(node, vm_id, name),
+        status_code=302,
+        headers={"Cache-Control": "no-store"},
     )
