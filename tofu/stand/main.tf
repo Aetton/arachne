@@ -111,7 +111,8 @@ resource "proxmox_virtual_environment_vm" "stand" {
     enabled = true
   }
 
-  tags = ["arachne", "ephemeral", var.os]
+  # Keep the golden-image tag set untouched. Managing registered Proxmox tags
+  # requires Sys.Modify on '/', which is intentionally outside the Arachne role.
 }
 
 locals {
