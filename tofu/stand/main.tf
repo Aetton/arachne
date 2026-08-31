@@ -1,5 +1,8 @@
 # Ephemeral stand provisioning for Arachne.
 #
+# The golden template is the source of truth for VM hardware, disks, network and
+# guest configuration. Arachne only chooses the template and the target VM name.
+#
 # Credentials and endpoint are intentionally not stored here. bpg/proxmox reads
 # PROXMOX_VE_ENDPOINT and PROXMOX_VE_API_TOKEN (or username/password) from the
 # environment inherited by the tofu-proxmox spider.
@@ -27,86 +30,41 @@ variable "template_vm_id" {
   type = number
 }
 
+# Node where the cloned VM will live.
 variable "node_name" {
+  type = string
+}
+
+# Source node of the template. Leave empty when the template is on node_name.
+variable "template_node_name" {
   type    = string
-  default = "pve"
+  default = ""
 }
 
-variable "datastore_id" {
+# Optional target datastore for the clone. Empty means inherit the template
+# storage placement. Set this when cloning across nodes with non-shared storage.
+variable "clone_datastore_id" {
   type    = string
-  default = "local-lvm"
-}
-
-variable "bridge" {
-  type    = string
-  default = "vmbr0"
-}
-
-variable "disk_interface" {
-  type    = string
-  default = "scsi0"
-}
-
-variable "vcpus" {
-  type    = number
-  default = 4
-}
-
-variable "ram_mb" {
-  type    = number
-  default = 8192
-}
-
-variable "disk_gb" {
-  type    = number
-  default = 40
+  default = ""
 }
 
 resource "proxmox_virtual_environment_vm" "stand" {
   name      = var.stand_name
   node_name = var.node_name
+  started   = true
 
   clone {
     vm_id        = var.template_vm_id
-    datastore_id = var.datastore_id
+    node_name    = var.template_node_name != "" ? var.template_node_name : null
+    datastore_id = var.clone_datastore_id != "" ? var.clone_datastore_id : null
+    full          = true
   }
 
+  # Golden templates must have qemu-guest-agent installed. Keeping it enabled
+  # lets the provider expose ipv4_addresses so Arachne can hand the VM to the
+  # next step without hard-coded addressing.
   agent {
     enabled = true
-  }
-
-  cpu {
-    cores = var.vcpus
-  }
-
-  memory {
-    dedicated = var.ram_mb
-  }
-
-  # CI templates are expected to expose their system disk on disk_interface.
-  # OpenTofu may grow that disk, but Proxmox cannot shrink it below the template
-  # size. Keep template disks deliberately small.
-  disk {
-    datastore_id = var.datastore_id
-    interface    = var.disk_interface
-    size         = var.disk_gb
-  }
-
-  network_device {
-    bridge = var.bridge
-  }
-
-  # Linux templates need cloud-init; Windows templates need an equivalent
-  # Cloudbase-Init setup. DHCP plus qemu-guest-agent gives Arachne the resulting
-  # address without baking an IP into the template.
-  initialization {
-    datastore_id = var.datastore_id
-
-    ip_config {
-      ipv4 {
-        address = "dhcp"
-      }
-    }
   }
 
   tags = ["arachne", "ephemeral", var.os]
