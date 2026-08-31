@@ -18,6 +18,12 @@ from core.types import Artifact, StepSpec, StepResult, RunStatus, LogLine
 LogSink = Callable[[str, LogLine], None]
 ArtifactSink = Callable[[str, str, Artifact], None]
 
+_FAMILY_TO_WIRE_KIND = {
+    "weave": "build",
+    "command": "build",
+    "brood": "provision",
+}
+
 
 def _kind_of(spider_name: str) -> str:
     """Resolve legacy wire kind used in bus subjects."""
@@ -28,16 +34,32 @@ def _kind_of(spider_name: str) -> str:
 
 
 def _family_of(spider_name: str, kind: str) -> str:
-    """Resolve the domain family independently from the wire kind.
-
-    For remote spiders that are not registered in this process, legacy provision
-    still unambiguously maps to Brood. Other unknown remote spiders remain Weave
-    unless their scenario/plugin metadata is upgraded later.
-    """
+    """Resolve the domain family independently from the wire kind."""
     try:
         return get_spider(spider_name).FAMILY
     except KeyError:
         return "brood" if kind == "provision" else "weave"
+
+
+def _wire_kind(raw: dict, spider_name: str) -> str:
+    """Translate public DSL family to the legacy bus routing kind.
+
+    `kind` is accepted only as a compatibility input for old stored scenarios.
+    New scenarios should use `family: weave|brood|command` or omit it and let the
+    registered spider declare its family.
+    """
+    family = str(raw.get("family") or "").strip().lower()
+    if family:
+        if family not in _FAMILY_TO_WIRE_KIND:
+            raise ValueError(
+                f"unknown spider family {family!r}; expected weave, brood or command"
+            )
+        return _FAMILY_TO_WIRE_KIND[family]
+
+    legacy_kind = str(raw.get("kind") or "").strip().lower()
+    if legacy_kind:
+        return legacy_kind
+    return _kind_of(spider_name)
 
 
 def parse_steps(scenario: dict) -> list[StepSpec]:
@@ -48,7 +70,7 @@ def parse_steps(scenario: dict) -> list[StepSpec]:
             id=raw["id"],
             spider=spider,
             action=raw.get("action", "run"),
-            kind=raw.get("kind") or _kind_of(spider),
+            kind=_wire_kind(raw, spider),
             with_=raw.get("with", {}) or {},
             needs=raw.get("needs", []) or [],
         ))
