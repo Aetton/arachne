@@ -1,19 +1,9 @@
 """Bridge between the HTTP layer and the orchestrator core.
 
-Keeps a live in-memory log buffer (for SSE/polling), persists runs + structured
-artifacts to the DB, and exposes fire() as the single entrypoint every trigger
-uses.
-
-Public interface:
-    start_run(user_id, scenario_key, params) -> run_id
-    start_run_async(user_id, scenario_key, params) -> run_id
-    fire(scenario_key, params, source) -> run_id
-    fire_async(scenario_key, params, source) -> run_id
-    live_records(run_id) -> list[dict]
-    live_lines(run_id) -> list[str]
-    live_artifacts(run_id) -> list[dict]
-    get_status(run_id) -> RunStatus
-    is_done(run_id) -> bool
+Keeps a live in-memory log buffer, persists run output panels, and exposes fire()
+as the single entrypoint every trigger uses. The historical Run.artifacts JSON
+column now stores serialized RunOutput entries; artifact-backed outputs retain
+legacy top-level artifact fields so old routes keep working.
 """
 from __future__ import annotations
 
@@ -28,13 +18,14 @@ import scenario_store
 import managed_machines
 
 from core.registry import load_plugins, all_triggers
-from core import orchestrator
-from core.types import Artifact, LogLine, RunStatus
+from core import orchestrator, wire_codec
+from core.types import Artifact, RunOutput, LogLine, RunStatus
 
 _live: dict[str, list[dict]] = defaultdict(list)
 _done: dict[str, bool] = {}
 _status: dict[str, RunStatus] = {}
-_arts: dict[str, list[dict]] = defaultdict(list)
+_outputs: dict[str, list[dict]] = defaultdict(list)
+_artifact_output_indexes: dict[str, dict[str, int]] = defaultdict(dict)
 
 _initialized = False
 
@@ -81,7 +72,7 @@ def _create_run(run_id: str, scenario_key: str, scenario: dict, params: dict) ->
         db.close()
 
 
-def _persist_run(run_id: str, status, live: list[dict], artifacts: list[dict]) -> None:
+def _persist_run(run_id: str, status, live: list[dict], outputs: list[dict]) -> None:
     db = SessionLocal()
     try:
         run = db.get(Run, run_id)
@@ -89,14 +80,13 @@ def _persist_run(run_id: str, status, live: list[dict], artifacts: list[dict]) -
             run.status = status.value if isinstance(status, RunStatus) else str(status)
             run.completed_at = utcnow()
             run.log = json.dumps(live, ensure_ascii=False)
-            run.artifacts = artifacts
+            run.artifacts = outputs
             db.commit()
     finally:
         db.close()
 
 
 def _log_sink(run_id: str, line: LogLine):
-    """Store structured records so the UI can group by step_id with seq order."""
     _live[run_id].append({
         "step_id": line.step_id or "",
         "seq": line.seq,
@@ -106,17 +96,34 @@ def _log_sink(run_id: str, line: LogLine):
 
 
 def _artifact_sink(run_id: str, user_id: int | None, step_id: str, artifact: Artifact) -> None:
-    """Preserve the artifact itself instead of reconstructing it from a log line."""
-    item = {
-        "name": artifact.name,
-        "type": artifact.type,
-        "location": artifact.location,
-        "download_url": artifact.download_url,
-        "metadata": dict(artifact.metadata or {}),
-        "step_id": step_id,
-    }
-    _arts[run_id].append(item)
+    """Keep lifecycle registration separate from human-facing output storage."""
     managed_machines.register_artifact(run_id, user_id, artifact)
+
+
+def _artifact_key(artifact: Artifact) -> str:
+    return f"{artifact.type}:{artifact.location}:{artifact.name}"
+
+
+def _output_sink(run_id: str, step_id: str, output: RunOutput) -> None:
+    """Persist one RunOutput as one bottom-rail panel."""
+    index = len(_outputs[run_id])
+    if output.artifact is not None:
+        _artifact_output_indexes[run_id][_artifact_key(output.artifact)] = index
+
+    item = wire_codec.output_to_dict(output)
+    item["step_id"] = step_id
+
+    artifact_key = str((output.metadata or {}).get("artifact_key") or "")
+    for link in item.get("links", []):
+        if link.get("href") == "__arachne_vm_console__":
+            artifact_index = _artifact_output_indexes[run_id].get(artifact_key)
+            if artifact_index is not None:
+                link["href"] = f"/runs/{run_id}/artifacts/{artifact_index}/console"
+            else:
+                link["href"] = "#"
+                link["disabled"] = True
+
+    _outputs[run_id].append(item)
 
 
 def _prepare_params(params: dict, user_id: int | None = None) -> dict:
@@ -138,14 +145,19 @@ def _start_task(run_id: str, scenario_key: str, scenario: dict, params: dict) ->
     loop.create_task(_execute(run_id, scenario_key, scenario, params))
 
 
+def _init_runtime(run_id: str) -> None:
+    _live[run_id] = []
+    _done[run_id] = False
+    _status[run_id] = RunStatus.RUNNING
+    _outputs[run_id] = []
+    _artifact_output_indexes[run_id] = {}
+
+
 async def fire_async(scenario_key: str, params: dict, source: str = "manual") -> str:
     scenario = _get_scenario(scenario_key)
     run_id = new_run_id()
     await asyncio.to_thread(_create_run, run_id, scenario_key, scenario, params)
-    _live[run_id] = []
-    _done[run_id] = False
-    _status[run_id] = RunStatus.RUNNING
-    _arts[run_id] = []
+    _init_runtime(run_id)
     _start_task(run_id, scenario_key, scenario, params)
     return run_id
 
@@ -155,10 +167,7 @@ def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
     scenario = _get_scenario(scenario_key)
     run_id = new_run_id()
     _create_run(run_id, scenario_key, scenario, params)
-    _live[run_id] = []
-    _done[run_id] = False
-    _status[run_id] = RunStatus.RUNNING
-    _arts[run_id] = []
+    _init_runtime(run_id)
     _start_task(run_id, scenario_key, scenario, params)
     return run_id
 
@@ -185,6 +194,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
             artifact_sink=lambda rid, sid, artifact: _artifact_sink(
                 rid, user_id, sid, artifact
             ),
+            output_sink=_output_sink,
         )
     except Exception as exc:  # noqa: BLE001
         _live[run_id].append({"step_id": "", "seq": 0, "stream": "stderr",
@@ -196,7 +206,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
         run_id,
         status,
         list(_live[run_id]),
-        list(_arts[run_id]),
+        list(_outputs[run_id]),
     )
     _status[run_id] = status
     _done[run_id] = True
@@ -210,8 +220,13 @@ def live_lines(run_id: str) -> list[str]:
     return [rec.get("text", "") for rec in _live.get(run_id, [])]
 
 
+def live_outputs(run_id: str) -> list[dict]:
+    return list(_outputs.get(run_id, []))
+
+
 def live_artifacts(run_id: str) -> list[dict]:
-    return list(_arts.get(run_id, []))
+    """Compatibility alias; these entries are RunOutputs now."""
+    return live_outputs(run_id)
 
 
 def get_status(run_id: str) -> RunStatus:
