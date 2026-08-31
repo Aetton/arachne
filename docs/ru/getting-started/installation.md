@@ -63,17 +63,13 @@ PROXMOX_VE_API_TOKEN=arachne@pve!arachne=<TOKEN_SECRET>
 PROXMOX_VE_INSECURE=false
 ```
 
-Если прямой доступ к Terraform/OpenTofu registry ограничен, задайте provider mirror:
+Если прямой доступ к Terraform/OpenTofu provider registry ограничен, задайте network mirror:
 
 ```dotenv
 TOFU_PROVIDER_MIRROR=https://tf-proxy.selectel.ru/mirror/v1/
 ```
 
-Это не зашито в Docker image. Compose передаёт значение в контейнер, а entrypoint при старте генерирует `/root/.tofurc`. URL можно заменить на любой совместимый OpenTofu/Terraform network mirror без пересборки образа.
-
-Если `TOFU_PROVIDER_MIRROR` пуст, `.tofurc` удаляется и OpenTofu использует direct provider installation.
-
-Для `tofu-proxmox` provider имеет явную identity `registry.terraform.io/bpg/proxmox` и фиксированную версию. Зеркало меняет только маршрут загрузки provider-а, а не его identity.
+Compose передаст переменную в контейнер, а entrypoint создаст `/root/.tofurc`. URL зеркала не зашит в Docker image и может быть заменён без пересборки кода.
 
 Не прописывайте VM ID шаблонов, node, datastore и disk metadata в `.env`. После старта они настраиваются через **Control -> Golden Images**, а фактические характеристики template читаются через Proxmox API.
 
@@ -130,12 +126,6 @@ docker compose exec arachne \
   curl -fsSI https://registry.terraform.io/
 ```
 
-Если настроен provider mirror, проверьте созданный CLI config:
-
-```bash
-docker compose exec arachne cat /root/.tofurc
-```
-
 Если используется внутренний Proxmox CA:
 
 ```bash
@@ -144,6 +134,14 @@ docker compose exec arachne \
 ```
 
 При корректном trust store должны работать одновременно и публичные, и внутренние HTTPS endpoints.
+
+## Права Proxmox для клонирования стендов
+
+Arachne должна получать только права, необходимые для клонирования и управления VM. Не выдавайте сервисной роли `Sys.Modify` только ради изменения Proxmox tags.
+
+`tofu-proxmox` не управляет тегами клонированной VM. Набор тегов golden image остаётся как есть, поэтому зарегистрированные cluster tags не требуют `Sys.Modify` на `/`.
+
+Для bridge из local SDN zone сервисной роли нужен `SDN.Use`. Остальные права зависят от операций, разрешённых конкретному deployment, но для текущего клонирования используются VM/Datastore privileges без административного доступа к кластерной конфигурации.
 
 ## Проверка после запуска
 
@@ -163,6 +161,12 @@ docker compose logs --tail=100 arachne
 
 ```bash
 docker compose exec arachne tofu version
+```
+
+Если настроен provider mirror:
+
+```bash
+docker compose exec arachne cat /root/.tofurc
 ```
 
 После настройки Proxmox откройте **Control -> Golden Images**. Если API token и TLS настроены правильно, страница должна показать доступные QEMU templates.
