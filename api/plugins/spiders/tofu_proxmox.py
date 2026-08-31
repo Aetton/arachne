@@ -1,9 +1,8 @@
 """ProvisionSpider: manage ephemeral Proxmox VMs through OpenTofu.
 
-The scenario talks in infrastructure terms (OS/resources), while the spider maps
-those values to concrete Proxmox templates and keeps one isolated local state and
-working directory per stand. The OpenTofu module remains backend-specific;
-scenarios do not need to know VM IDs, datastore names or bridges.
+Normal scenario contract is intentionally small: a stand name and a logical OS.
+The spider maps the OS to a golden Proxmox template and OpenTofu clones it without
+redefining CPU, memory, disks or network settings from the template.
 """
 from __future__ import annotations
 
@@ -31,6 +30,12 @@ _TEMPLATE_ENV = {
     "redos7": "TOFU_TEMPLATE_REDOS7",
     "redos8": "TOFU_TEMPLATE_REDOS8",
     "windows": "TOFU_TEMPLATE_WINDOWS",
+}
+
+_TEMPLATE_NODE_ENV = {
+    "redos7": "TOFU_TEMPLATE_REDOS7_NODE",
+    "redos8": "TOFU_TEMPLATE_REDOS8_NODE",
+    "windows": "TOFU_TEMPLATE_WINDOWS_NODE",
 }
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$")
@@ -66,8 +71,8 @@ class TofuProxmoxSpider(ProvisionSpider):
 
     @staticmethod
     def _template_vm_id(vm_os: str, values: dict) -> int | None:
-        # Explicit override is useful for diagnostics, but normal scenarios should
-        # rely on the per-OS environment mapping.
+        # Explicit overrides are kept for diagnostics/manual runs. Published
+        # scenarios should normally rely on the per-OS environment mapping.
         raw = values.get("template_vm_id")
         if raw in (None, ""):
             env_name = _TEMPLATE_ENV.get(vm_os)
@@ -76,16 +81,31 @@ class TofuProxmoxSpider(ProvisionSpider):
             return None
         return int(raw)
 
+    @staticmethod
+    def _template_node_name(vm_os: str, values: dict) -> str:
+        raw = values.get("template_node_name")
+        if raw in (None, ""):
+            env_name = _TEMPLATE_NODE_ENV.get(vm_os)
+            raw = os.getenv(env_name, "") if env_name else ""
+        return str(raw or "").strip()
+
+    @staticmethod
+    def _target_node_name(values: dict, template_node_name: str) -> str:
+        raw = values.get("node_name") or os.getenv("TOFU_NODE_NAME")
+        # A single-node installation needs no duplicate setting: when the
+        # template node is known, use it as the target by default.
+        return str(raw or template_node_name or "").strip()
+
+    @staticmethod
+    def _clone_datastore_id(values: dict) -> str:
+        raw = values.get("clone_datastore_id") or os.getenv("TOFU_CLONE_DATASTORE")
+        return str(raw or "").strip()
+
     def _state_dir(self, name: str) -> Path:
         return Path(TOFU_STATE_ROOT).expanduser().resolve() / name
 
     def _prepare_workdir(self, name: str, source_dir: Path) -> tuple[Path, Path]:
-        """Create an isolated module directory and state path for one stand.
-
-        We copy only OpenTofu configuration files. This keeps `.terraform`, the
-        dependency lock file and local state away from other concurrent stands.
-        Existing workdirs are refreshed with current config but keep their state.
-        """
+        """Create an isolated module directory and state path for one stand."""
         state_dir = self._state_dir(name)
         work_dir = state_dir / "module"
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -113,19 +133,13 @@ class TofuProxmoxSpider(ProvisionSpider):
 
     @staticmethod
     def _vars(st: dict) -> list[str]:
-        values = st["with"]
-        template_vm_id = st["template_vm_id"]
         return [
             f"-var=stand_name={st['name']}",
             f"-var=os={st['os']}",
-            f"-var=template_vm_id={template_vm_id}",
-            f"-var=vcpus={int(values.get('vcpus', 4))}",
-            f"-var=ram_mb={int(values.get('ram_mb', 8192))}",
-            f"-var=disk_gb={int(values.get('disk_gb', 40))}",
-            f"-var=node_name={values.get('node_name', os.getenv('TOFU_NODE_NAME', 'pve'))}",
-            f"-var=datastore_id={values.get('datastore_id', os.getenv('TOFU_DATASTORE', 'local-lvm'))}",
-            f"-var=bridge={values.get('bridge', os.getenv('TOFU_BRIDGE', 'vmbr0'))}",
-            f"-var=disk_interface={values.get('disk_interface', os.getenv('TOFU_DISK_INTERFACE', 'scsi0'))}",
+            f"-var=template_vm_id={st['template_vm_id']}",
+            f"-var=node_name={st['node_name']}",
+            f"-var=template_node_name={st['template_node_name']}",
+            f"-var=clone_datastore_id={st['clone_datastore_id']}",
         ]
 
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
@@ -145,11 +159,20 @@ class TofuProxmoxSpider(ProvisionSpider):
             )
 
         template_vm_id = self._template_vm_id(vm_os, step.with_)
+        template_node_name = self._template_node_name(vm_os, step.with_)
+        node_name = self._target_node_name(step.with_, template_node_name)
+        clone_datastore_id = self._clone_datastore_id(step.with_)
+
         if template_vm_id is None and not self._dev_fallback_enabled():
             env_name = _TEMPLATE_ENV[vm_os]
             raise ValueError(
                 f"No Proxmox template configured for {vm_os}: set {env_name} "
                 "or with.template_vm_id"
+            )
+        if not node_name and not self._dev_fallback_enabled():
+            raise ValueError(
+                "No Proxmox target node configured: set TOFU_NODE_NAME or the "
+                f"template node variable {_TEMPLATE_NODE_ENV[vm_os]}"
             )
 
         ext = f"vm-{name}-{action}"
@@ -158,6 +181,9 @@ class TofuProxmoxSpider(ProvisionSpider):
             "os": vm_os,
             "action": action,
             "template_vm_id": template_vm_id,
+            "template_node_name": template_node_name,
+            "node_name": node_name,
+            "clone_datastore_id": clone_datastore_id,
             "status": RunStatus.PENDING,
             "with": step.with_,
             "artifacts": [],
@@ -294,7 +320,7 @@ class TofuProxmoxSpider(ProvisionSpider):
                 st["status"] = RunStatus.FAILED
                 yield LogLine(
                     "VM was created, but OpenTofu did not return vm_ip. "
-                    "Check qemu-guest-agent in the template.",
+                    "Check qemu-guest-agent in the golden template.",
                     "stderr",
                 )
                 return
@@ -309,7 +335,6 @@ class TofuProxmoxSpider(ProvisionSpider):
         st = self._runs[handle.external_id]
         vm_os = st["os"]
         conn, port = CONN_BY_OS.get(vm_os, ("ssh", 22))
-        values = st["with"]
         st["artifacts"] = [
             Artifact(
                 name=st["name"],
@@ -318,15 +343,14 @@ class TofuProxmoxSpider(ProvisionSpider):
                 metadata={
                     "os": vm_os,
                     "arch": "x86_64",
-                    "hostname": f"{st['name']}.redsoft.internal",
                     "ip": ip,
                     "conn": conn,
+                    "port": port,
                     "ssh_port": port,
-                    "vcpus": int(values.get("vcpus", 4)),
-                    "ram_mb": int(values.get("ram_mb", 8192)),
-                    "disk_gb": int(values.get("disk_gb", 40)),
                     "vm_id": vm_id,
                     "template_vm_id": st["template_vm_id"],
+                    "node_name": st["node_name"],
+                    "template_node_name": st["template_node_name"],
                     "backend": self.NAME,
                     "state": "running",
                 },
