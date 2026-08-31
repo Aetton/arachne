@@ -3,6 +3,13 @@
 Основные настройки приходят из окружения. Compose читает `.env`, а его
 `environment` переопределяет одинаковые ключи из `env_file`.
 
+Важно разделять два типа конфигурации:
+
+- **доступ к внешней системе** хранится в окружении;
+- **прикладные соответствия внутри Arachne** хранятся в PostgreSQL и управляются через UI.
+
+Для Proxmox это означает: endpoint и API token лежат в `.env`, а Golden Image profiles настраиваются через **Control -> Golden Images**. VM ID шаблона, node, datastore и параметры дисков в env не дублируются.
+
 ## Приложение и безопасность
 
 | Переменная | По умолчанию | Назначение |
@@ -64,6 +71,42 @@ with:
 trace и artifacts. Если в GitLab запрещены pipeline variables для роли сервисной
 учётки, разрешите их или переведите конкретный pipeline на GitLab inputs.
 
+## Proxmox / OpenTofu
+
+В окружении остаются только параметры соединения:
+
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `PROXMOX_VE_ENDPOINT` | пусто | базовый URL Proxmox VE, например `https://pve.example:8006/` |
+| `PROXMOX_VE_API_TOKEN` | пусто | API token в формате `user@realm!tokenid=secret` |
+| `PROXMOX_VE_INSECURE` | `false` | отключение TLS verification; для production оставляйте `false` |
+| `TOFU_ROOT` | `../tofu` | корень OpenTofu modules |
+| `TOFU_STATE_ROOT` | `/tmp/arachne-tofu-state` в коде, persistent volume в Compose | workdir и state временных стендов |
+| `TOFU_DEV_FALLBACK` | `false` | синтетическая VM только для разработки |
+
+Golden Image mappings не являются environment configuration. Они хранятся в PostgreSQL и управляются через:
+
+```text
+Control -> Golden Images
+```
+
+Профиль хранит человеческий key, label, OS family, выбранный Proxmox VM ID и enabled state. Source node, datastore, system disk interface, disk size, CPU и RAM читаются напрямую из Proxmox API при каждом provision.
+
+Не добавляйте обратно переменные вида:
+
+```text
+TOFU_TEMPLATE_*
+TOFU_TEMPLATE_*_NODE
+TOFU_TEMPLATE_*_DISK_*
+TOFU_NODE_NAME
+TOFU_DEFAULT_GOLDEN_DISK_GB
+TOFU_SYSTEM_DISK_INTERFACE
+```
+
+Они создают второй источник истины для данных, которыми уже владеет Proxmox.
+
+Подробная схема: [Golden Images](/ru/operations/golden-images) и [Proxmox и OpenTofu](/ru/operations/proxmox-opentofu).
+
 ## Артефакты и локальные исполнители
 
 | Переменная | По умолчанию | Назначение |
@@ -72,7 +115,6 @@ trace и artifacts. Если в GitLab запрещены pipeline variables д�
 | `NEXUS_USER` | пусто | используется playbook/workflow, не порталом напрямую |
 | `NEXUS_PASSWORD` | пусто | то же; храните как секрет |
 | `ANSIBLE_PLAYBOOKS_DIR` | `../playbooks` | каталог playbook |
-| `TOFU_ROOT` | `../tofu` | корень модулей OpenTofu |
 
 ## Шина
 
@@ -98,12 +140,15 @@ SSL_CERT_FILE: /etc/ssl/certs/ca.crt
 REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca.crt
 ```
 
+Этот CA используется не только Forgejo. Proxmox API client и OpenTofu provider также должны доверять внутреннему сертификату.
+
 Проверьте, что файл `ca.crt` действительно существует. В production лучше добавить
-CA, чем выставлять `FORGEJO_VERIFY_TLS=false` или `GITLAB_VERIFY_TLS=false`.
+CA, чем выставлять `FORGEJO_VERIFY_TLS=false`, `GITLAB_VERIFY_TLS=false` или `PROXMOX_VE_INSECURE=true`.
 
 ## Приоритет источников
 
-- окружение важнее значений по умолчанию кода;
-- `environment` Compose важнее `env_file`;
-- явные параметры шага важнее глобальных defaults;
-- после bootstrap база важнее YAML-файла сценариев.
+- environment хранит connection/auth и runtime paths;
+- PostgreSQL хранит управляемые сущности Arachne: сценарии, ACL, Golden Image profiles и managed machines;
+- Proxmox является источником истины для фактической конфигурации template;
+- явные параметры сценария задают желаемый результат, но не backend internals;
+- после bootstrap база важнее YAML seed-файла сценариев.
