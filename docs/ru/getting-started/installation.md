@@ -63,6 +63,18 @@ PROXMOX_VE_API_TOKEN=arachne@pve!arachne=<TOKEN_SECRET>
 PROXMOX_VE_INSECURE=false
 ```
 
+Если прямой доступ к Terraform/OpenTofu registry ограничен, задайте provider mirror:
+
+```dotenv
+TOFU_PROVIDER_MIRROR=https://tf-proxy.selectel.ru/mirror/v1/
+```
+
+Это не зашито в Docker image. Compose передаёт значение в контейнер, а entrypoint при старте генерирует `/root/.tofurc`. URL можно заменить на любой совместимый OpenTofu/Terraform network mirror без пересборки образа.
+
+Если `TOFU_PROVIDER_MIRROR` пуст, `.tofurc` удаляется и OpenTofu использует direct provider installation.
+
+Для `tofu-proxmox` provider имеет явную identity `registry.terraform.io/bpg/proxmox` и фиксированную версию. Зеркало меняет только маршрут загрузки provider-а, а не его identity.
+
 Не прописывайте VM ID шаблонов, node, datastore и disk metadata в `.env`. После старта они настраиваются через **Control -> Golden Images**, а фактические характеристики template читаются через Proxmox API.
 
 Полный список переменных — в [справочнике конфигурации](/ru/reference/configuration).
@@ -95,7 +107,7 @@ Compose монтирует этот каталог в:
 
 Именно его используют `SSL_CERT_FILE` и `REQUESTS_CA_BUNDLE`.
 
-Не монтируйте `certs/` поверх `/etc/ssl/certs/` и не указывайте `SSL_CERT_FILE` на одиночный корпоративный сертификат. Иначе системные публичные CA будут скрыты, и HTTPS к `registry.opentofu.org`, GitHub, PyPI и другим внешним сервисам начнёт падать с `x509: certificate signed by unknown authority`.
+Не монтируйте `certs/` поверх `/etc/ssl/certs/` и не указывайте `SSL_CERT_FILE` на одиночный корпоративный сертификат. Иначе системные публичные CA будут скрыты, и HTTPS к внешним registry, GitHub, PyPI и другим сервисам начнёт падать с `x509: certificate signed by unknown authority`.
 
 `FORGEJO_VERIFY_TLS=false` или `PROXMOX_VE_INSECURE=true` годятся только для короткого локального эксперимента. В эксплуатации используйте доверенный CA.
 
@@ -115,7 +127,13 @@ docker compose exec arachne sh -lc '
 
 ```bash
 docker compose exec arachne \
-  curl -fsSI https://registry.opentofu.org/
+  curl -fsSI https://registry.terraform.io/
+```
+
+Если настроен provider mirror, проверьте созданный CLI config:
+
+```bash
+docker compose exec arachne cat /root/.tofurc
 ```
 
 Если используется внутренний Proxmox CA:
