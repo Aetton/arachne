@@ -5,10 +5,13 @@ spiders appear automatically even before a detailed contract is documented.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
 from fastapi import Depends
 
 from auth.deps import require_role
 from core.registry import all_spiders, all_triggers
+from golden_images import list_profiles
 from main import app
 
 
@@ -41,11 +44,18 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
     },
     "tofu-proxmox": {
-        "description": "Create or destroy an ephemeral stand from a configured golden image.",
+        "description": "Create or destroy an ephemeral stand from a Golden Image profile.",
         "actions": ["provision", "destroy"],
         "inputs": {
             "name": {"default": "test-stand"},
-            "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"]},
+            "os": {
+                "default": "redos8",
+                "options": ["redos7", "redos8", "windows"],
+                "description": "OS family; also acts as the default Golden Image profile key",
+            },
+            "image": {
+                "description": "Optional Golden Image profile; defaults to os",
+            },
             "lifetime": {
                 "description": "Optional lifetime before automatic cleanup: 30m, 2h, 1d"
             },
@@ -67,9 +77,14 @@ SPIDER_CONTRACTS: dict[str, dict] = {
 
 @app.get("/api/admin/scenario-dsl")
 def scenario_dsl_metadata(user=Depends(require_role("admin"))):
+    profiles = [row for row in list_profiles() if row.get("enabled")]
     spiders = []
     for name, spider in sorted(all_spiders().items()):
-        contract = SPIDER_CONTRACTS.get(name, {})
+        contract = deepcopy(SPIDER_CONTRACTS.get(name, {}))
+        if name == "tofu-proxmox" and profiles:
+            contract.setdefault("inputs", {}).setdefault("image", {})["options"] = [
+                row["slug"] for row in profiles
+            ]
         spiders.append({
             "name": name,
             "kind": spider.KIND,
