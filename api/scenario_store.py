@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 from database import Component, Scenario, ScenarioACL, ScenarioVersion
 
 
+_FAMILIES = {"weave", "brood", "command"}
+
+
 def validate_definition(definition: dict) -> None:
     if not isinstance(definition, dict):
         raise ValueError("scenario definition must be a mapping")
@@ -26,6 +29,9 @@ def validate_definition(definition: dict) -> None:
         for field in ("id", "spider", "action"):
             if not step.get(field):
                 raise ValueError(f"step missing required field: {field}")
+        family = step.get("family")
+        if family is not None and str(family).strip().lower() not in _FAMILIES:
+            raise ValueError("step family must be one of: weave, brood, command")
         if step["id"] in ids:
             raise ValueError(f"duplicate step id: {step['id']}")
         ids.add(step["id"])

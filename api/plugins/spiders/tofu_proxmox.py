@@ -1,4 +1,4 @@
-"""ProvisionSpider: manage ephemeral Proxmox VMs through OpenTofu.
+"""BroodSpider: manage ephemeral Proxmox VMs through OpenTofu.
 
 Scenario authors choose a human golden-image profile. The profile stores only the
 selected Proxmox template VM ID; node, storage, disk layout and baseline resources
@@ -125,11 +125,6 @@ class TofuProxmoxSpider(ProvisionSpider):
 
     @staticmethod
     def _managed_backend(name: str) -> dict | None:
-        """Return the original backend facts for a managed VM before destroy.
-
-        This keeps destroy stable if an admin changes the golden-image mapping
-        after the stand has already been created.
-        """
         db = SessionLocal()
         try:
             row = db.query(ManagedMachine).filter(
@@ -269,11 +264,12 @@ class TofuProxmoxSpider(ProvisionSpider):
 
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
         name = str(step.with_.get("name", "test-stand"))
-        action = (step.action or "provision").strip().lower()
+        raw_action = (step.action or "brood").strip().lower()
+        action = "provision" if raw_action in {"brood", "provision"} else raw_action
         self._validate_name(name)
         if action not in {"provision", "destroy"}:
             raise ValueError(
-                f"Unsupported tofu-proxmox action {action!r}; use provision or destroy"
+                f"Unsupported tofu-proxmox action {raw_action!r}; use brood or destroy"
             )
 
         backend = self._resolve_backend(step.with_, action=action, name=name)
@@ -308,23 +304,14 @@ class TofuProxmoxSpider(ProvisionSpider):
         return RunHandle(
             spider=self.NAME,
             external_id=ext,
-            metadata={"name": name, "action": action, "image": backend["image"]},
+            metadata={"name": name, "action": raw_action, "image": backend["image"]},
         )
 
-    async def _run_cmd(
-        self,
-        cmd: list[str],
-        *,
-        cwd: Path,
-        env: dict[str, str],
-    ) -> AsyncIterator[LogLine]:
+    async def _run_cmd(self, cmd: list[str], *, cwd: Path, env: dict[str, str]) -> AsyncIterator[LogLine]:
         yield LogLine(f"$ {' '.join(cmd)}", "system")
         proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(cwd),
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            *cmd, cwd=str(cwd), env=env,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
         )
         assert proc.stdout is not None
         async for raw in proc.stdout:
@@ -333,19 +320,11 @@ class TofuProxmoxSpider(ProvisionSpider):
         if proc.returncode != 0:
             raise RuntimeError(f"OpenTofu exited with code {proc.returncode}")
 
-    async def _output(
-        self,
-        key: str,
-        *,
-        cwd: Path,
-        env: dict[str, str],
-        state_path: Path,
-    ) -> str:
+    async def _output(self, key: str, *, cwd: Path, env: dict[str, str], state_path: Path) -> str:
         proc = await asyncio.create_subprocess_exec(
             "tofu", "output", f"-state={state_path}", "-raw", key,
             cwd=str(cwd), env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         out, _ = await proc.communicate()
         return out.decode(errors="replace").strip() if proc.returncode == 0 else ""
@@ -358,10 +337,7 @@ class TofuProxmoxSpider(ProvisionSpider):
 
         if not shutil.which("tofu"):
             if self._dev_fallback_enabled():
-                yield LogLine(
-                    "tofu not found — synthesizing VM because TOFU_DEV_FALLBACK is enabled",
-                    "system",
-                )
+                yield LogLine("tofu not found — synthesizing VM because TOFU_DEV_FALLBACK is enabled", "system")
                 await asyncio.sleep(0.1)
                 if action == "destroy":
                     self._finish_destroy(handle)
@@ -388,26 +364,18 @@ class TofuProxmoxSpider(ProvisionSpider):
                 yield LogLine(f"No managed stand state found for {name}", "stderr")
                 return
 
-            async for line in self._run_cmd(
-                ["tofu", "init", "-input=false"], cwd=work_dir, env=env
-            ):
+            async for line in self._run_cmd(["tofu", "init", "-input=false"], cwd=work_dir, env=env):
                 yield line
 
             if action == "destroy":
-                cmd = [
-                    "tofu", "destroy", "-auto-approve", "-input=false",
-                    f"-state={state_path}", *vars_,
-                ]
+                cmd = ["tofu", "destroy", "-auto-approve", "-input=false", f"-state={state_path}", *vars_]
                 async for line in self._run_cmd(cmd, cwd=work_dir, env=env):
                     yield line
                 self._finish_destroy(handle)
                 yield LogLine(f"Stand destroyed: {name}", "system")
                 return
 
-            cmd = [
-                "tofu", "apply", "-auto-approve", "-input=false",
-                f"-state={state_path}", *vars_,
-            ]
+            cmd = ["tofu", "apply", "-auto-approve", "-input=false", f"-state={state_path}", *vars_]
             async for line in self._run_cmd(cmd, cwd=work_dir, env=env):
                 yield line
 
@@ -417,10 +385,7 @@ class TofuProxmoxSpider(ProvisionSpider):
             self._finish(handle, ip=ip, vm_id=vm_id)
             if not ip:
                 st["status"] = RunStatus.FAILED
-                yield LogLine(
-                    "Stand was created, but its IP address is not available yet",
-                    "stderr",
-                )
+                yield LogLine("Stand was created, but its IP address is not available yet", "stderr")
                 return
 
             yield LogLine(f"Stand ready: {name} @ {ip} ({vm_os})", "system")
@@ -430,66 +395,40 @@ class TofuProxmoxSpider(ProvisionSpider):
 
     def _finish_destroy(self, handle: RunHandle) -> None:
         st = self._runs[handle.external_id]
-        st["artifacts"] = [
-            Artifact(
-                name=st["name"],
-                type="vm",
-                location=st["name"],
-                metadata={
-                    "image": st["image"],
-                    "os": st["os"],
-                    "backend": self.NAME,
-                    "state": "destroyed",
-                },
-            )
-        ]
+        st["artifacts"] = [Artifact(
+            name=st["name"], type="vm", location=st["name"],
+            metadata={"image": st["image"], "os": st["os"], "backend": self.NAME, "state": "destroyed"},
+        )]
         st["status"] = RunStatus.SUCCESS
 
     def _finish(self, handle: RunHandle, ip: str, vm_id: str = "") -> None:
         st = self._runs[handle.external_id]
         vm_os = st["os"]
         conn, port = CONN_BY_OS.get(vm_os, ("ssh", 22))
-        requested = {
-            key: value
-            for key, value in {
-                "cpu": st["resources"]["cpu"],
-                "memory_gb": st["resources"]["memory_gb"],
-                "disk_gb": st["resources"]["disk_gb"],
-            }.items()
-            if value is not None
-        }
-        st["artifacts"] = [
-            Artifact(
-                name=st["name"],
-                type="vm",
-                location=vm_id or st["name"],
-                metadata={
-                    "image": st["image"],
-                    "os": vm_os,
-                    "arch": "x86_64",
-                    "ip": ip,
-                    "conn": conn,
-                    "port": port,
-                    "ssh_port": port,
-                    "vm_id": vm_id,
-                    "template_vm_id": st["template_vm_id"],
-                    "node_name": st["node_name"],
-                    "template_node_name": st["template_node_name"],
-                    "clone_datastore_id": st["clone_datastore_id"],
-                    "golden": {
-                        "cpu": st["template"].get("cpu"),
-                        "memory_gb": st["template"].get("memory_gb"),
-                        "disk_gb": st["template"].get("disk_gb"),
-                        "disk_interface": st["template"].get("disk_interface"),
-                        "disk_datastore": st["template"].get("disk_datastore"),
-                    },
-                    "requested_resources": requested,
-                    "lifetime": st["lifetime"],
-                    "backend": self.NAME,
-                    "state": "running",
+        requested = {key: value for key, value in {
+            "cpu": st["resources"]["cpu"],
+            "memory_gb": st["resources"]["memory_gb"],
+            "disk_gb": st["resources"]["disk_gb"],
+        }.items() if value is not None}
+        st["artifacts"] = [Artifact(
+            name=st["name"], type="vm", location=vm_id or st["name"],
+            metadata={
+                "image": st["image"], "os": vm_os, "arch": "x86_64", "ip": ip,
+                "conn": conn, "port": port, "ssh_port": port, "vm_id": vm_id,
+                "template_vm_id": st["template_vm_id"], "node_name": st["node_name"],
+                "template_node_name": st["template_node_name"],
+                "clone_datastore_id": st["clone_datastore_id"],
+                "golden": {
+                    "cpu": st["template"].get("cpu"),
+                    "memory_gb": st["template"].get("memory_gb"),
+                    "disk_gb": st["template"].get("disk_gb"),
+                    "disk_interface": st["template"].get("disk_interface"),
+                    "disk_datastore": st["template"].get("disk_datastore"),
                 },
-            )
-        ]
+                "requested_resources": requested, "lifetime": st["lifetime"],
+                "backend": self.NAME, "state": "running",
+            },
+        )]
         st["status"] = RunStatus.SUCCESS
 
     def get_status(self, handle: RunHandle) -> RunStatus:
