@@ -1,8 +1,13 @@
 # Proxmox и OpenTofu
 
-`tofu-proxmox` создаёт временные VM клонированием заранее подготовленных золотых
-шаблонов Proxmox. Базовый сценарий знает только имя стенда и логический тип ОС.
-Кишки Proxmox/OpenTofu остаются backend-конфигурацией Арахны.
+`tofu-proxmox` создаёт временные VM полным клонированием заранее подготовленных
+Proxmox templates. Пользователь сценария работает с человеческими Golden Image
+профилями; VM ID, node, datastore, disk interface и фактические ресурсы шаблона
+остаются внутренней реализацией Арахны.
+
+## Пользовательский контракт
+
+Минимальный сценарий:
 
 ```yaml
 - id: vm
@@ -13,115 +18,158 @@
     os: redos8
 ```
 
-Соответствие `redos8 -> VM ID шаблона` хранится в окружении Арахны, а не в YAML
-сценариев.
-
-## Пользовательский контракт
-
-Golden image остаётся профилем по умолчанию. Если дополнительных ресурсов или TTL
-не нужно, блок `resources` и поле `lifetime` вообще отсутствуют.
-
-Для короткого теста пользователь может задать срок жизни машины:
+`os` одновременно используется как семейство ОС и как ключ Golden Image профиля
+по умолчанию. Если для одного семейства ОС заведено несколько образов, можно явно
+выбрать профиль:
 
 ```yaml
-- id: vm
-  spider: tofu-proxmox
-  action: provision
-  with:
-    name: quick-install-test
-    os: redos8
-    lifetime: 30m
+with:
+  name: redvrm-clean-test
+  os: redos8
+  image: redos8-clean
 ```
 
-Поддерживаются `30m`, `2h`, `1d` и другие значения в тех же единицах. Отсутствие
-`lifetime` означает: автоматическое удаление не назначается.
-
-Для отдельного тестового запуска можно попросить больше ресурсов:
+Дополнительно пользователь может задать TTL и ресурсы:
 
 ```yaml
-- id: vm
-  spider: tofu-proxmox
-  action: provision
-  with:
-    name: redvrm-heavy-test
-    os: redos8
-    lifetime: 2h
-    resources:
-      cpu: 8
-      memory_gb: 16
-      disk_gb: 80
+with:
+  name: redvrm-heavy-test
+  os: redos8
+  image: redos8
+  lifetime: 2h
+  resources:
+    cpu: 8
+    memory_gb: 16
+    disk_gb: 80
 ```
-
-Все поля `resources` независимы и необязательны. Например, можно увеличить только
-RAM:
-
-```yaml
-resources:
-  memory_gb: 16
-```
-
-Пользователь сценария не указывает VM ID, node, datastore, disk interface, MiB или
-любые параметры provider-а. Spider сам переводит пользовательский запрос в
-backend-настройки.
 
 Поддерживаются:
 
-| Поле | Значение |
+| Поле | Что означает |
 |---|---|
-| `lifetime` | срок жизни машины: `30m`, `2h`, `1d` |
-| `resources.cpu` | число vCPU |
+| `image` | Golden Image профиль; если не указан, используется `os` |
+| `lifetime` | срок жизни: `30m`, `2h`, `1d` и т.п. |
+| `resources.cpu` | желаемое число vCPU |
 | `resources.memory_gb` | RAM в GiB |
 | `resources.disk_gb` | размер системного диска в GiB |
 
-Если resource-поле не указано, соответствующая характеристика наследуется от
-golden image. Системный диск можно только увеличить. Для наших текущих golden
-image базовый размер — **40 GiB**.
+Если resource-поле отсутствует, соответствующая характеристика наследуется от
+выбранного template. Системный диск разрешено только увеличивать относительно его
+реального размера в Proxmox.
 
-## Как идёт подключение
+## Где хранится конфигурация
 
-```text
-Arachne
-  -> tofu subprocess
-  -> bpg/proxmox provider
-  -> HTTPS :8006
-  -> Proxmox VE API
+В `.env` остаются только параметры подключения к Proxmox:
+
+```dotenv
+PROXMOX_VE_ENDPOINT=https://pve.example.internal:8006/
+PROXMOX_VE_API_TOKEN=arachne@pve!arachne=<TOKEN_SECRET>
+PROXMOX_VE_INSECURE=false
 ```
 
-Для клонирования VM SSH-доступ к узлам Proxmox не требуется. Spider передаёт
-своё окружение процессу `tofu`, а provider сам читает endpoint и API token.
-
-## 1. Подготовить золотой шаблон
-
-Для каждого поддерживаемого `os` нужен Proxmox VM template.
-
-Минимальные требования к шаблону:
-
-- штатные CPU/RAM/сеть настроены в шаблоне;
-- системный диск для текущих golden image — **40 GiB**;
-- сеть получает адрес по DHCP;
-- `qemu-guest-agent` установлен и запускается в гостевой ОС;
-- шаблон подготовлен к клонированию: machine-id, DHCP identity и SSH host keys не
-  должны оставаться одинаковыми на всех клонах;
-- для Windows нужен работающий QEMU Guest Agent и соответствующая подготовка
-  образа к клонированию.
-
-OpenTofu не переопределяет ресурс, пока пользователь явно не запросил его в
-`resources`.
-
-Запишите для каждого шаблона:
-
-- VM ID;
-- node, на котором лежит template;
-- datastore системного диска, если хотите разрешить `resources.disk_gb`;
-- interface системного диска, если он отличается от стандартного `scsi0`.
-
-Пример:
+Golden Image mappings настраиваются через:
 
 ```text
-redos8 template: VM 9002 on pve01, system disk scsi0 on local-lvm
+Control -> Golden Images
 ```
 
-## 2. Создать пользователя и роль Proxmox
+Профиль хранит только:
+
+```text
+slug
+красивое имя
+семейство ОС
+VM ID выбранного template
+enabled/disabled
+```
+
+Арахна **не хранит копии** node, datastore, disk interface, CPU, RAM и размера
+диска. Эти значения читаются напрямую из Proxmox API при открытии Golden Images
+и при каждом provision.
+
+Это позволяет перемещать template между node, менять storage или ресурсы без
+правки `.env` и без синхронизации второго набора инфраструктурных данных.
+
+## Golden Images UI
+
+Администратор открывает `Control -> Golden Images` и создаёт профиль, например:
+
+```text
+Name:     RedOS 8
+Key:      redos8
+OS:       RedOS 8
+Template: redos8-golden · #9002 · pve01
+```
+
+Список template строится живым запросом к Proxmox. Карточка профиля показывает
+фактическое состояние выбранного template:
+
+- имя и VM ID;
+- node;
+- vCPU;
+- RAM;
+- размер системного диска;
+- disk interface;
+- datastore.
+
+Если VM ID исчез или перестал быть template, профиль остаётся в PostgreSQL, но
+UI помечает его как broken, а spider не использует его для нового provision.
+
+Можно иметь несколько профилей одного семейства:
+
+```text
+redos8
+redos8-clean
+redos8-ad
+windows
+windows-term
+```
+
+Сценарий выбирает нужный через `image`.
+
+## Как spider получает backend-данные
+
+Provision:
+
+```text
+scenario
+  -> image/os profile key
+  -> golden_image_profiles in PostgreSQL
+  -> selected Proxmox VM ID
+  -> GET /cluster/resources?type=vm
+  -> GET /nodes/<node>/qemu/<vmid>/config
+  -> discover node / CPU / RAM / system disk / storage
+  -> OpenTofu clone
+```
+
+Для системного диска spider сначала использует порядок boot devices, если он
+задан, затем выбирает первый подходящий `scsi*`, `virtio*`, `sata*` или `ide*`
+диск, исключая CD-ROM и cloud-init drive.
+
+При `resources.disk_gb` spider сравнивает запрос с **фактическим** размером
+системного диска template. Значение меньше baseline отклоняется до запуска
+OpenTofu.
+
+## Подготовка golden template
+
+Для каждого используемого профиля нужен Proxmox QEMU template.
+
+Минимальные требования:
+
+- CPU/RAM/сеть настроены как нормальный baseline;
+- системный диск имеет нужный baseline, сейчас для основных образов используется
+  40 GiB;
+- DHCP работает;
+- `qemu-guest-agent` установлен и запущен;
+- guest подготовлен к клонированию: machine-id, DHCP identity и SSH host keys не
+  должны приводить к конфликтам между клонами;
+- Windows template должен быть generalized/clone-ready и иметь QEMU Guest Agent.
+
+Размер 40 GiB остаётся нашим правилом подготовки образов, но spider не использует
+зашитую константу как источник истины: фактический размер всегда читается из
+Proxmox.
+
+## API user и token
 
 Для clone/start/read/destroy можно начать с отдельной роли:
 
@@ -130,7 +178,7 @@ pveum role add ArachneClone -privs \
   "Datastore.AllocateSpace,Datastore.Audit,Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.Options,VM.PowerMgmt"
 ```
 
-Если разрешаете resource overrides, роли также нужны права на изменяемые ресурсы:
+Для resource overrides также нужны:
 
 ```text
 VM.Config.CPU
@@ -138,34 +186,25 @@ VM.Config.Memory
 VM.Config.Disk
 ```
 
-Создайте технического пользователя:
+Создать пользователя:
 
 ```bash
-pveum user add arachne@pve --comment "Arachne OpenTofu provisioner"
+pveum user add arachne@pve --comment "Arachne provisioner"
 ```
 
-Дайте пользователю роль:
+Выдать роль:
 
 ```bash
 pveum acl modify / -user arachne@pve -role ArachneClone
 ```
 
-Если конкретная версия Proxmox/provider вернёт `403 Permission check failed`,
-добавляйте только требуемую privilege. Для cross-node clone может дополнительно
-понадобиться `VM.Migrate`.
-
-## 3. Создать отдельный API token
-
-Используем privilege separation:
+Создать privilege-separated token:
 
 ```bash
 pveum user token add arachne@pve arachne --privsep 1
 ```
 
-Секрет токена показывается только один раз. Сразу сохраните его в менеджер
-секретов.
-
-Дайте токену ту же роль:
+Выдать token ту же роль:
 
 ```bash
 pveum acl modify / -token 'arachne@pve!arachne' -role ArachneClone
@@ -178,83 +217,11 @@ pveum user permissions arachne@pve
 pveum user token permissions arachne@pve arachne
 ```
 
-Строка для provider-а:
+Если конкретная операция вернёт `403 Permission check failed`, добавляйте только
+реально требуемую privilege. Для будущего cross-node clone может понадобиться
+`VM.Migrate`.
 
-```text
-arachne@pve!arachne=<TOKEN_SECRET>
-```
-
-Именно целая строка кладётся в `PROXMOX_VE_API_TOKEN`.
-
-## 4. Прописать переменные Арахны
-
-В `.env` рядом с `docker-compose.yml`:
-
-```dotenv
-PROXMOX_VE_ENDPOINT=https://pve.example.internal:8006/
-PROXMOX_VE_API_TOKEN=arachne@pve!arachne=<TOKEN_SECRET>
-PROXMOX_VE_INSECURE=false
-
-TOFU_TEMPLATE_REDOS8=9002
-TOFU_TEMPLATE_REDOS8_NODE=pve01
-
-TOFU_TEMPLATE_REDOS7=9001
-TOFU_TEMPLATE_REDOS7_NODE=pve01
-
-TOFU_TEMPLATE_WINDOWS=9003
-TOFU_TEMPLATE_WINDOWS_NODE=pve02
-```
-
-Незаполненный `TOFU_TEMPLATE_*` означает, что этот `os` нельзя provision-ить.
-
-### Resource overrides
-
-CPU и RAM дополнительных backend-переменных не требуют.
-
-Чтобы пользователь мог запросить увеличение системного диска, Арахна должна один
-раз знать, где этот диск лежит. Это операторская настройка, в scenario она не
-попадает:
-
-```dotenv
-TOFU_DEFAULT_GOLDEN_DISK_GB=40
-TOFU_SYSTEM_DISK_INTERFACE=scsi0
-
-TOFU_TEMPLATE_REDOS8_DISK_DATASTORE=local-lvm
-TOFU_TEMPLATE_REDOS7_DISK_DATASTORE=local-lvm
-TOFU_TEMPLATE_WINDOWS_DISK_DATASTORE=local-lvm
-```
-
-Для нестандартного шаблона можно переопределить backend-метаданные отдельно:
-
-```dotenv
-TOFU_TEMPLATE_REDOS8_DISK_GB=40
-TOFU_TEMPLATE_REDOS8_DISK_INTERFACE=scsi0
-```
-
-Если пользователь запросит `disk_gb`, а datastore для этого профиля не настроен,
-spider завершит шаг понятной ошибкой вместо попытки угадывать Proxmox storage.
-
-### Target node
-
-На single-node Proxmox `TOFU_TEMPLATE_*_NODE` используется и как target node.
-
-Для другого узла назначения:
-
-```dotenv
-TOFU_NODE_NAME=pve02
-```
-
-### Target datastore для клона
-
-Для cross-node clone с non-shared storage:
-
-```dotenv
-TOFU_CLONE_DATASTORE=local-lvm
-```
-
-Если shared storage подходит, оставьте переменную пустой.
-
-## 5. TLS и корпоративный CA
+## TLS
 
 Production:
 
@@ -262,16 +229,16 @@ Production:
 PROXMOX_VE_INSECURE=false
 ```
 
-Положите CA в:
+Корпоративный CA кладётся в:
 
 ```text
 ./certs/ca.crt
 ```
 
-Compose монтирует `./certs/` в `/etc/ssl/certs/`, контейнер использует
-`SSL_CERT_FILE=/etc/ssl/certs/ca.crt`.
+Compose монтирует каталог сертификатов, а Арахна использует `SSL_CERT_FILE` для
+HTTP-запросов к Proxmox и provider-а OpenTofu.
 
-## 6. Проверить API
+Проверить API с хоста:
 
 ```bash
 set -a
@@ -284,112 +251,22 @@ curl --fail --show-error \
   "${PROXMOX_VE_ENDPOINT%/}/api2/json/version"
 ```
 
-После сборки контейнера:
+## OpenTofu state
 
-```bash
-docker compose exec arachne tofu version
-```
+Каждый стенд хранит отдельные workdir/state в `TOFU_STATE_ROOT/<name>`.
+В Docker Compose `TOFU_STATE_ROOT` находится в persistent volume, поэтому restart
+контейнера не теряет управляемое состояние VM.
 
-Проверка env без раскрытия секрета:
+## Destroy и смена Golden Image
 
-```bash
-docker compose exec arachne sh -lc '
-  test -n "$PROXMOX_VE_ENDPOINT" && echo PROXMOX_VE_ENDPOINT=ok
-  test -n "$PROXMOX_VE_API_TOKEN" && echo PROXMOX_VE_API_TOKEN=ok
-  test -n "$TOFU_TEMPLATE_REDOS8" && echo TOFU_TEMPLATE_REDOS8=ok
-'
-```
+При provision VM artifact сохраняет backend metadata исходного template.
+`managed_machines` хранит эти metadata в PostgreSQL.
 
-## 7. Создать стенд
+Поэтому если администратор завтра переключит профиль `redos8` с VM 9002 на VM
+9100, уже созданный вчера стенд всё равно уничтожается с исходными lifecycle
+данными. Для нового provision используется уже новый template.
 
-Обычный:
-
-```yaml
-- id: vm
-  spider: tofu-proxmox
-  action: provision
-  with:
-    name: redvrm-test-001
-    os: redos8
-```
-
-Короткоживущий:
-
-```yaml
-- id: vm
-  spider: tofu-proxmox
-  action: provision
-  with:
-    name: quick-test
-    os: redos8
-    lifetime: 30m
-```
-
-Тестовый увеличенный:
-
-```yaml
-- id: vm
-  spider: tofu-proxmox
-  action: provision
-  with:
-    name: redvrm-heavy-test
-    os: redos8
-    lifetime: 2h
-    resources:
-      cpu: 8
-      memory_gb: 16
-      disk_gb: 80
-```
-
-Lifecycle provision:
-
-```text
-tofu init
-  -> tofu apply
-  -> clone golden image
-  -> apply only requested resource overrides
-  -> start VM
-  -> qemu guest agent reports IPv4
-  -> Artifact(type=vm)
-  -> managed_machines row in PostgreSQL
-```
-
-VM artifact содержит `requested_resources` и `lifetime`, чтобы в истории запуска
-было видно, что именно запросил сценарий. Run хранит artifact целиком, включая
-metadata, а не восстанавливает его из строки лога.
-
-## 8. Автоматический TTL cleanup
-
-При регистрации VM Арахна вычисляет абсолютный `expires_at`:
-
-```text
-created_at + lifetime -> expires_at
-```
-
-В PostgreSQL хранится отдельная запись `managed_machines` с пользовательской
-идентичностью машины и backend metadata, нужной для управления ею.
-
-Lifecycle reaper работает на общем APScheduler Арахны раз в минуту:
-
-```text
-PostgreSQL
-  -> expired managed_machines
-  -> claim: running -> destroying
-  -> tofu-proxmox destroy
-  -> destroyed
-```
-
-Если backend destroy завершился ошибкой, машина получает `reap_failed` и будет
-повторно подобрана следующим проходом. Claim имеет пятиминутный lease: если Арахна
-умерла посреди удаления и запись осталась `destroying`, после истечения lease её
-можно подобрать снова.
-
-Так как `expires_at` хранится в PostgreSQL, рестарт приложения не продлевает жизнь
-машины.
-
-## 9. Уничтожить стенд вручную
-
-Используйте то же имя:
+Ручное удаление:
 
 ```yaml
 - id: cleanup
@@ -400,46 +277,39 @@ PostgreSQL
     os: redos8
 ```
 
-`resources` и `lifetime` при destroy повторять не нужно. State хранится отдельно
-для каждого имени стенда в persistent Docker volume. Успешный destroy возвращает
-lifecycle VM artifact со `state: destroyed`, поэтому запись `managed_machines`
-закрывается и при ручном удалении тоже.
+`resources`, `lifetime` и backend-параметры повторять не требуется.
 
-## Переменные целиком
+## TTL
 
-| Переменная | Нужно | Что это |
-|---|---:|---|
-| `PROXMOX_VE_ENDPOINT` | да | `https://host:8006/`, без `/api2/json` |
-| `PROXMOX_VE_API_TOKEN` | да | `user@realm!tokenid=secret` |
-| `PROXMOX_VE_INSECURE` | нет | TLS bypass, в production `false` |
-| `TOFU_TEMPLATE_REDOS7/8/WINDOWS` | для нужной ОС | VM ID golden image |
-| `TOFU_TEMPLATE_*_NODE` | желательно | source node шаблона |
-| `TOFU_NODE_NAME` | multi-node | target node |
-| `TOFU_CLONE_DATASTORE` | при необходимости | target datastore клона |
-| `TOFU_DEFAULT_GOLDEN_DISK_GB` | для disk override | базовый размер, сейчас 40 |
-| `TOFU_SYSTEM_DISK_INTERFACE` | для disk override | общий system disk interface, обычно `scsi0` |
-| `TOFU_TEMPLATE_*_DISK_DATASTORE` | для disk override | datastore системного диска профиля |
-| `TOFU_TEMPLATE_*_DISK_GB` | редко | per-OS базовый размер |
-| `TOFU_TEMPLATE_*_DISK_INTERFACE` | редко | per-OS disk interface |
-| `TOFU_ROOT` | обычно нет | путь к OpenTofu modules |
-| `TOFU_STATE_ROOT` | обычно нет | persistent state directory |
-| `TOFU_DEV_FALLBACK` | только dev | synthetic VM fallback |
+При `lifetime` Арахна сохраняет абсолютный `expires_at` в PostgreSQL.
+Общий APScheduler раз в минуту подбирает просроченные `managed_machines` и вызывает
+обычный `tofu-proxmox destroy`.
 
-Для TTL дополнительных `.env` переменных не требуется. Срок жизни задаётся
-пользователем на уровне сценария, абсолютный `expires_at` хранится в PostgreSQL.
-
-## Что не надо прокидывать в scenario YAML
-
-Не кладите туда API token, Proxmox user/password, VM ID шаблонов, node, datastore,
-disk interface или provider/OpenTofu-параметры.
-
-Пользовательский уровень должен говорить только о желаемом стенде:
-
-```yaml
-os: redos8
-lifetime: 30m
-resources:
-  memory_gb: 16
+```text
+running
+  -> expires_at
+  -> destroying
+  -> destroyed
 ```
 
-Всё остальное — работа backend-а Арахны.
+Failed destroy переходит в `reap_failed` и ретраится. Claim имеет lease, поэтому
+падение Арахны посреди cleanup не создаёт бессмертную VM. Restart приложения не
+сбрасывает TTL.
+
+## Что не надо писать в scenario или env
+
+Не переносите туда:
+
+```text
+VM ID template
+node
+system disk interface
+datastore
+размер golden disk
+CPU/RAM golden image
+OpenTofu provider internals
+```
+
+Пользовательский сценарий описывает только желаемую машину. Golden Image меню
+описывает только соответствие человеческого профиля конкретному template. Всё
+остальное spider обязан узнать сам.
