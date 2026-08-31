@@ -173,23 +173,15 @@ class Run(Base):
     status = Column(String(16), default="running")   # running|success|failed|cancelled
     created_at = Column(DateTime, default=utcnow)
     completed_at = Column(DateTime, nullable=True)
-    log = Column(Text, default="")           # raw stdout, appended live
+    log = Column(Text, default="")
     artifacts = Column(JSON, default=list)
 
     user = relationship("User")
 
 
 class ManagedMachine(Base):
-    """A VM/resource owned by Arachne rather than by a particular hypervisor UI.
-
-    Public identity lives in first-class columns. Backend-specific details needed
-    to operate the machine stay in backend_metadata and are never part of the
-    scenario contract.
-    """
+    """A VM/resource owned by Arachne rather than by a particular hypervisor UI."""
     __tablename__ = "managed_machines"
-    __table_args__ = (
-        UniqueConstraint("backend", "vm_id", name="uq_managed_machine_backend_vmid"),
-    )
 
     id = Column(Integer, primary_key=True)
     run_id = Column(String(36), ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -204,6 +196,7 @@ class ManagedMachine(Base):
     backend_metadata = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    destroy_claimed_at = Column(DateTime(timezone=True), nullable=True, index=True)
     destroyed_at = Column(DateTime(timezone=True), nullable=True)
 
     run = relationship("Run")
