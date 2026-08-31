@@ -23,6 +23,7 @@ services:
       SCENARIOS_CONFIG: /app/config/scenarios.yaml
       TOFU_ROOT: /app/tofu
       TOFU_STATE_ROOT: /var/lib/arachne/tofu-state
+      TOFU_PROVIDER_MIRROR: "${TOFU_PROVIDER_MIRROR:-}"
       SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
     volumes:
