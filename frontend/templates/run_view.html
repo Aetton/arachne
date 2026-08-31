@@ -129,17 +129,36 @@
         {% set md = a.get('metadata') or {} %}
         {% set network = md.get('network') or {} %}
         {% set identity = md.get('identity') or {} %}
-        <div class="block text-sm py-0.5">
-          <i class="ti ti-server"></i> {{ a.get('name', 'artifact') }}
-          <span class="muted text-xs mono">{{ a.get('type', '') }}</span>
-          {% if network.get('primary_ip') %}
-          <span class="muted text-xs mono">{{ network.get('primary_ip') }}</span>
-          {% elif a.get('location') %}
-          <span class="muted text-xs mono">{{ a.get('location') }}</span>
-          {% endif %}
-          {% if identity.get('id') %}
-          <span class="muted text-xs mono">#{{ identity.get('id') }}</span>
-          {% endif %}
+        {% set backend = md.get('backend') or {} %}
+        {% set ip = network.get('primary_ip') or a.get('location') or '' %}
+        <div style="display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:.8rem;align-items:center;padding:.65rem .75rem;margin:.35rem 0;border:1px solid var(--web-line-dim);border-radius:8px;background:color-mix(in srgb,var(--surface2) 42%,transparent)">
+          <div style="min-width:0">
+            <div style="display:flex;align-items:center;gap:.55rem;flex-wrap:wrap">
+              <strong style="font-size:.9rem"><i class="ti ti-server" style="color:var(--web-node)"></i> {{ a.get('name', 'artifact') }}</strong>
+              <span class="muted text-xs mono">{{ a.get('type', '') }}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;margin-top:.28rem">
+              {% if ip %}
+              <a href="ssh://{{ ip }}" class="link text-xs mono" title="Open target address">
+                <i class="ti ti-network"></i> {{ ip }}
+              </a>
+              {% endif %}
+              {% if identity.get('id') %}
+              <span class="muted text-xs mono"><i class="ti ti-hash"></i> VM {{ identity.get('id') }}</span>
+              {% endif %}
+              {% if backend.get('spider') %}
+              <span class="muted text-xs mono">{{ backend.get('spider') }}</span>
+              {% endif %}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:.4rem">
+            {% if a.get('type') == 'vm' and backend.get('spider') == 'tofu-proxmox' %}
+            <a href="/runs/{{ run.id }}/artifacts/{{ loop.index0 }}/console.vv"
+               class="btn-ghost text-xs" download title="Download a fresh SPICE console ticket">
+              <i class="ti ti-device-desktop"></i> SPICE .vv
+            </a>
+            {% endif %}
+          </div>
         </div>
         {% endif %}
       {% endfor %}
