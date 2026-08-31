@@ -116,54 +116,83 @@
       {% endfor %}
     </div>
 
-    {% if run.status == "success" and run.artifacts %}
+    {% if run.status != "running" and run.artifacts %}
     <div class="artifact-block run-final-artifacts">
-      <h4><i class="ti ti-package"></i> Output</h4>
-      {% for a in run.artifacts %}
-        {% if a.get('download_url') %}
-        <a href="{{ a.get('download_url') }}" class="link block text-sm py-0.5">
-          <i class="ti ti-paperclip"></i> {{ a.get('name', 'artifact') }}
-          <span class="muted text-xs mono">{{ a.get('type', '') }}</span>
-        </a>
-        {% else %}
-        {% set md = a.get('metadata') or {} %}
-        {% set network = md.get('network') or {} %}
-        {% set identity = md.get('identity') or {} %}
-        {% set backend = md.get('backend') or {} %}
-        {% set ip = network.get('primary_ip') or a.get('location') or '' %}
-        <div style="display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:.8rem;align-items:center;padding:.65rem .75rem;margin:.35rem 0;border:1px solid var(--web-line-dim);border-radius:8px;background:color-mix(in srgb,var(--surface2) 42%,transparent)">
-          <div style="min-width:0">
-            <div style="display:flex;align-items:center;gap:.55rem;flex-wrap:wrap">
-              <strong style="font-size:.9rem"><i class="ti ti-server" style="color:var(--web-node)"></i> {{ a.get('name', 'artifact') }}</strong>
-              <span class="muted text-xs mono">{{ a.get('type', '') }}</span>
+      <h4><i class="ti ti-box-multiple"></i> Outputs</h4>
+      <div style="display:grid;gap:.55rem">
+      {% for o in run.artifacts %}
+        {% set kind = o.get('output_type') or 'artifact' %}
+        {% set data = o.get('data') or {} %}
+        {% set links = o.get('links') or [] %}
+        <div style="padding:.75rem .85rem;border:1px solid var(--web-line-dim);border-radius:8px;background:color-mix(in srgb,var(--surface2) 42%,transparent)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:.55rem;min-width:0">
+              {% if kind == 'machine' %}<i class="ti ti-server" style="color:var(--web-node)"></i>
+              {% elif kind == 'access' %}<i class="ti ti-network" style="color:var(--web-node)"></i>
+              {% elif kind == 'console' %}<i class="ti ti-device-desktop" style="color:var(--web-node)"></i>
+              {% elif kind == 'ansible' %}<i class="ti ti-terminal-2" style="color:var(--web-node)"></i>
+              {% else %}<i class="ti ti-package" style="color:var(--web-node)"></i>{% endif %}
+              <strong style="font-size:.9rem">{{ o.get('title') or o.get('name') or 'output' }}</strong>
+              <span class="muted text-xs mono">{{ kind }}</span>
+              {% if o.get('step_id') %}<span class="muted text-xs mono">{{ o.get('step_id') }}</span>{% endif %}
             </div>
-            <div style="display:flex;align-items:center;gap:.9rem;flex-wrap:wrap;margin-top:.28rem">
-              {% if ip %}
-              <a href="ssh://{{ ip }}" class="link text-xs mono" title="Open target address">
-                <i class="ti ti-network"></i> {{ ip }}
-              </a>
-              {% endif %}
-              {% if identity.get('id') %}
-              <span class="muted text-xs mono"><i class="ti ti-hash"></i> VM {{ identity.get('id') }}</span>
-              {% endif %}
-              {% if backend.get('spider') %}
-              <span class="muted text-xs mono">{{ backend.get('spider') }}</span>
-              {% endif %}
+            {% if links %}
+            <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+              {% for link in links %}
+                {% if not link.get('disabled') %}
+                <a href="{{ link.get('href', '#') }}" class="btn-ghost text-xs"
+                   {% if link.get('kind') == 'console' %}onclick="window.open(this.href, 'arachne-console-{{ run.id }}-{{ loop.index0 }}', 'popup=yes,width=1280,height=800,resizable=yes,scrollbars=yes'); return false;"{% endif %}>
+                  {% if link.get('kind') == 'download' %}<i class="ti ti-download"></i>
+                  {% elif link.get('kind') == 'console' %}<i class="ti ti-device-desktop"></i>
+                  {% else %}<i class="ti ti-external-link"></i>{% endif %}
+                  {{ link.get('label', 'Open') }}
+                </a>
+                {% endif %}
+              {% endfor %}
             </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:.4rem">
-            {% if a.get('type') == 'vm' and backend.get('spider') == 'tofu-proxmox' %}
-            <a href="/runs/{{ run.id }}/artifacts/{{ loop.index0 }}/console"
-               class="btn-ghost text-xs"
-               title="Open Proxmox noVNC console in a separate window"
-               onclick="window.open(this.href, 'arachne-vnc-{{ identity.get('id') or loop.index0 }}', 'popup=yes,width=1280,height=800,resizable=yes,scrollbars=yes'); return false;">
-              <i class="ti ti-device-desktop"></i> Open VNC ↗
-            </a>
             {% endif %}
           </div>
+
+          {% if kind == 'machine' %}
+          <div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-top:.4rem">
+            {% if data.get('id') %}<span class="text-xs mono"><i class="ti ti-hash"></i> {{ data.get('id') }}</span>{% endif %}
+            {% if data.get('os') %}<span class="text-xs mono">{{ data.get('os') }}{% if data.get('arch') %} / {{ data.get('arch') }}{% endif %}</span>{% endif %}
+            {% if data.get('state') %}<span class="text-xs mono">{{ data.get('state') }}</span>{% endif %}
+            {% if data.get('backend') %}<span class="muted text-xs mono">{{ data.get('backend') }}</span>{% endif %}
+          </div>
+          {% elif kind == 'access' %}
+          <div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-top:.4rem">
+            {% if data.get('host') %}<span class="text-xs mono"><i class="ti ti-network"></i> {{ data.get('host') }}</span>{% endif %}
+            {% if data.get('connection') %}<span class="text-xs mono">{{ data.get('connection') }}{% if data.get('port') %}:{{ data.get('port') }}{% endif %}</span>{% endif %}
+            {% if data.get('credentials_ref') %}<span class="muted text-xs mono"><i class="ti ti-key"></i> {{ data.get('credentials_ref') }}</span>{% endif %}
+          </div>
+          {% elif kind == 'console' %}
+          <div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-top:.4rem">
+            {% if data.get('provider') %}<span class="text-xs mono">{{ data.get('provider') }}</span>{% endif %}
+            {% if data.get('protocol') %}<span class="text-xs mono">{{ data.get('protocol') }}</span>{% endif %}
+            {% if data.get('target_id') %}<span class="muted text-xs mono">target {{ data.get('target_id') }}</span>{% endif %}
+          </div>
+          {% elif kind == 'ansible' %}
+          <div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-top:.4rem">
+            {% if data.get('status') %}<span class="text-xs mono">{{ data.get('status') }}</span>{% endif %}
+            {% if data.get('runner') %}<span class="muted text-xs mono">{{ data.get('runner') }}</span>{% endif %}
+          </div>
+          {% if data.get('params') %}
+          <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.45rem">
+            {% for k, v in data.get('params').items() %}
+            <span class="run-param"><span class="run-param-key">{{ k }}</span><span class="run-param-value">{{ v }}</span></span>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% else %}
+          <div style="display:flex;gap:.9rem;flex-wrap:wrap;margin-top:.4rem">
+            {% if data.get('artifact_type') %}<span class="text-xs mono">{{ data.get('artifact_type') }}</span>{% endif %}
+            {% if data.get('location') %}<span class="muted text-xs mono">{{ data.get('location') }}</span>{% endif %}
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
       {% endfor %}
+      </div>
     </div>
     {% endif %}
 
