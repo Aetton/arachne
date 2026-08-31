@@ -4,16 +4,67 @@ Arachne делит пауков по смыслу операции, а не по
 
 | Семейство | Что делает | Примеры |
 |---|---|---|
-| `Weave` | создаёт артефакты | Forgejo/GitLab build, package builder |
+| `Weave` | создаёт артефакты | Forgejo/GitLab workflow, package builder |
 | `Brood` | создаёт вычислительное окружение | OpenTofu/Proxmox, oVirt, cloud provisioner |
 | `Command` | выполняет действия на созданном окружении | Ansible, SSH, WinRM, test runner |
+
+## Терминология DSL
+
+Публичный DSL использует только доменные имена:
+
+```text
+weave
+brood
+command
+```
+
+Для явного указания семейства шага используется `family`:
+
+```yaml
+- id: stand
+  spider: tofu-proxmox
+  family: brood
+  action: brood
+```
+
+Обычно `family` можно не писать: редактор и runtime берут его из зарегистрированного spider.
+
+Поле `kind` не является частью нового публичного DSL. Старые сохранённые сценарии с
+`kind: build` или `kind: provision` продолжают исполняться как compatibility input,
+но редактор больше не должен предлагать эти значения.
+
+Канонические действия для основных семейств:
+
+```text
+Weave   -> action: weave
+Brood   -> action: brood
+Command -> action: command
+```
+
+Backend-specific lifecycle actions могут существовать рядом, например `destroy` у
+`tofu-proxmox`.
+
+Старые `build`, `provision`, `run` и `deploy` могут временно приниматься конкретными
+spider-ами как aliases, но новая документация и редактор их не используют как основной путь.
+
+## Wire compatibility
+
+Внутри транспорта пока остаются старые subject kinds:
+
+```text
+build
+provision
+```
+
+Они нужны только для совместимости с существующими NATS subjects и удалёнными
+responders. Пользователь сценария не должен их знать и не должен писать их вручную.
+
+## Brood Target v1
 
 Главная граница проходит между `Brood` и `Command`: command-spider не должен знать,
 каким backend был создан target. Он получает стандартный structured artifact.
 
-## Brood Target v1
-
-Контракт называется:
+Контракт:
 
 ```text
 arachne.brood-target/v1
@@ -58,25 +109,13 @@ backend:
     node_name: pve01
 ```
 
-### Обязательная публичная часть
-
-Command-spider может полагаться на:
-
-- `identity` — стабильная идентичность target;
-- `platform` — ОС, семейство и архитектура;
-- `network` — основной адрес и список адресов;
-- `access` — предпочтительный протокол и endpoints;
-- `lifecycle` — состояние и эфемерность;
-- `backend.spider` — только для диагностики.
-
-`backend.data` является opaque payload конкретного Brood-spider. Command-spider не
-должен строить логику на `vm_id`, Proxmox node, datastore и других provider-specific
-полях.
+Command-spider может полагаться на `identity`, `platform`, `network`, `access`,
+`lifecycle` и `backend.spider`. `backend.data` является opaque payload конкретного
+Brood-spider и не используется для общей логики.
 
 ### Credentials
 
-Секреты не кладутся в artifact открытым текстом. При наличии credentials используется
-ссылка:
+Секреты не кладутся в artifact открытым текстом. Используется только ссылка:
 
 ```yaml
 access:
@@ -85,43 +124,29 @@ access:
     ref: machine/1234/ssh
 ```
 
-Разрешённый consumer должен получать секрет через отдельный resolver. Логи и обычный
-UI не должны раскрывать secret value.
+## Brood -> Command
 
-## Переход со старых provision artifacts
-
-До миграции всех Brood-spider старые `type: vm` artifacts с плоскими полями
-`ip`, `os`, `conn`, `port`, `vm_id` нормализуются ядром в `Brood Target v1` перед
-помещением в scenario context.
-
-Плоские поля пока сохраняются как compatibility aliases, поэтому старые ссылки вида:
+Новый рекомендуемый сценарий:
 
 ```yaml
-target: "${stand.ip}"
+steps:
+  - id: stand
+    spider: tofu-proxmox
+    action: brood
+    with:
+      name: test-001
+      os: redos8
+      lifetime: 30m
+
+  - id: deploy
+    spider: ansible-local
+    action: command
+    with:
+      target: "${stand.artifact}"
+      playbook: install.yml
 ```
 
-продолжают работать.
-
-Новый рекомендуемый путь:
-
-```yaml
-- id: stand
-  spider: tofu-proxmox
-  action: provision
-  with:
-    name: test-001
-    os: redos8
-    lifetime: 30m
-
-- id: deploy
-  spider: ansible-local
-  action: deploy
-  with:
-    target: "${stand.artifact}"
-    playbook: install.yml
-```
-
-`ansible-local` распознаёт Brood artifact и передаёт playbook скалярные переменные:
+`ansible-local` раскрывает Brood artifact в стабильные scalar vars:
 
 ```text
 target=10.81.19.57
@@ -136,33 +161,11 @@ target_family=linux
 target_arch=x86_64
 ```
 
-Так playbook может мигрировать отдельно от scenario: значение `target` остаётся
-обычным адресом, хотя scenario уже передаёт целый structured artifact.
-
-## FAMILY и KIND
-
-`FAMILY` — доменная терминология Arachne:
-
-```text
-weave
-brood
-command
-```
-
-`KIND` пока остаётся старым wire-routing значением:
-
-```text
-build
-provision
-```
-
-Это намеренное разделение. Оно позволяет вводить новую модель без одномоментного
-изменения NATS subjects и удалённых responders. После миграции транспорта `KIND`
-можно будет привести к новой терминологии отдельной версией wire protocol.
+Плоские `${stand.ip}` и старые action aliases пока сохраняются для совместимости.
 
 ## Требование к новым паукам
 
-Новые plugins должны наследоваться от одного из классов:
+Новые plugins наследуются от:
 
 ```python
 WeaveSpider
@@ -170,9 +173,7 @@ BroodSpider
 CommandSpider
 ```
 
-`BuildSpider` и `ProvisionSpider` оставлены как compatibility aliases для старых
-plugins.
+`BuildSpider` и `ProvisionSpider` существуют только как compatibility aliases.
 
-Новый Brood-spider должен либо сразу вернуть `arachne.brood-target/v1`, либо как
-минимум вернуть достаточно стандартных полей для compatibility normalizer. Для новых
-реализаций предпочтителен прямой выпуск v1-контракта.
+Новый Brood-spider должен выпускать `arachne.brood-target/v1` либо достаточно данных
+для compatibility normalizer. Для новых реализаций нормальный путь — прямой выпуск v1.
