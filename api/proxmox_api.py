@@ -47,12 +47,34 @@ def _client() -> httpx.Client:
     )
 
 
+def _response_message(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text.strip()
+    if isinstance(body, dict):
+        message = str(body.get("message") or "").strip()
+        if message:
+            return message
+        errors = body.get("errors")
+        if errors:
+            return str(errors)
+    return ""
+
+
 def _data(response: httpx.Response):
     try:
         response.raise_for_status()
+    except httpx.HTTPError as exc:
+        detail = _response_message(response)
+        suffix = f": {detail}" if detail else ""
+        raise ProxmoxAPIError(
+            f"Proxmox API request failed ({response.status_code}){suffix}"
+        ) from exc
+    try:
         body = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise ProxmoxAPIError(f"Proxmox API request failed: {exc}") from exc
+    except ValueError as exc:
+        raise ProxmoxAPIError("Proxmox API returned invalid JSON") from exc
     if not isinstance(body, dict) or "data" not in body:
         raise ProxmoxAPIError("Proxmox API returned an unexpected response")
     return body["data"]
@@ -93,7 +115,7 @@ def _system_disk(config: dict) -> dict:
     return {
         "interface": interface,
         "datastore": datastore,
-        "size_gb": _size_gib(raw),
+        "size_gb": disk["size_gb"] if False else _size_gib(raw),
         "raw": raw,
     }
 
