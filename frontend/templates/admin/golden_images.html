@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Golden Images · Arachne{% endblock %}
+
+{% block content %}
+<style>
+  .golden-shell { max-width: 1180px; margin: 0 auto; display: grid; gap: 1.25rem; }
+  .golden-hero {
+    position: relative; overflow: hidden; padding: 1.4rem 1.5rem;
+    border: 1px solid var(--border); border-radius: .9rem;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--surface) 92%, var(--accent) 8%), var(--surface));
+  }
+  .golden-hero::after {
+    content: ""; position: absolute; width: 19rem; height: 19rem; right: -8rem; top: -10rem;
+    border-radius: 50%; border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    box-shadow: 0 0 0 2.5rem color-mix(in srgb, var(--accent) 4%, transparent),
+                0 0 0 5rem color-mix(in srgb, var(--accent) 3%, transparent);
+    pointer-events: none;
+  }
+  .golden-hero-row { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .golden-title { display: flex; align-items: center; gap: .85rem; }
+  .golden-title-icon {
+    width: 2.8rem; height: 2.8rem; display: grid; place-items: center; border-radius: .75rem;
+    background: color-mix(in srgb, var(--accent) 15%, var(--surface2)); color: var(--accent); font-size: 1.45rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  }
+  .golden-title h1 { font-size: 1.35rem; font-weight: 750; letter-spacing: -.02em; }
+  .golden-title p { margin-top: .15rem; font-size: .8rem; color: var(--muted); max-width: 42rem; }
+  .golden-status { display: inline-flex; align-items: center; gap: .4rem; padding: .38rem .62rem; border-radius: 999px; font-size: .72rem; border: 1px solid var(--border); background: var(--surface2); }
+  .golden-status.ok { color: var(--ok-fg); border-color: color-mix(in srgb, var(--ok-fg) 35%, var(--border)); }
+  .golden-status.bad { color: var(--fail-fg); border-color: color-mix(in srgb, var(--fail-fg) 35%, var(--border)); }
+  .golden-dot { width: .42rem; height: .42rem; border-radius: 50%; background: currentColor; box-shadow: 0 0 .65rem currentColor; }
+
+  .golden-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: .9rem; }
+  .golden-card { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: .85rem; background: var(--surface); }
+  .golden-card.unhealthy { border-color: color-mix(in srgb, var(--fail-fg) 40%, var(--border)); }
+  .golden-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .8rem; padding: 1rem 1rem .75rem; }
+  .golden-card-name { display: flex; gap: .7rem; align-items: center; }
+  .golden-os-icon { width: 2.25rem; height: 2.25rem; display: grid; place-items: center; border-radius: .6rem; background: var(--surface2); color: var(--accent); font-size: 1.15rem; }
+  .golden-card h2 { font-weight: 700; line-height: 1.2; }
+  .golden-slug { font-family: var(--font-mono); color: var(--muted); font-size: .7rem; margin-top: .18rem; }
+  .golden-badge { font-size: .66rem; padding: .22rem .45rem; border-radius: 999px; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
+  .golden-badge.ready { color: var(--ok-fg); }
+  .golden-badge.problem { color: var(--fail-fg); }
+
+  .golden-live { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface2) 58%, transparent); padding: .75rem 1rem; }
+  .golden-template-name { font-weight: 650; font-size: .86rem; display: flex; align-items: center; gap: .4rem; }
+  .golden-template-meta { margin-top: .16rem; color: var(--muted); font-size: .7rem; font-family: var(--font-mono); }
+  .golden-facts { margin-top: .65rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: .42rem; }
+  .golden-fact { min-width: 0; padding: .45rem .5rem; border-radius: .5rem; border: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 80%, transparent); }
+  .golden-fact-label { color: var(--muted); font-size: .6rem; text-transform: uppercase; letter-spacing: .055em; }
+  .golden-fact-value { margin-top: .1rem; font-family: var(--font-mono); font-size: .74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .golden-missing { display: flex; gap: .55rem; align-items: flex-start; color: var(--fail-fg); font-size: .76rem; line-height: 1.4; }
+
+  .golden-actions { display: flex; gap: .45rem; justify-content: flex-end; padding: .75rem 1rem; }
+  .golden-empty { padding: 2.5rem 1.4rem; text-align: center; border: 1px dashed var(--border); border-radius: .85rem; color: var(--muted); }
+  .golden-empty i { display: block; font-size: 2rem; color: var(--accent); margin-bottom: .55rem; }
+
+  dialog.golden-dialog { width: min(560px, calc(100vw - 2rem)); border: 1px solid var(--border); border-radius: .9rem; padding: 0; background: var(--surface); color: var(--fg); box-shadow: 0 1.5rem 5rem rgba(0,0,0,.38); }
+  dialog.golden-dialog::backdrop { background: rgba(3, 5, 10, .64); backdrop-filter: blur(4px); }
+  .golden-dialog-head { padding: 1rem 1.1rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
+  .golden-dialog-body { padding: 1rem 1.1rem; display: grid; gap: .8rem; }
+  .golden-dialog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+  .golden-dialog label > span { display: block; color: var(--muted); font-size: .68rem; margin-bottom: .3rem; }
+  .golden-dialog-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: .9rem 1.1rem; border-top: 1px solid var(--border); }
+  .golden-help { font-size: .7rem; color: var(--muted); line-height: 1.45; }
+  @media (max-width: 680px) {
+    .golden-hero-row { align-items: flex-start; flex-direction: column; }
+    .golden-facts { grid-template-columns: 1fr 1fr; }
+    .golden-dialog-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<div class="golden-shell">
+  <section class="golden-hero">
+    <div class="golden-hero-row">
+      <div class="golden-title">
+        <div class="golden-title-icon"><i class="ti ti-diamond"></i></div>
+        <div>
+          <h1>Golden Images</h1>
+          <p>Человеческие профили стендов. Вы выбираете template, Арахна сама читает его node, storage, диск и ресурсы из Proxmox.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        {% if proxmox_error %}
+          <span class="golden-status bad"><span class="golden-dot"></span> Proxmox недоступен</span>
+        {% else %}
+          <span class="golden-status ok"><span class="golden-dot"></span> {{ templates_available|length }} templates видно</span>
+        {% endif %}
+        <button class="btn" type="button" onclick="openGoldenDialog()"><i class="ti ti-plus mr-1"></i> Новый профиль</button>
+      </div>
+    </div>
+  </section>
+
+  {% if proxmox_error %}
+  <div class="surface rounded-lg p-4 text-sm" style="border-color: color-mix(in srgb, var(--fail-fg) 35%, var(--border));">
+    <div class="font-semibold" style="color: var(--fail-fg);"><i class="ti ti-plug-connected-x mr-1"></i> Не удалось опросить Proxmox</div>
+    <div class="muted mt-1">{{ proxmox_error }}</div>
+  </div>
+  {% endif %}
+
+  {% if profiles %}
+  <section class="golden-grid">
+    {% for profile in profiles %}
+    <article class="golden-card {% if not profile.healthy %}unhealthy{% endif %}">
+      <div class="golden-card-head">
+        <div class="golden-card-name">
+          <div class="golden-os-icon">
+            {% if profile.os == 'windows' %}<i class="ti ti-brand-windows"></i>{% else %}<i class="ti ti-brand-linux"></i>{% endif %}
+          </div>
+          <div>
+            <h2>{{ profile.label }}</h2>
+            <div class="golden-slug">{{ profile.slug }} · {{ profile.os }}</div>
+          </div>
+        </div>
+        {% if not profile.enabled %}
+          <span class="golden-badge">disabled</span>
+        {% elif profile.healthy %}
+          <span class="golden-badge ready">● ready</span>
+        {% else %}
+          <span class="golden-badge problem">● broken</span>
+        {% endif %}
+      </div>
+
+      <div class="golden-live">
+        {% if profile.live %}
+          <div class="golden-template-name"><i class="ti ti-template"></i> {{ profile.live.name }}</div>
+          <div class="golden-template-meta">VM {{ profile.live.vm_id }} · {{ profile.live.node }}</div>
+          <div class="golden-facts">
+            <div class="golden-fact"><div class="golden-fact-label">CPU</div><div class="golden-fact-value">{{ profile.live.cpu }} vCPU</div></div>
+            <div class="golden-fact"><div class="golden-fact-label">RAM</div><div class="golden-fact-value">{{ profile.live.memory_gb }} GiB</div></div>
+            <div class="golden-fact"><div class="golden-fact-label">Disk</div><div class="golden-fact-value">{{ profile.live.disk_gb or '?' }} GiB</div></div>
+            <div class="golden-fact"><div class="golden-fact-label">Interface</div><div class="golden-fact-value">{{ profile.live.disk_interface or '?' }}</div></div>
+            <div class="golden-fact"><div class="golden-fact-label">Storage</div><div class="golden-fact-value">{{ profile.live.disk_datastore or '?' }}</div></div>
+            <div class="golden-fact"><div class="golden-fact-label">Node</div><div class="golden-fact-value">{{ profile.live.node }}</div></div>
+          </div>
+        {% else %}
+          <div class="golden-missing">
+            <i class="ti ti-alert-triangle text-lg"></i>
+            <div><strong>Template VM {{ profile.vm_id }} не найден.</strong><br>Профиль сохранён, но provision через него заблокирован до выбора живого template.</div>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="golden-actions">
+        <form method="post" action="/admin/golden-images/{{ profile.slug }}/delete" onsubmit="return confirm('Удалить профиль {{ profile.label }}?')">
+          <button class="btn-ghost" type="submit" title="Delete"><i class="ti ti-trash"></i></button>
+        </form>
+        <button class="btn-ghost" type="button"
+          data-slug="{{ profile.slug }}" data-label="{{ profile.label }}" data-os="{{ profile.os }}"
+          data-vmid="{{ profile.vm_id }}" data-enabled="{{ '1' if profile.enabled else '0' }}"
+          onclick="editGoldenDialog(this)"><i class="ti ti-settings mr-1"></i> Настроить</button>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="golden-empty">
+    <i class="ti ti-diamond-off"></i>
+    <div class="font-semibold" style="color: var(--fg);">Профилей пока нет</div>
+    <div class="mt-1 text-sm">Создай первый профиль и свяжи его с template. Например: <code>redos8 → RedOS 8 Golden</code>.</div>
+  </section>
+  {% endif %}
+</div>
+
+<dialog id="golden-dialog" class="golden-dialog">
+  <form method="post" action="/admin/golden-images/save">
+    <div class="golden-dialog-head">
+      <div>
+        <div id="golden-dialog-title" class="font-semibold">Новый Golden Image</div>
+        <div class="golden-help mt-1">Храним только соответствие. Фактическую конфигурацию читает spider.</div>
+      </div>
+      <button class="btn-ghost" type="button" onclick="document.getElementById('golden-dialog').close()"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="golden-dialog-body">
+      <input type="hidden" id="golden-original-slug" name="original_slug" value="">
+      <div class="golden-dialog-grid">
+        <label><span>Красивое имя</span><input id="golden-label" name="label" required placeholder="RedOS 8"></label>
+        <label><span>Ключ профиля</span><input id="golden-slug" name="slug" required placeholder="redos8" pattern="[a-z0-9][a-z0-9._-]{0,63}"></label>
+      </div>
+      <div class="golden-dialog-grid">
+        <label><span>Семейство ОС</span>
+          <select id="golden-os" name="os" required>
+            <option value="redos8">RedOS 8</option>
+            <option value="redos7">RedOS 7</option>
+            <option value="windows">Windows</option>
+          </select>
+        </label>
+        <label><span>Template в Proxmox</span>
+          <select id="golden-vmid" name="vm_id" required {% if not templates_available %}disabled{% endif %}>
+            <option value="">Выбрать template…</option>
+            {% for t in templates_available %}
+            <option value="{{ t.vm_id }}">{{ t.name }} · #{{ t.vm_id }} · {{ t.node }} · {{ t.cpu }} CPU · {{ t.memory_gb }} GiB</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <label class="check-control">
+        <input id="golden-enabled" type="checkbox" name="enabled" checked>
+        <span class="check-control-box"></span>
+        <span>Профиль доступен для provision</span>
+      </label>
+      <div class="golden-help"><i class="ti ti-info-circle mr-1"></i>Node, datastore, disk interface, размер системного диска, CPU и RAM не сохраняются. Они всегда берутся из выбранного template в момент запуска.</div>
+    </div>
+    <div class="golden-dialog-foot">
+      <button class="btn-ghost" type="button" onclick="document.getElementById('golden-dialog').close()">Отмена</button>
+      <button class="btn" type="submit" {% if not templates_available %}disabled{% endif %}>Сохранить профиль</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function openGoldenDialog() {
+    const d = document.getElementById('golden-dialog');
+    document.getElementById('golden-dialog-title').textContent = 'Новый Golden Image';
+    document.getElementById('golden-original-slug').value = '';
+    document.getElementById('golden-label').value = '';
+    document.getElementById('golden-slug').value = '';
+    document.getElementById('golden-os').value = 'redos8';
+    document.getElementById('golden-vmid').value = '';
+    document.getElementById('golden-enabled').checked = true;
+    d.showModal();
+  }
+
+  function editGoldenDialog(button) {
+    const d = document.getElementById('golden-dialog');
+    document.getElementById('golden-dialog-title').textContent = 'Настроить Golden Image';
+    document.getElementById('golden-original-slug').value = button.dataset.slug;
+    document.getElementById('golden-label').value = button.dataset.label;
+    document.getElementById('golden-slug').value = button.dataset.slug;
+    document.getElementById('golden-os').value = button.dataset.os;
+    document.getElementById('golden-vmid').value = button.dataset.vmid;
+    document.getElementById('golden-enabled').checked = button.dataset.enabled === '1';
+    d.showModal();
+  }
+</script>
+{% endblock %}
