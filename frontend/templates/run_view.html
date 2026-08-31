@@ -98,9 +98,15 @@
             <div class="artifact-block">
               <h4>Captured artifacts</h4>
               {% for a in step.artifacts %}
-              <a href="{{ a.url or '#' }}" class="link block text-xs py-0.5">
-                <i class="ti ti-paperclip"></i> {{ a.name }}
-              </a>
+                {% if a.url %}
+                <a href="{{ a.url }}" class="link block text-xs py-0.5">
+                  <i class="ti ti-paperclip"></i> {{ a.name }}
+                </a>
+                {% else %}
+                <span class="block text-xs py-0.5">
+                  <i class="ti ti-server"></i> {{ a.name }}
+                </span>
+                {% endif %}
               {% endfor %}
             </div>
             {% endif %}
@@ -110,14 +116,32 @@
       {% endfor %}
     </div>
 
-    {% if run.status == "success" and artifacts %}
+    {% if run.status == "success" and run.artifacts %}
     <div class="artifact-block run-final-artifacts">
-      <h4><i class="ti ti-download"></i> Captured artifacts</h4>
-      {% for a in artifacts %}
-      <a href="{{ a.url }}" class="link block text-sm py-0.5">
-        <i class="ti ti-paperclip"></i> {{ a.name }}
-        <span class="muted text-xs mono">{{ a.repo }}</span>
-      </a>
+      <h4><i class="ti ti-package"></i> Output</h4>
+      {% for a in run.artifacts %}
+        {% if a.get('download_url') %}
+        <a href="{{ a.get('download_url') }}" class="link block text-sm py-0.5">
+          <i class="ti ti-paperclip"></i> {{ a.get('name', 'artifact') }}
+          <span class="muted text-xs mono">{{ a.get('type', '') }}</span>
+        </a>
+        {% else %}
+        {% set md = a.get('metadata') or {} %}
+        {% set network = md.get('network') or {} %}
+        {% set identity = md.get('identity') or {} %}
+        <div class="block text-sm py-0.5">
+          <i class="ti ti-server"></i> {{ a.get('name', 'artifact') }}
+          <span class="muted text-xs mono">{{ a.get('type', '') }}</span>
+          {% if network.get('primary_ip') %}
+          <span class="muted text-xs mono">{{ network.get('primary_ip') }}</span>
+          {% elif a.get('location') %}
+          <span class="muted text-xs mono">{{ a.get('location') }}</span>
+          {% endif %}
+          {% if identity.get('id') %}
+          <span class="muted text-xs mono">#{{ identity.get('id') }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
       {% endfor %}
     </div>
     {% endif %}
