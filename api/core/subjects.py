@@ -1,15 +1,14 @@
-"""Subject topology of the web. Boring and stable on purpose — one place defines
-the naming so nothing drifts into arachne.super.cool.magic.v2.final2.
+"""Stable bus subject topology.
 
-  arachne.thread.{kind}.{spider}.run      request  → run one step, stream logs
-  arachne.thread.{kind}.{spider}.cancel   publish  → cut a running thread
-  arachne.thread.{kind}.{spider}.health   request  → {ok: bool}
-  arachne.thread.log.{run_id}.{step_id}   publish  ← log lines (vibrations)
-  arachne.event.run.completed             publish  ← lifecycle events
-  arachne.event.run.started / .failed
+  arachne.thread.{kind}.{spider}.run
+  arachne.thread.{kind}.{spider}.cancel
+  arachne.thread.{kind}.{spider}.health
+  arachne.thread.log.{run_id}.{step_id}
+  arachne.event.run.completed
 
-kind = build | provision. Including it lets a host subscribe to a whole class
-of threads with a wildcard: arachne.thread.build.>
+``kind`` is a transport concern, not the public spider taxonomy. During the
+Weave/Brood/Command migration the wire keeps the compatible values ``build`` and
+``provision``. Spider ``FAMILY`` carries the domain meaning.
 """
 
 
