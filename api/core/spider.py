@@ -1,15 +1,15 @@
 """Spider contracts and the three Arachne operation families.
 
-Arachne keeps orchestration in the centre. A spider executes one step against one
-external system and knows nothing about the full scenario graph.
+Domain family and transport kind are intentionally separate. FAMILY is the public
+Arachne taxonomy; KIND is the legacy bus subject class kept stable during the
+migration of distributed responders.
 
-Operation families:
-  weave   — produce build artifacts (rpm, installer, archive, image, ...)
+Families:
+  weave   — produce build artifacts
   brood   — provision environments or machines
-  command — execute work against resources produced by a Brood spider
+  command — execute work against resources produced by Brood
 
-All three share the same lifecycle:
-  dispatch / stream_logs / get_status / get_artifacts / cancel / healthcheck
+Wire kinds remain ``build`` and ``provision`` for compatibility.
 """
 from __future__ import annotations
 
@@ -20,16 +20,15 @@ from core.types import RunHandle, LogLine, RunStatus, Artifact, StepSpec
 
 
 class BaseSpider(ABC):
-    KIND: str = "base"
+    FAMILY: str = "base"
+    KIND: str = "build"
     NAME: str = "base"
 
     def healthcheck(self) -> bool:
-        """Is the anchor reachable / are runners online? Default: assume yes."""
         return True
 
     @abstractmethod
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
-        """Start the work and return a handle used to track it."""
         ...
 
     @abstractmethod
@@ -49,22 +48,25 @@ class BaseSpider(ABC):
 
 
 class WeaveSpider(BaseSpider):
-    KIND = "weave"
-
-
-class BroodSpider(BaseSpider):
-    KIND = "brood"
-
-
-class CommandSpider(BaseSpider):
-    KIND = "command"
-
-
-# Compatibility aliases for existing plugins and external extensions. New spiders
-# should inherit from WeaveSpider / BroodSpider / CommandSpider directly.
-class BuildSpider(WeaveSpider):
+    FAMILY = "weave"
     KIND = "build"
 
 
-class ProvisionSpider(BroodSpider):
+class BroodSpider(BaseSpider):
+    FAMILY = "brood"
     KIND = "provision"
+
+
+class CommandSpider(BaseSpider):
+    FAMILY = "command"
+    KIND = "build"
+
+
+# Compatibility names. Existing third-party spiders can migrate inheritance when
+# convenient without changing their current bus subjects.
+class BuildSpider(WeaveSpider):
+    pass
+
+
+class ProvisionSpider(BroodSpider):
+    pass
