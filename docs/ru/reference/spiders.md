@@ -69,8 +69,10 @@
 
 ## `tofu-proxmox`
 
-Создаёт временную VM клонированием Proxmox template через OpenTofu. Сценарий задаёт
-логическую ОС и ресурсы, а ID шаблона и параметры Proxmox берутся из окружения.
+Создаёт временную VM полным клонированием заранее подготовленного Proxmox golden
+template через OpenTofu.
+
+Обычный сценарий задаёт только имя стенда и логическую ОС:
 
 ```yaml
 - id: vm
@@ -79,42 +81,50 @@
   with:
     name: arachne-test-001
     os: redos8
-    vcpus: 4
-    ram_mb: 8192
-    disk_gb: 40
 ```
+
+CPU, RAM, диски и сеть **не переопределяются**. Их источником правды остаётся
+золотой шаблон. Для наших золотых образов системный диск принят равным 40 GiB.
 
 Поддерживаемые ОС: `redos7`, `redos8`, `windows`. Соответствие шаблонам задаётся
 через `TOFU_TEMPLATE_REDOS7`, `TOFU_TEMPLATE_REDOS8` и
-`TOFU_TEMPLATE_WINDOWS`. Для диагностики ID шаблона можно явно передать как
-`with.template_vm_id`, но обычным сценариям Proxmox VM ID знать не нужно.
+`TOFU_TEMPLATE_WINDOWS`. Значение — Proxmox VM ID template.
 
-Параметры инфраструктуры по умолчанию:
+Source node шаблона задаётся соответствующей переменной:
 
-| Переменная | По умолчанию | Назначение |
-|---|---|---|
-| `TOFU_NODE_NAME` | `pve` | Proxmox node |
-| `TOFU_DATASTORE` | `local-lvm` | datastore для клона и дисков |
-| `TOFU_BRIDGE` | `vmbr0` | сетевой bridge |
-| `TOFU_DISK_INTERFACE` | `scsi0` | системный диск шаблона |
-| `TOFU_STATE_ROOT` | `/tmp/arachne-tofu-state` | каталог локальных state |
+- `TOFU_TEMPLATE_REDOS7_NODE`;
+- `TOFU_TEMPLATE_REDOS8_NODE`;
+- `TOFU_TEMPLATE_WINDOWS_NODE`.
 
-Endpoint и учётные данные провайдера берутся из стандартных переменных
-`bpg/proxmox`, прежде всего `PROXMOX_VE_ENDPOINT` и `PROXMOX_VE_API_TOKEN`.
+На single-node Proxmox этот node одновременно используется как target node. В
+multi-node окружении target можно переопределить глобально через
+`TOFU_NODE_NAME`. Для cross-node clone на non-shared storage можно задать
+`TOFU_CLONE_DATASTORE`.
 
-Каждый стенд получает отдельный `terraform.tfstate` и отдельный `TF_DATA_DIR` в
-`TOFU_STATE_ROOT/<name>`. Поэтому параллельные стенды не используют один local
-state.
+Для диагностики те же значения можно передать через `with.template_vm_id`,
+`with.template_node_name`, `with.node_name` и `with.clone_datastore_id`, но в
+обычных опубликованных сценариях Proxmox-внутренности держать не надо.
+
+Endpoint и учётные данные provider берутся из стандартных переменных
+`bpg/proxmox`:
+
+- `PROXMOX_VE_ENDPOINT`;
+- `PROXMOX_VE_API_TOKEN`;
+- `PROXMOX_VE_INSECURE` при необходимости.
+
+Каждый стенд получает отдельный `terraform.tfstate`, `.terraform` и рабочий каталог
+в `TOFU_STATE_ROOT/<name>`. В контейнерной установке каталог state вынесен в
+persistent volume, поэтому рестарт Арахны не лишает её возможности уничтожить
+созданную VM.
 
 После `apply` паук читает outputs `vm_id` и `vm_ip`. Артефакт `vm` содержит IP,
-VM ID, hostname, ОС, архитектуру, тип подключения, порт, ресурсы, template VM ID,
-backend и состояние. `redos7`/`redos8` используют SSH:22, `windows` — WinRM:5985.
+VM ID, ОС, архитектуру, тип подключения, порт, template VM ID, node, backend и
+состояние. `redos7`/`redos8` используют SSH:22, `windows` — WinRM:5985.
 
-Шаблон должен быть подготовлен к клонированию: системный диск ожидается на
-`TOFU_DISK_INTERFACE`, сеть получает адрес по DHCP, а qemu-guest-agent должен быть
-установлен и запущен. Для Windows нужен эквивалентный Cloudbase-Init setup.
-Без рабочего guest agent OpenTofu не сможет вернуть `vm_ip`, и шаг завершится
-ошибкой.
+Golden template должен получать сеть по DHCP и иметь работающий
+`qemu-guest-agent`. Без guest agent provider не вернёт IPv4, и шаг завершится
+ошибкой. Guest hostname сейчас отдельно не меняется: downstream шаги используют IP
+из артефакта.
 
 Удаление стенда выполняется отдельным шагом с тем же `name` и `os`:
 
@@ -128,10 +138,13 @@ backend и состояние. `redos7`/`redos8` используют SSH:22, `w
 ```
 
 `destroy` использует state этого имени. Если state отсутствует, шаг падает вместо
-того, чтобы молча изображать успешную уборку.
+того, чтобы угадывать VM по имени и удалять что-нибудь напрямую через API.
 
-Если бинарник `tofu` не найден, production-поведение — ошибка. Старый синтетический
-VM fallback включается только явно через `TOFU_DEV_FALLBACK=true`.
+Если бинарник `tofu` не найден, production-поведение — ошибка. Синтетический VM
+fallback включается только явно через `TOFU_DEV_FALLBACK=true`.
+
+Полная настройка Proxmox, API token, ACL, TLS и golden templates описана в
+[`operations/proxmox-opentofu.md`](../operations/proxmox-opentofu.md).
 
 ## `ansible-ovirt`
 
