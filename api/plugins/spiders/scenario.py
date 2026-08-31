@@ -1,31 +1,29 @@
-"""Scenario spider: run another Arachne scenario as a step.
+"""Command spider: run another Arachne scenario as a child step.
 
-Example:
+Canonical DSL:
 
-    - id: build-auth
+    - id: smoke
       spider: scenario
-      action: run
+      action: command
       with:
-        scenario: build-broker-auth
+        scenario: smoke-test
         params:
-          version: "${params.version}"
-          release: "${params.release}"
-          branch: "${params.branch}"
+          target: "${stand.artifact}"
 
-The child run is a regular persisted Arachne run. Its logs are streamed into the
-parent step, and its terminal status becomes the step status.
+Legacy ``action: run`` remains accepted because the spider does not couple its
+backend execution to the public action spelling.
 """
 from __future__ import annotations
 
 import asyncio
 from typing import AsyncIterator
 
-from core.spider import BuildSpider
+from core.spider import CommandSpider
 from core.registry import register_spider
 from core.types import Artifact, LogLine, RunHandle, RunStatus, StepSpec
 
 
-class ScenarioSpider(BuildSpider):
+class ScenarioSpider(CommandSpider):
     NAME = "scenario"
 
     def __init__(self):
