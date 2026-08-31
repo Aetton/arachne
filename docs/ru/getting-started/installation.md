@@ -69,9 +69,63 @@ PROXMOX_VE_INSECURE=false
 
 ## Внутренний центр сертификации
 
-Не выключайте TLS-проверку просто потому, что сертификат внутренний. Положите CA в каталог `certs/`, который Compose монтирует в `/etc/ssl/certs/`, и проверьте значения `SSL_CERT_FILE` и `REQUESTS_CA_BUNDLE`.
+Не выключайте TLS-проверку просто потому, что сертификат внутренний.
+
+Положите один или несколько корпоративных CA в каталог `certs/`. Каждый сертификат должен быть отдельным файлом с расширением `.crt`, например:
+
+```text
+certs/
+├── redsoft-root-ca.crt
+└── redsoft-intermediate-ca.crt
+```
+
+Compose монтирует этот каталог в:
+
+```text
+/usr/local/share/ca-certificates/arachne/
+```
+
+При старте контейнера entrypoint запускает `update-ca-certificates`. Корпоративные CA добавляются в штатный Debian trust store вместе с публичными корневыми сертификатами.
+
+Итоговый bundle:
+
+```text
+/etc/ssl/certs/ca-certificates.crt
+```
+
+Именно его используют `SSL_CERT_FILE` и `REQUESTS_CA_BUNDLE`.
+
+Не монтируйте `certs/` поверх `/etc/ssl/certs/` и не указывайте `SSL_CERT_FILE` на одиночный корпоративный сертификат. Иначе системные публичные CA будут скрыты, и HTTPS к `registry.opentofu.org`, GitHub, PyPI и другим внешним сервисам начнёт падать с `x509: certificate signed by unknown authority`.
 
 `FORGEJO_VERIFY_TLS=false` или `PROXMOX_VE_INSECURE=true` годятся только для короткого локального эксперимента. В эксплуатации используйте доверенный CA.
+
+### Проверка trust store
+
+После запуска контейнера проверьте итоговый bundle:
+
+```bash
+docker compose exec arachne sh -lc '
+  echo "$SSL_CERT_FILE"
+  test -s /etc/ssl/certs/ca-certificates.crt
+  ls -l /etc/ssl/certs/ca-certificates.crt
+'
+```
+
+Публичный TLS:
+
+```bash
+docker compose exec arachne \
+  curl -fsSI https://registry.opentofu.org/
+```
+
+Если используется внутренний Proxmox CA:
+
+```bash
+docker compose exec arachne \
+  curl -fsS "${PROXMOX_VE_ENDPOINT%/}/api2/json/version"
+```
+
+При корректном trust store должны работать одновременно и публичные, и внутренние HTTPS endpoints.
 
 ## Проверка после запуска
 
