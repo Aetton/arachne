@@ -46,6 +46,9 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         "inputs": {
             "name": {"default": "test-stand"},
             "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"]},
+            "lifetime": {
+                "description": "Optional lifetime before automatic cleanup: 30m, 2h, 1d"
+            },
             "resources": {
                 "description": "Optional resource overrides: cpu, memory_gb, disk_gb"
             },
