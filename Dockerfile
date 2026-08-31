@@ -53,7 +53,8 @@ COPY --from=docs-builder /docs/.vitepress/dist /app/wiki/
 
 RUN chmod +x api/runners/demo_play.sh \
     && chmod +x scripts/*.sh \
-    && mkdir -p /var/lib/arachne/tofu-state
+    && mkdir -p /var/lib/arachne/tofu-state \
+    && mkdir -p /usr/local/share/ca-certificates/arachne
 
 WORKDIR /app/api
 
@@ -62,8 +63,11 @@ ENV PYTHONUNBUFFERED=1 \
     ANSIBLE_PLAYBOOKS_DIR=/app/playbooks \
     SCENARIOS_CONFIG=/app/config/scenarios.yaml \
     TOFU_ROOT=/app/tofu \
-    TOFU_STATE_ROOT=/var/lib/arachne/tofu-state
+    TOFU_STATE_ROOT=/var/lib/arachne/tofu-state \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 
 EXPOSE 8000
 
+ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
 CMD ["sh", "-c", "alembic -c ../alembic.ini upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 8000"]
