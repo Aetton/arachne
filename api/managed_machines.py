@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import timezone
+from datetime import timedelta, timezone
 
 from database import ManagedMachine, SessionLocal, utcnow
 from core.lifetime import parse_lifetime
@@ -18,7 +18,8 @@ from core.types import Artifact, RunStatus, StepSpec
 from core import wire_codec
 from core.thread_client import run_step
 
-_ACTIVE_STATES = {"running", "ready", "destroying"}
+_ACTIVE_STATES = {"running", "ready", "destroying", "reap_failed"}
+_DESTROY_LEASE = timedelta(minutes=5)
 
 
 def _as_aware(dt):
@@ -47,7 +48,8 @@ def register_artifact(run_id: str, user_id: int | None, artifact: Artifact) -> N
             machine = db.query(ManagedMachine).filter(
                 ManagedMachine.backend == backend,
                 ManagedMachine.vm_id == vm_id,
-            ).first()
+                ManagedMachine.state.in_(_ACTIVE_STATES),
+            ).order_by(ManagedMachine.id.desc()).first()
         if machine is None:
             machine = db.query(ManagedMachine).filter(
                 ManagedMachine.backend == backend,
@@ -60,15 +62,14 @@ def register_artifact(run_id: str, user_id: int | None, artifact: Artifact) -> N
                 machine.state = "destroyed"
                 machine.destroyed_at = utcnow()
                 machine.expires_at = None
+                machine.destroy_claimed_at = None
                 machine.backend_metadata = md
                 db.commit()
             return
 
         lifetime = md.get("lifetime")
-        expires_at = None
         delta = parse_lifetime(lifetime)
-        if delta is not None:
-            expires_at = utcnow() + delta
+        expires_at = utcnow() + delta if delta is not None else None
 
         if machine is None:
             machine = ManagedMachine(
@@ -91,6 +92,7 @@ def register_artifact(run_id: str, user_id: int | None, artifact: Artifact) -> N
             machine.ip = str(md.get("ip") or machine.ip or "")
             machine.os = str(md.get("os") or machine.os or "")
             machine.state = state
+            machine.destroy_claimed_at = None
             machine.credentials_ref = md.get("credentials_ref") or machine.credentials_ref
             machine.backend_metadata = md
             if lifetime not in (None, ""):
@@ -102,34 +104,61 @@ def register_artifact(run_id: str, user_id: int | None, artifact: Artifact) -> N
 
 
 def list_expired_ids() -> list[int]:
+    """Return expired machines, including stale interrupted destroy attempts."""
     now = utcnow()
+    stale_before = now - _DESTROY_LEASE
     db = SessionLocal()
     try:
         rows = db.query(ManagedMachine).filter(
-            ManagedMachine.state == "running",
             ManagedMachine.expires_at.is_not(None),
             ManagedMachine.expires_at <= now,
+            ManagedMachine.state.in_(("running", "reap_failed", "destroying")),
         ).all()
-        return [row.id for row in rows]
+        result = []
+        for row in rows:
+            if row.state != "destroying":
+                result.append(row.id)
+                continue
+            claimed = _as_aware(row.destroy_claimed_at)
+            if claimed is None or claimed <= stale_before:
+                result.append(row.id)
+        return result
     finally:
         db.close()
 
 
 def _claim(machine_id: int) -> dict | None:
-    """Atomically-ish claim one expired machine for this process.
+    """Claim one expired machine under a row lock.
 
-    The state transition is committed before backend work so overlapping scheduler
-    ticks do not launch duplicate destroy calls in one shared database.
+    A five-minute lease makes cleanup recoverable if Arachne dies after claiming
+    a machine but before the backend destroy finishes.
     """
+    now = utcnow()
+    stale_before = now - _DESTROY_LEASE
     db = SessionLocal()
     try:
-        machine = db.get(ManagedMachine, machine_id)
-        if not machine or machine.state != "running":
+        query = db.query(ManagedMachine).filter(ManagedMachine.id == machine_id)
+        try:
+            query = query.with_for_update(skip_locked=True)
+        except TypeError:
+            query = query.with_for_update()
+        machine = query.first()
+        if not machine:
             return None
+
         expires_at = _as_aware(machine.expires_at)
-        if expires_at is None or expires_at > utcnow():
+        if expires_at is None or expires_at > now:
             return None
+
+        if machine.state == "destroying":
+            claimed = _as_aware(machine.destroy_claimed_at)
+            if claimed is not None and claimed > stale_before:
+                return None
+        elif machine.state not in {"running", "reap_failed"}:
+            return None
+
         machine.state = "destroying"
+        machine.destroy_claimed_at = now
         db.commit()
         return {
             "id": machine.id,
@@ -149,6 +178,7 @@ def _mark_destroyed(machine_id: int) -> None:
             machine.state = "destroyed"
             machine.destroyed_at = utcnow()
             machine.expires_at = None
+            machine.destroy_claimed_at = None
             db.commit()
     finally:
         db.close()
@@ -160,6 +190,7 @@ def _mark_reap_failed(machine_id: int, message: str) -> None:
         machine = db.get(ManagedMachine, machine_id)
         if machine:
             machine.state = "reap_failed"
+            machine.destroy_claimed_at = None
             md = dict(machine.backend_metadata or {})
             md["reap_error"] = message
             md["reap_failed_at"] = utcnow().isoformat()
