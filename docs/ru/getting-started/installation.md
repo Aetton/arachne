@@ -6,7 +6,15 @@
 - Git;
 - свободный порт `8080`;
 - доступ от контейнера Arachne к PostgreSQL и подключаемым системам;
-- доверенный корневой сертификат, если Forgejo или Nexus используют внутренний CA.
+- доверенный корневой сертификат, если Forgejo, Nexus или Proxmox используют внутренний CA.
+
+Для `tofu-proxmox` дополнительно нужны:
+
+- OpenTofu внутри контейнера Arachne;
+- доступ к Proxmox VE API по HTTPS;
+- сервисный API token;
+- хотя бы один подготовленный QEMU template;
+- QEMU Guest Agent в golden image.
 
 ## Локальный запуск
 
@@ -26,9 +34,7 @@ docker compose logs -f arachne
 - OpenAPI — `http://localhost:8080/docs`;
 - проверку живости — `http://localhost:8080/healthz`.
 
-Первый пользователь — `admin`. Пароль берётся из `ADMIN_PASSWORD` только при
-создании учётной записи. Изменение переменной после первого старта пароль в базе
-не меняет.
+Первый пользователь — `admin`. Пароль берётся из `ADMIN_PASSWORD` только при создании учётной записи. Изменение переменной после первого старта пароль в базе не меняет.
 
 ## Что поменять в `.env`
 
@@ -49,16 +55,23 @@ FORGEJO_OWNER=example
 FORGEJO_VERIFY_TLS=true
 ```
 
+Для Proxmox добавьте только параметры подключения:
+
+```dotenv
+PROXMOX_VE_ENDPOINT=https://pve.example.internal:8006/
+PROXMOX_VE_API_TOKEN=arachne@pve!arachne=<TOKEN_SECRET>
+PROXMOX_VE_INSECURE=false
+```
+
+Не прописывайте VM ID шаблонов, node, datastore и disk metadata в `.env`. После старта они настраиваются через **Control -> Golden Images**, а фактические характеристики template читаются через Proxmox API.
+
 Полный список переменных — в [справочнике конфигурации](/ru/reference/configuration).
 
 ## Внутренний центр сертификации
 
-Не выключайте TLS-проверку просто потому, что сертификат внутренний. Положите CA
-в каталог `certs/`, который Compose монтирует в `/etc/ssl/certs/`, и проверьте
-значения `SSL_CERT_FILE` и `REQUESTS_CA_BUNDLE`.
+Не выключайте TLS-проверку просто потому, что сертификат внутренний. Положите CA в каталог `certs/`, который Compose монтирует в `/etc/ssl/certs/`, и проверьте значения `SSL_CERT_FILE` и `REQUESTS_CA_BUNDLE`.
 
-`FORGEJO_VERIFY_TLS=false` годится для короткого локального эксперимента. В
-эксплуатации это аккуратная кнопка «сделать MITM штатной функцией».
+`FORGEJO_VERIFY_TLS=false` или `PROXMOX_VE_INSECURE=true` годятся только для короткого локального эксперимента. В эксплуатации используйте доверенный CA.
 
 ## Проверка после запуска
 
@@ -73,3 +86,23 @@ docker compose logs --tail=100 arachne
 ```json
 {"status":"ok"}
 ```
+
+Если планируется OpenTofu provisioning:
+
+```bash
+docker compose exec arachne tofu version
+```
+
+После настройки Proxmox откройте **Control -> Golden Images**. Если API token и TLS настроены правильно, страница должна показать доступные QEMU templates.
+
+Первый рабочий профиль удобно создать как:
+
+```text
+Name: RedOS 8
+Key:  redos8
+OS:   redos8
+```
+
+После этого сценарий с `os: redos8` сможет использовать профиль без знания VM ID.
+
+Подробно: [Golden Images](/ru/operations/golden-images).
