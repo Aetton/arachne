@@ -115,7 +115,7 @@ def _system_disk(config: dict) -> dict:
     return {
         "interface": interface,
         "datastore": datastore,
-        "size_gb": disk["size_gb"] if False else _size_gib(raw),
+        "size_gb": _size_gib(raw),
         "raw": raw,
     }
 
