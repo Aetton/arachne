@@ -1,11 +1,11 @@
 # Ephemeral stand provisioning for Arachne.
 #
-# The golden template is the source of truth for VM hardware, disks, network and
-# guest configuration. Arachne only chooses the template and the target VM name.
+# The golden template is the source of truth. Optional resource overrides are
+# applied only when the scenario explicitly asks for them. Scenario authors never
+# need to know Proxmox nodes, VM IDs, datastores or disk interfaces.
 #
 # Credentials and endpoint are intentionally not stored here. bpg/proxmox reads
-# PROXMOX_VE_ENDPOINT and PROXMOX_VE_API_TOKEN (or username/password) from the
-# environment inherited by the tofu-proxmox spider.
+# PROXMOX_VE_ENDPOINT and PROXMOX_VE_API_TOKEN from the inherited environment.
 
 terraform {
   required_providers {
@@ -30,20 +30,41 @@ variable "template_vm_id" {
   type = number
 }
 
-# Node where the cloned VM will live.
 variable "node_name" {
   type = string
 }
 
-# Source node of the template. Leave empty when the template is on node_name.
 variable "template_node_name" {
   type    = string
   default = ""
 }
 
-# Optional target datastore for the clone. Empty means inherit the template
-# storage placement. Set this when cloning across nodes with non-shared storage.
 variable "clone_datastore_id" {
+  type    = string
+  default = ""
+}
+
+variable "override_cpu" {
+  type    = number
+  default = null
+}
+
+variable "override_memory_mb" {
+  type    = number
+  default = null
+}
+
+variable "override_disk_gb" {
+  type    = number
+  default = null
+}
+
+variable "override_disk_interface" {
+  type    = string
+  default = ""
+}
+
+variable "override_disk_datastore_id" {
   type    = string
   default = ""
 }
@@ -60,9 +81,32 @@ resource "proxmox_virtual_environment_vm" "stand" {
     full          = true
   }
 
-  # Golden templates must have qemu-guest-agent installed. Keeping it enabled
-  # lets the provider expose ipv4_addresses so Arachne can hand the VM to the
-  # next step without hard-coded addressing.
+  # No block means inherit that resource dimension from the golden template.
+  dynamic "cpu" {
+    for_each = var.override_cpu == null ? [] : [var.override_cpu]
+    content {
+      cores = cpu.value
+    }
+  }
+
+  dynamic "memory" {
+    for_each = var.override_memory_mb == null ? [] : [var.override_memory_mb]
+    content {
+      dedicated = memory.value
+    }
+  }
+
+  # Disk growth is backend-resolved: the scenario gives only the desired size,
+  # while Arachne supplies the template's datastore and system-disk interface.
+  dynamic "disk" {
+    for_each = var.override_disk_gb == null ? [] : [var.override_disk_gb]
+    content {
+      datastore_id = var.override_disk_datastore_id
+      interface    = var.override_disk_interface
+      size         = disk.value
+    }
+  }
+
   agent {
     enabled = true
   }
