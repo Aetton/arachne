@@ -48,15 +48,34 @@ _DOTENV_IMPORTS = {
     },
 }
 
+# Capture legacy env_file values before runtime service bindings can replace or
+# remove those process variables. Values stay server-side and are never rendered.
+_DOTENV_SNAPSHOT = {
+    name: str(os.getenv(name, ""))
+    for spec in _DOTENV_IMPORTS.values()
+    for name in spec["variables"]
+}
+
 
 def _checked(form, name: str) -> bool:
     return str(form.get(name) or "").lower() in {"1", "true", "on", "yes"}
 
 
+def _writable_providers() -> list[dict]:
+    result = []
+    for row in list_providers():
+        if not row.get("enabled"):
+            continue
+        if row.get("kind") == "vault" and (row.get("config") or {}).get("mode") == "read-only":
+            continue
+        result.append(row)
+    return result
+
+
 def _dotenv_candidates() -> list[dict]:
     result = []
     for service, spec in _DOTENV_IMPORTS.items():
-        present = [name for name in spec["variables"] if str(os.getenv(name, "")).strip()]
+        present = [name for name in spec["variables"] if _DOTENV_SNAPSHOT.get(name, "").strip()]
         missing = [name for name in spec["variables"] if name not in present]
         result.append({
             "service": service,
@@ -73,7 +92,7 @@ def _dotenv_candidates() -> list[dict]:
 
 def _import_dotenv_service(service: str, provider_slug: str, existing: set[str]) -> str:
     spec = _DOTENV_IMPORTS[service]
-    values = {name: str(os.getenv(name, "")) for name in spec["variables"]}
+    values = {name: _DOTENV_SNAPSHOT.get(name, "") for name in spec["variables"]}
     missing = [name for name, value in values.items() if not value.strip()]
     if missing:
         raise ValueError(f"{service}: missing dotenv variable(s): {', '.join(missing)}")
@@ -123,7 +142,7 @@ async def admin_secrets_import(request: Request, user=Depends(require_administra
         request,
         "admin/secrets_import.html",
         user=user,
-        providers=[row for row in list_providers() if row.get("enabled")],
+        providers=_writable_providers(),
         candidates=_dotenv_candidates(),
         imported=request.query_params.get("imported", ""),
         error=request.query_params.get("error", ""),
@@ -136,8 +155,9 @@ async def admin_secrets_import_apply(request: Request, user=Depends(require_admi
     provider_slug = str(form.get("provider") or "").strip().lower()
     selected = [str(value).strip().lower() for value in form.getlist("service")]
     selected = [service for service in selected if service in _DOTENV_IMPORTS]
-    if not provider_slug:
-        raise HTTPException(400, "Select a secret provider")
+    writable = {row["slug"] for row in _writable_providers()}
+    if provider_slug not in writable:
+        raise HTTPException(400, "Select an enabled writable secret provider")
     if not selected:
         raise HTTPException(400, "Select at least one dotenv secret")
 
