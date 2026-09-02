@@ -91,6 +91,63 @@ class PlaybookRepository:
             "path": str(root.resolve()),
         }
 
+    def list_refs(self) -> list[str]:
+        """Return branch and tag names visible after a fresh fetch."""
+        if not self.repo_url:
+            raise PlaybookRepositoryError("playbook repository URL is empty")
+        if shutil.which("git") is None:
+            raise PlaybookRepositoryError("git executable is not available")
+
+        with _LOCK:
+            mirror = self._ensure_mirror()
+            self._fetch(mirror)
+            proc = self._git(
+                "--git-dir",
+                str(mirror),
+                "for-each-ref",
+                "--format=%(refname)",
+                "refs/heads",
+                "refs/remotes/origin",
+                "refs/tags",
+            )
+
+        refs: set[str] = set()
+        for raw in proc.stdout.splitlines():
+            raw = raw.strip()
+            if raw.startswith("refs/heads/"):
+                refs.add(raw[len("refs/heads/"):])
+            elif raw.startswith("refs/remotes/origin/"):
+                name = raw[len("refs/remotes/origin/"):]
+                if name != "HEAD":
+                    refs.add(name)
+            elif raw.startswith("refs/tags/"):
+                refs.add(raw[len("refs/tags/"):])
+
+        ordered = sorted(refs)
+        if self.default_ref in ordered:
+            ordered.remove(self.default_ref)
+            ordered.insert(0, self.default_ref)
+        elif self.default_ref:
+            ordered.insert(0, self.default_ref)
+        return ordered
+
+    def list_playbooks(self, *, ref: str | None = None) -> dict[str, object]:
+        """Return YAML playbooks under the configured subdir for one revision."""
+        info = self.probe(ref=ref)
+        root = Path(info["path"])
+        playbooks = sorted(
+            path.relative_to(root).as_posix()
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".yml", ".yaml"}
+        )
+        return {
+            "repo": info["repo"],
+            "ref": info["ref"],
+            "sha": info["sha"],
+            "subdir": info["subdir"],
+            "playbooks": playbooks,
+        }
+
     def resolve(self, playbook: str, *, ref: str | None = None) -> ResolvedPlaybook:
         relative = self._safe_relative(playbook)
         info = self.probe(ref=ref)
