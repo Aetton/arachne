@@ -1,8 +1,8 @@
 """CommandSpider: runs ansible-playbook locally against explicit targets.
 
-Playbooks normally come from a Git-backed PlaybookRepository. A local playbooks
-directory remains a development compatibility fallback when no repository is
-configured.
+Playbooks normally come from a Git-backed PlaybookRepository configured in the
+Arachne control panel. A local playbooks directory remains a development fallback
+only when no repository has been configured yet.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from core.playbook_repository import PlaybookRepository, ResolvedPlaybook
 from core.spider import CommandSpider
 from core.registry import register_spider
 from core.types import RunHandle, LogLine, RunStatus, Artifact, RunOutput, StepSpec
+from playbook_settings import get_settings
 
 LOCAL_PLAYBOOKS_DIR = os.getenv("ANSIBLE_PLAYBOOKS_DIR", "../playbooks")
 NEXUS_URL = os.getenv("NEXUS_URL", "https://nexus.redsoft.internal").rstrip("/")
@@ -75,7 +76,6 @@ def _extra_vars(params: dict) -> list[str]:
 
 
 def _output_params(params: dict) -> dict:
-    """Small, safe run summary for the UI panel."""
     out = {}
     for key, value in params.items():
         if key in _CONTROL_PARAMS:
@@ -107,16 +107,29 @@ def _local_resolution(playbook: str) -> ResolvedPlaybook:
     )
 
 
+def _configured_repository() -> PlaybookRepository | None:
+    settings = get_settings()
+    repo_url = settings.get("repo_url", "").strip()
+    if not repo_url:
+        return None
+    return PlaybookRepository(
+        repo_url,
+        default_ref=settings.get("default_ref", "main"),
+        subdir=settings.get("subdir", "playbooks"),
+        cache_dir=settings.get("cache_dir", "/var/cache/arachne/playbooks"),
+    )
+
+
 class AnsibleLocalSpider(CommandSpider):
     NAME = "ansible-local"
 
     def __init__(self):
         self._runs: dict[str, dict] = {}
-        self._playbooks = PlaybookRepository.from_env()
 
     def _resolve_playbook(self, playbook: str, ref: str | None) -> ResolvedPlaybook:
-        if self._playbooks is not None:
-            return self._playbooks.resolve(playbook, ref=ref)
+        repository = _configured_repository()
+        if repository is not None:
+            return repository.resolve(playbook, ref=ref)
         return _local_resolution(playbook)
 
     def _command(self, resolved: ResolvedPlaybook, params: dict) -> list[str]:
