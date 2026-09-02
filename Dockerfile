@@ -13,6 +13,7 @@ FROM python:3.12-slim-bookworm
 ARG TOFU_VERSION=1.12.6
 
 # ansible + openssh-client for playbooks that provision/deploy over SSH.
+# sshpass enables password-backed SSH credentials from Control -> Secrets.
 # git/rsync are needed by hub bootstrap tasks that publish reusable Forgejo actions.
 # Pin the Debian release and use the reachable mirror instead of deb.debian.org.
 RUN sed -i \
@@ -21,7 +22,7 @@ RUN sed -i \
         /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        ansible openssh-client curl ca-certificates bash git rsync \
+        ansible openssh-client sshpass curl ca-certificates bash git rsync \
     && arch="$(dpkg --print-architecture)" \
     && case "$arch" in \
          amd64) tofu_arch=amd64 ;; \
