@@ -64,15 +64,14 @@ class PlaybookRepository:
             ),
         )
 
-    def resolve(self, playbook: str, *, ref: str | None = None) -> ResolvedPlaybook:
+    def probe(self, *, ref: str | None = None) -> dict[str, str]:
+        """Fetch the repository and verify that ref/subdir are usable."""
         if not self.repo_url:
             raise PlaybookRepositoryError("playbook repository URL is empty")
         if shutil.which("git") is None:
             raise PlaybookRepositoryError("git executable is not available")
 
-        relative = self._safe_relative(playbook)
         requested_ref = str(ref or self.default_ref).strip() or self.default_ref
-
         with _LOCK:
             mirror = self._ensure_mirror()
             self._fetch(mirror)
@@ -80,6 +79,24 @@ class PlaybookRepository:
             checkout = self._ensure_worktree(mirror, sha)
 
         root = checkout / self.subdir if self.subdir else checkout
+        if not root.is_dir():
+            raise PlaybookRepositoryError(
+                f"repository subdir {self.subdir!r} does not exist in {self.repo_url}@{requested_ref}"
+            )
+        return {
+            "repo": self.repo_url,
+            "ref": requested_ref,
+            "sha": sha,
+            "subdir": self.subdir,
+            "path": str(root.resolve()),
+        }
+
+    def resolve(self, playbook: str, *, ref: str | None = None) -> ResolvedPlaybook:
+        relative = self._safe_relative(playbook)
+        info = self.probe(ref=ref)
+        checkout = self._worktrees_path() / info["sha"]
+        root = checkout / self.subdir if self.subdir else checkout
+
         candidate = (root / relative).resolve()
         root_resolved = root.resolve()
         try:
@@ -90,14 +107,14 @@ class PlaybookRepository:
             ) from exc
         if not candidate.is_file():
             raise PlaybookRepositoryError(
-                f"playbook {relative!r} not found in {self.repo_url}@{requested_ref}"
+                f"playbook {relative!r} not found in {self.repo_url}@{info['ref']}"
             )
 
         return ResolvedPlaybook(
             path=str(candidate),
             repo=self.repo_url,
-            ref=requested_ref,
-            sha=sha,
+            ref=info["ref"],
+            sha=info["sha"],
             relative_path=str(Path(self.subdir) / relative) if self.subdir else relative,
         )
 
