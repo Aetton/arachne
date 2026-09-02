@@ -1,4 +1,4 @@
-"""Admin UI for the Ansible playbook repository connector."""
+"""Admin UI and repository metadata API for the Ansible connector."""
 from __future__ import annotations
 
 import asyncio
@@ -18,6 +18,19 @@ def _repository_from_values(repo_url: str, default_ref: str, subdir: str, cache_
         default_ref=default_ref,
         subdir=subdir,
         cache_dir=cache_dir,
+    )
+
+
+def _configured_repository() -> PlaybookRepository:
+    settings = get_settings()
+    repo_url = str(settings.get("repo_url") or "").strip()
+    if not repo_url:
+        raise HTTPException(409, "Ansible playbook repository is not configured")
+    return _repository_from_values(
+        repo_url,
+        str(settings.get("default_ref") or "main"),
+        str(settings.get("subdir") or ""),
+        str(settings.get("cache_dir") or "/var/cache/arachne/playbooks"),
     )
 
 
@@ -102,3 +115,29 @@ async def admin_ansible_test(
         test_sha=result["sha"],
         test_error="",
     )
+
+
+@app.get("/api/admin/ansible/refs")
+async def admin_ansible_refs(user=Depends(require_role("admin"))):
+    repository = _configured_repository()
+    try:
+        refs = await asyncio.to_thread(repository.list_refs)
+    except PlaybookRepositoryError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {
+        "repo": repository.repo_url,
+        "default_ref": repository.default_ref,
+        "refs": refs,
+    }
+
+
+@app.get("/api/admin/ansible/playbooks")
+async def admin_ansible_playbooks(
+    ref: str | None = None,
+    user=Depends(require_role("admin")),
+):
+    repository = _configured_repository()
+    try:
+        return await asyncio.to_thread(repository.list_playbooks, ref=ref)
+    except PlaybookRepositoryError as exc:
+        raise HTTPException(502, str(exc)) from exc
