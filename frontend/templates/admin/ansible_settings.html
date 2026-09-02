@@ -8,86 +8,43 @@
       <div>
         <div class="eyebrow">Command Spider</div>
         <h1 class="text-xl font-semibold mt-1"><i class="ti ti-brand-ansible mr-2"></i>Ansible playbook source</h1>
-        <p class="muted text-sm mt-2 max-w-3xl">
-          Configure where <span class="mono">ansible-local</span> fetches playbooks. The spider resolves the selected ref to a commit SHA and runs from an immutable cached worktree.
-        </p>
+        <p class="muted text-sm mt-2 max-w-3xl">Configure where <span class="mono">ansible-local</span> fetches playbooks. Git authentication can be attached through <a class="link" href="/admin/secrets">Control → Secrets</a>.</p>
       </div>
       <span class="pill pill-run mono">ansible-local</span>
     </div>
   </div>
 
-  {% if saved %}
-  <div class="surface rounded-xl p-4" style="border-color:var(--ok-fg)">
-    <div class="text-sm"><i class="ti ti-check mr-1"></i> Settings saved. New runs will use this repository configuration.</div>
-  </div>
-  {% endif %}
-
-  {% if test_ok %}
-  <div class="surface rounded-xl p-4" style="border-color:var(--ok-fg)">
-    <div class="text-sm"><i class="ti ti-plug-connected mr-1"></i> Repository connection is healthy.</div>
-    {% if test_sha %}<div class="muted text-xs mono mt-1">resolved commit {{ test_sha }}</div>{% endif %}
-  </div>
-  {% elif test_error %}
-  <div class="surface rounded-xl p-4" style="border-color:var(--fail-fg)">
-    <div class="text-sm" style="color:var(--fail-fg)"><i class="ti ti-plug-connected-x mr-1"></i> Repository check failed</div>
-    <div class="muted text-xs mono mt-2 break-all">{{ test_error }}</div>
-  </div>
-  {% endif %}
+  {% if saved %}<div class="surface rounded-xl p-4" style="border-color:var(--ok-fg)"><div class="text-sm"><i class="ti ti-check mr-1"></i> Settings saved. New runs will use this repository configuration.</div></div>{% endif %}
+  {% if test_ok %}<div class="surface rounded-xl p-4" style="border-color:var(--ok-fg)"><div class="text-sm"><i class="ti ti-plug-connected mr-1"></i> Repository connection is healthy.</div>{% if test_sha %}<div class="muted text-xs mono mt-1">resolved commit {{ test_sha }}</div>{% endif %}</div>{% elif test_error %}<div class="surface rounded-xl p-4" style="border-color:var(--fail-fg)"><div class="text-sm" style="color:var(--fail-fg)"><i class="ti ti-plug-connected-x mr-1"></i> Repository check failed</div><div class="muted text-xs mono mt-2 break-all">{{ test_error }}</div></div>{% endif %}
 
   <form class="surface rounded-xl form-card form-stack" method="post" action="/admin/ansible/save" id="ansible-settings-form">
     <div class="form-section">
       <div class="form-section-title">Repository</div>
-      <label class="grid gap-1">
-        <span class="text-sm">Repository URL</span>
-        <input type="text" name="repo_url" value="{{ settings.repo_url }}" placeholder="git@github.com:org/ansible-infra.git" required>
-        <span class="muted text-xs">SSH, HTTPS or any URL understood by git. Authentication stays in the runtime Git/SSH environment.</span>
-      </label>
+      <label class="grid gap-1"><span class="text-sm">Repository URL</span><input type="text" name="repo_url" value="{{ settings.repo_url }}" placeholder="git@git.internal:infra/ansible.git" required><span class="muted text-xs">SSH or HTTPS URL understood by Git.</span></label>
     </div>
 
     <div class="form-row">
-      <label class="grid gap-1">
-        <span class="text-sm">Default ref</span>
-        <input type="text" name="default_ref" value="{{ settings.default_ref or 'main' }}" placeholder="main" required>
-        <span class="muted text-xs">Branch, tag or commit SHA. A scenario may override it with <span class="mono">playbook_ref</span>.</span>
-      </label>
-      <label class="grid gap-1">
-        <span class="text-sm">Playbook subdirectory</span>
-        <input type="text" name="subdir" value="{{ settings.subdir }}" placeholder="playbooks/arachne">
-        <span class="muted text-xs">Repository-relative root exposed to the spider.</span>
-      </label>
+      <label class="grid gap-1"><span class="text-sm">Git credential</span><select name="credentials_ref"><option value="">Runtime/default Git authentication</option>{% for c in git_credentials %}<option value="{{ c.slug }}" {% if settings.credentials_ref == c.slug %}selected{% endif %}>{{ c.label }} · {{ c.kind }}</option>{% endfor %}</select><span class="muted text-xs">Only <span class="mono">git-ssh</span> and <span class="mono">git-token</span> credentials are shown.</span></label>
+      <label class="grid gap-1"><span class="text-sm">Default ref</span><input type="text" name="default_ref" value="{{ settings.default_ref or 'main' }}" placeholder="main" required><span class="muted text-xs">Branch, tag or commit SHA. A scenario may override it with <span class="mono">playbook_ref</span>.</span></label>
     </div>
 
-    <div class="form-section">
-      <div class="form-section-title">Runtime cache</div>
-      <label class="grid gap-1">
-        <span class="text-sm">Cache directory</span>
-        <input type="text" name="cache_dir" value="{{ settings.cache_dir or '/var/cache/arachne/playbooks' }}" placeholder="/var/cache/arachne/playbooks" required>
-        <span class="muted text-xs">Mirror and immutable worktrees live here. Changing it affects new repository resolutions only.</span>
-      </label>
+    <div class="form-row">
+      <label class="grid gap-1"><span class="text-sm">Playbook subdirectory</span><input type="text" name="subdir" value="{{ settings.subdir }}" placeholder="playbooks/arachne"><span class="muted text-xs">Repository-relative root exposed to the spider.</span></label>
+      <label class="grid gap-1"><span class="text-sm">Cache directory</span><input type="text" name="cache_dir" value="{{ settings.cache_dir or '/var/cache/arachne/playbooks' }}" placeholder="/var/cache/arachne/playbooks" required><span class="muted text-xs">Mirror and immutable worktrees live here.</span></label>
     </div>
 
     <div class="surface-2 rounded-lg p-4 grid gap-2">
       <div class="text-sm font-medium"><i class="ti ti-route mr-1"></i> Resolution path</div>
-      <div class="mono text-xs muted break-all">
-        {{ settings.repo_url or '<repository>' }} @ {{ settings.default_ref or 'main' }}
-        → {{ settings.subdir or '/' }}/&lt;playbook.yml&gt;
-        → {{ settings.cache_dir or '/var/cache/arachne/playbooks' }}/&lt;repo&gt;/worktrees/&lt;sha&gt;/...
-      </div>
+      <div class="mono text-xs muted break-all">{{ settings.repo_url or '<repository>' }} @ {{ settings.default_ref or 'main' }} → {{ settings.subdir or '/' }}/&lt;playbook.yml&gt; → {{ settings.cache_dir or '/var/cache/arachne/playbooks' }}/&lt;repo&gt;/worktrees/&lt;sha&gt;/...</div>
+      <div class="text-xs muted"><i class="ti ti-key mr-1"></i> credential: <span class="mono">{{ settings.credentials_ref or 'runtime/default' }}</span></div>
     </div>
 
-    <div class="flex gap-2 flex-wrap">
-      <button class="btn" type="submit"><i class="ti ti-device-floppy mr-1"></i> Save</button>
-      <button class="btn-ghost" type="submit" formaction="/admin/ansible/test"><i class="ti ti-plug-connected mr-1"></i> Test repository</button>
-    </div>
+    <div class="flex gap-2 flex-wrap"><button class="btn" type="submit"><i class="ti ti-device-floppy mr-1"></i> Save</button><button class="btn-ghost" type="submit" formaction="/admin/ansible/test"><i class="ti ti-plug-connected mr-1"></i> Test repository</button><a class="btn-ghost" href="/admin/secrets"><i class="ti ti-lock mr-1"></i> Manage secrets</a></div>
   </form>
 
-  <div class="surface rounded-xl p-5 grid gap-3">
-    <div class="form-section-title">Scenario usage</div>
-    <pre class="mono text-xs surface-2 rounded-lg p-4 overflow-auto">with:
+  <div class="surface rounded-xl p-5 grid gap-3"><div class="form-section-title">Scenario usage</div><pre class="mono text-xs surface-2 rounded-lg p-4 overflow-auto">with:
   playbook: smoke.yml
   # optional override:
-  playbook_ref: release/1.2</pre>
-    <p class="muted text-xs">Repository URL, subdirectory and cache path are infrastructure settings and do not need to be repeated in scenario YAML.</p>
-  </div>
+  playbook_ref: release/1.2</pre><p class="muted text-xs">Repository URL, credential, subdirectory and cache path are infrastructure settings and do not need to be repeated in scenario YAML.</p></div>
 </div>
 {% endblock %}

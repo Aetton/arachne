@@ -1,120 +1,145 @@
 # Конфигурация
 
-Основные настройки приходят из окружения. Compose читает `.env`, а его
+Основные несекретные настройки приходят из окружения. Compose читает `.env`, а его
 `environment` переопределяет одинаковые ключи из `env_file`.
 
-Важно разделять два типа конфигурации:
+Секреты внешних систем управляются через **Control -> Secrets**. В `.env` остаются
+только bootstrap roots, которые нужны самой Arachne до доступа к Secret Provider.
 
-- **доступ к внешней системе** хранится в окружении;
-- **прикладные соответствия внутри Arachne** хранятся в PostgreSQL и управляются через UI.
-
-Для Proxmox это означает: endpoint и API token лежат в `.env`, а Golden Image profiles настраиваются через **Control -> Golden Images**. VM ID шаблона, node, datastore и параметры дисков в env не дублируются.
-
-## Приложение и безопасность
+## Приложение и bootstrap
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
 | `ENV` / `APP_ENV` | пусто | `prod` и `production` включают проверку опасного JWT secret |
-| `JWT_SECRET` | `dev-secret-change-me` | ключ подписи сессионных JWT |
+| `JWT_SECRET` | `dev-secret-change-me` | bootstrap-ключ подписи сессионных JWT |
 | `TOKEN_TTL_DAYS` | `7` | срок действия токена в днях |
 | `ADMIN_PASSWORD` | `admin` | пароль администратора при первом создании |
 | `DATABASE_URL` | PostgreSQL `db:5432/arachne` | SQLAlchemy URL базы |
+| `POSTGRES_PASSWORD` | задаётся deployment | bootstrap password PostgreSQL |
+| `ARACHNE_MASTER_KEY_SOURCE` | `env` | источник master key для encrypted DB provider: `env` или `file` |
+| `ARACHNE_MASTER_KEY_REF` | `ARACHNE_MASTER_KEY` | имя env или путь к mounted file с master key |
+| `VAULT_TOKEN` / `VAULT_SECRET_ID` | пусто | bootstrap auth Vault, если provider ссылается на эти env refs |
 | `SCENARIOS_CONFIG` | `/app/config/scenarios.yaml` | seed-файл сценариев |
 
-В production `JWT_SECRET` не может быть пустым, `dev-secret-change-me` или
-`change-me-in-prod`. Приложение упадёт при старте. `ADMIN_PASSWORD` применяется
-только при создании пользователя `admin` и не является механизмом смены пароля.
+`ADMIN_PASSWORD` применяется только при создании пользователя `admin`. После этого
+паролем управляет база. Master key и Vault bootstrap secret нельзя хранить в самом
+`Control -> Secrets`, иначе хранилище потребует собственный секрет для доступа к себе.
+
+## Control -> Secrets
+
+Раздел содержит два уровня:
+
+- **Providers**: HashiCorp Vault KV v2 или encrypted DB;
+- **Credentials**: семантические наборы доступа (`ssh`, `winrm`, `git-ssh`, `git-token`, `token`, `basic`).
+
+Secret values после сохранения обратно в браузер не выводятся. Пустое secret-поле
+при редактировании credential означает «оставить текущее значение».
+
+### Service bindings
+
+Forgejo, GitLab, Proxmox VE и Nexus привязываются к credentials в секции
+**Infrastructure bindings**. Binding хранит только credential key.
+
+| Service | Credential type |
+|---|---|
+| Forgejo | `token` |
+| GitLab | `token` |
+| Proxmox VE | `token` |
+| Nexus | `basic` |
+
+Старые adapters пока используют привычные environment variable names внутри процесса,
+но значения материализуются из Secret Provider во время работы Arachne. `.env` больше
+не является владельцем этих credentials.
 
 ## Forgejo и динамические ветки
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
 | `FORGEJO_URL` | адрес-заглушка | базовый URL Forgejo API |
-| `FORGEJO_TOKEN` | пусто | токен сервисной учётной записи |
 | `FORGEJO_OWNER` | `example` | owner шагов без явного `with.owner` |
 | `FORGEJO_VERIFY_TLS` | `true` | проверка TLS |
 | `FORGEJO_DEADLINE` | `3600` | максимум ожидания Actions run, секунд |
 | `FORGEJO_POLL_INTERVAL` | `2` | интервал чтения статуса и логов, секунд |
 | `INPUT_SOURCE_CACHE_TTL` | `30` | кэш списка веток, секунд |
 
-Токен должен читать репозитории и workflow, запускать и отменять Actions run,
-читать логи и артефакты. Точный набор прав зависит от версии Forgejo.
+Токен выбирается в `Control -> Secrets -> Infrastructure bindings` и должен уметь
+читать репозитории/workflow, запускать и отменять Actions run, читать логи и артефакты.
 
 ## GitLab CI
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
 | `GITLAB_URL` | адрес-заглушка | базовый URL GitLab |
-| `GITLAB_TOKEN` | пусто | токен сервисной учётной записи |
 | `GITLAB_VERIFY_TLS` | `true` | проверка TLS |
 | `GITLAB_DEADLINE` | `3600` | максимум ожидания pipeline, секунд |
 | `GITLAB_POLL_INTERVAL` | `2` | интервал чтения статуса и job trace, секунд |
 
-GitLab spider создаёт pipeline через API v4, читает job trace, собирает job artifacts
-и умеет отменять pipeline. В шаге используется `with.project` с ID проекта или путём
-вида `group/subgroup/repo`; `with.repo` работает как короткий алиас. `with.ref` или
-`with.branch` задаёт ветку или тег. Остальные поля `with` передаются в pipeline как
-CI/CD variables.
-
-Пример:
-
-```yaml
-spider: gitlab
-with:
-  project: group/subgroup/repo
-  ref: main
-  VERSION: 1.2.3
-  DEBUG: false
-```
-
-Токену нужны права на чтение проекта, создание и отмену pipeline, чтение jobs,
-trace и artifacts. Если в GitLab запрещены pipeline variables для роли сервисной
-учётки, разрешите их или переведите конкретный pipeline на GitLab inputs.
+GitLab token выбирается в `Control -> Secrets -> Infrastructure bindings`.
 
 ## Proxmox / OpenTofu
 
-В окружении остаются только параметры соединения:
+В окружении остаются только несекретные параметры соединения:
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
-| `PROXMOX_VE_ENDPOINT` | пусто | базовый URL Proxmox VE, например `https://pve.example:8006/` |
-| `PROXMOX_VE_API_TOKEN` | пусто | API token в формате `user@realm!tokenid=secret` |
+| `PROXMOX_VE_ENDPOINT` | пусто | базовый URL Proxmox VE |
 | `PROXMOX_VE_INSECURE` | `false` | отключение TLS verification; для production оставляйте `false` |
 | `TOFU_ROOT` | `../tofu` | корень OpenTofu modules |
 | `TOFU_STATE_ROOT` | `/tmp/arachne-tofu-state` в коде, persistent volume в Compose | workdir и state временных стендов |
 | `TOFU_DEV_FALLBACK` | `false` | синтетическая VM только для разработки |
 
-Golden Image mappings не являются environment configuration. Они хранятся в PostgreSQL и управляются через:
+Proxmox API token выбирается в `Control -> Secrets -> Infrastructure bindings`.
+Golden Image mappings хранятся в PostgreSQL и управляются через `Control -> Golden Images`.
 
-```text
-Control -> Golden Images
+## Ansible playbook repository
+
+Настройки repository управляются через `Control -> Ansible`. Репозиторий может
+использовать credential типа `git-ssh` или `git-token` из `Control -> Secrets`.
+
+`ANSIBLE_PLAYBOOK_CREDENTIALS_REF` допустим только как bootstrap credential key.
+Secret material эта переменная не содержит.
+
+## Brood -> Ansible target access
+
+Brood target contract содержит endpoint и ссылку на credential:
+
+```yaml
+access:
+  preferred: ssh
+  endpoints:
+    ssh:
+      host: 10.81.19.210
+      port: 22
+  credentials:
+    type: secret_ref
+    ref: redos8-default
 ```
 
-Профиль хранит человеческий key, label, OS family, выбранный Proxmox VM ID и enabled state. Source node, datastore, system disk interface, disk size, CPU и RAM читаются напрямую из Proxmox API при каждом provision.
+`ansible-local` автоматически обнаруживает Brood Artifact среди входов шага и
+создаёт временный inventory. Credential разрешается из `Control -> Secrets` только
+перед запуском `ansible-playbook`.
 
-Не добавляйте обратно переменные вида:
+Поддерживаются:
 
-```text
-TOFU_TEMPLATE_*
-TOFU_TEMPLATE_*_NODE
-TOFU_TEMPLATE_*_DISK_*
-TOFU_NODE_NAME
-TOFU_DEFAULT_GOLDEN_DISK_GB
-TOFU_SYSTEM_DISK_INTERFACE
-```
+- `ssh` + private key;
+- `ssh` + password;
+- `winrm` + password.
 
-Они создают второй источник истины для данных, которыми уже владеет Proxmox.
+Runtime directory создаётся с mode `0700`, inventory/key/known_hosts files с `0600`.
+`credentials_ref` не передаётся playbook как extra-var, secret values не попадают в
+command line или RunOutput. После завершения run временный каталог удаляется.
 
-Подробная схема: [Golden Images](/ru/operations/golden-images) и [Proxmox и OpenTofu](/ru/operations/proxmox-opentofu).
+Для SSH password auth container содержит `sshpass`; для WinRM установлен `pywinrm`.
 
-## Артефакты и локальные исполнители
+## Nexus
 
-| Переменная | По умолчанию | Назначение |
-|---|---|---|
-| `NEXUS_URL` | адрес-заглушка | построение ссылок на Nexus |
-| `NEXUS_USER` | пусто | используется playbook/workflow, не порталом напрямую |
-| `NEXUS_PASSWORD` | пусто | то же; храните как секрет |
-| `ANSIBLE_PLAYBOOKS_DIR` | `../playbooks` | каталог playbook |
+`NEXUS_URL` остаётся обычной конфигурацией для построения ссылок. `NEXUS_USER` и
+`NEXUS_PASSWORD` в `.env` больше не хранятся: credential типа `basic` выбирается
+через Infrastructure bindings.
+
+Если upload выполняется внутри удалённого Forgejo/GitLab workflow, этот workflow
+должен получать Nexus secret из secret store своей CI-системы. Arachne намеренно не
+проталкивает пароль через workflow inputs.
 
 ## Шина
 
@@ -123,32 +148,16 @@ TOFU_SYSTEM_DISK_INTERFACE
 | `BUS_BACKEND` | `inmemory` | `inmemory` или `nats` |
 | `NATS_URL` | `nats://127.0.0.1:4222` | адрес NATS |
 
-`inmemory` подходит для одного процесса. `nats` выносит транспорт наружу. Отдельный
-процесс spider-worker придётся собирать самостоятельно: готового CLI в репозитории нет.
-
-## `ARACHNE_URL`
-
-Переменная нужна старым callback workflow/actions из `.env.example`. Forgejo spider
-v16 читает состояние и логи через API, поэтому работает без `ARACHNE_URL`.
-
 ## TLS и внутренний CA
 
-Пример Compose монтирует `./certs/` в `/etc/ssl/certs/` и задаёт:
-
-```yaml
-SSL_CERT_FILE: /etc/ssl/certs/ca.crt
-REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca.crt
-```
-
-Этот CA используется не только Forgejo. Proxmox API client и OpenTofu provider также должны доверять внутреннему сертификату.
-
-Проверьте, что файл `ca.crt` действительно существует. В production лучше добавить
-CA, чем выставлять `FORGEJO_VERIFY_TLS=false`, `GITLAB_VERIFY_TLS=false` или `PROXMOX_VE_INSECURE=true`.
+В production лучше добавить корпоративный CA в trust store контейнера, чем отключать
+TLS verification у Forgejo, GitLab или Proxmox.
 
 ## Приоритет источников
 
-- environment хранит connection/auth и runtime paths;
-- PostgreSQL хранит управляемые сущности Arachne: сценарии, ACL, Golden Image profiles и managed machines;
-- Proxmox является источником истины для фактической конфигурации template;
-- явные параметры сценария задают желаемый результат, но не backend internals;
-- после bootstrap база важнее YAML seed-файла сценариев.
+- `.env` хранит bootstrap roots, connection config и runtime paths;
+- `Control -> Secrets` хранит управляемые service/target credentials;
+- PostgreSQL хранит сценарии, ACL, Golden Image profiles, bindings и managed machines;
+- Proxmox остаётся источником истины для фактической конфигурации template;
+- Brood target contract является источником endpoint + credentials_ref для Command spiders;
+- explicit scenario params задают желаемый результат, но не secret material.

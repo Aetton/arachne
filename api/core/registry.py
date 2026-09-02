@@ -46,6 +46,12 @@ def all_triggers() -> dict[str, type["BaseTrigger"]]:
 
 def load_plugins(package: str = "plugins"):
     """Import every submodule under plugins/* so registrations fire."""
+    if package == "plugins":
+        # Service credentials live in Vault/encrypted DB. Materialize the small
+        # compatibility env surface before spiders that cache env at import time.
+        from service_credentials import apply_bound_credentials
+        apply_bound_credentials()
+
     pkg = importlib.import_module(package)
     for _, modname, ispkg in pkgutil.iter_modules(pkg.__path__):
         sub = f"{package}.{modname}"
