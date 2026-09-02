@@ -85,7 +85,6 @@ async def admin_ansible_test(
             test_ok=False,
             test_sha="",
             test_error=str(exc),
-            status_code=400,
         )
 
     return render(
