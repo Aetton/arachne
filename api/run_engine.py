@@ -30,11 +30,59 @@ _artifact_output_indexes: dict[str, dict[str, int]] = defaultdict(dict)
 _initialized = False
 
 
+def _reconcile_orphaned_runs() -> int:
+    """Close runs left marked as running by a previous Arachne process.
+
+    Runtime tasks, spider handles and adapter state are process-local. Once the
+    process restarts there is nothing the new process can resume or cancel, so a
+    persisted ``running`` row is necessarily orphaned and must not stay live in
+    the UI forever.
+    """
+    db = SessionLocal()
+    try:
+        runs = db.query(Run).filter(Run.status == "running").all()
+        if not runs:
+            return 0
+
+        completed_at = utcnow()
+        for run in runs:
+            try:
+                records = json.loads(run.log or "[]")
+                if not isinstance(records, list):
+                    records = []
+            except (TypeError, ValueError):
+                records = []
+
+            seq = max(
+                (int(item.get("seq", -1)) for item in records if isinstance(item, dict)),
+                default=-1,
+            ) + 1
+            records.append({
+                "step_id": "",
+                "seq": seq,
+                "stream": "stderr",
+                "text": (
+                    "ARACHNE ERROR: run was interrupted by an Arachne restart; "
+                    "runtime state was lost"
+                ),
+            })
+            run.status = RunStatus.FAILED.value
+            run.completed_at = completed_at
+            run.log = json.dumps(records, ensure_ascii=False)
+
+        db.commit()
+        print(f"[run_engine] reconciled {len(runs)} orphaned running run(s)")
+        return len(runs)
+    finally:
+        db.close()
+
+
 def init():
-    """Load plugins and wire declarative triggers from scenarios. Idempotent."""
+    """Load plugins, reconcile stale runs and wire declarative triggers."""
     global _initialized
     if _initialized:
         return
+    _reconcile_orphaned_runs()
     load_plugins("plugins")
     _wire_triggers()
     _initialized = True
