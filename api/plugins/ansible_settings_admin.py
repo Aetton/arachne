@@ -6,7 +6,7 @@ import asyncio
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from auth.deps import require_role
+from auth.deps import require_administrator
 from core.playbook_repository import PlaybookRepository, PlaybookRepositoryError
 from main import app, render
 from playbook_settings import get_settings, save_settings
@@ -40,7 +40,7 @@ def _render(request: Request, user, settings: dict, **extra):
 
 
 @app.get("/admin/ansible", response_class=HTMLResponse)
-async def admin_ansible(request: Request, user=Depends(require_role("admin"))):
+async def admin_ansible(request: Request, user=Depends(require_administrator)):
     return _render(
         request, user, get_settings(),
         saved=request.query_params.get("saved") == "1",
@@ -51,7 +51,7 @@ async def admin_ansible(request: Request, user=Depends(require_role("admin"))):
 
 
 @app.post("/admin/ansible/save")
-async def admin_ansible_save(request: Request, user=Depends(require_role("admin"))):
+async def admin_ansible_save(request: Request, user=Depends(require_administrator)):
     form = await request.form()
     try:
         save_settings(
@@ -65,7 +65,7 @@ async def admin_ansible_save(request: Request, user=Depends(require_role("admin"
 
 
 @app.post("/admin/ansible/test")
-async def admin_ansible_test(request: Request, user=Depends(require_role("admin"))):
+async def admin_ansible_test(request: Request, user=Depends(require_administrator)):
     form = await request.form()
     settings = {
         "repo_url": str(form.get("repo_url") or "").strip(),
@@ -83,7 +83,7 @@ async def admin_ansible_test(request: Request, user=Depends(require_role("admin"
 
 
 @app.get("/api/admin/ansible/refs")
-async def admin_ansible_refs(user=Depends(require_role("admin"))):
+async def admin_ansible_refs(user=Depends(require_administrator)):
     repository = _configured_repository()
     try:
         refs = await asyncio.to_thread(repository.list_refs)
@@ -93,7 +93,7 @@ async def admin_ansible_refs(user=Depends(require_role("admin"))):
 
 
 @app.get("/api/admin/ansible/playbooks")
-async def admin_ansible_playbooks(ref: str | None = None, user=Depends(require_role("admin"))):
+async def admin_ansible_playbooks(ref: str | None = None, user=Depends(require_administrator)):
     repository = _configured_repository()
     try:
         return await asyncio.to_thread(repository.list_playbooks, ref=ref)
