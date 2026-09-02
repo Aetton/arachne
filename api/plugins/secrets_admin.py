@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from auth.deps import require_role
 from main import app, render
-from secret_bindings import list_bindings, save_bindings
+from service_credentials import list_bindings, save_bindings
 from secrets_store import (
     CREDENTIAL_KINDS,
     PROVIDER_KINDS,
