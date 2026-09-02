@@ -29,16 +29,16 @@ docker compose logs -f arachne
 
 Откройте:
 
-- портал — `http://localhost:8080`;
-- документацию — `http://localhost:8080/wiki/`;
-- OpenAPI — `http://localhost:8080/docs`;
-- проверку живости — `http://localhost:8080/healthz`.
+- портал: `http://localhost:8080`;
+- документацию: `http://localhost:8080/wiki/`;
+- OpenAPI: `http://localhost:8080/docs`;
+- проверку живости: `http://localhost:8080/healthz`.
 
-Первый пользователь — `admin`. Пароль берётся из `ADMIN_PASSWORD` только при создании учётной записи. Изменение переменной после первого старта пароль в базе не меняет.
+Первый пользователь - `admin`. Пароль берётся из `ADMIN_PASSWORD` только при создании учётной записи. Изменение переменной после первого старта пароль в базе не меняет.
 
 ## Что поменять в `.env`
 
-Для локальной пробы достаточно задать три значения:
+Для локальной пробы достаточно задать bootstrap-значения:
 
 ```dotenv
 JWT_SECRET=длинная-случайная-строка
@@ -46,22 +46,59 @@ ADMIN_PASSWORD=отдельный-первоначальный-пароль
 POSTGRES_PASSWORD=пароль-базы
 ```
 
-Для Forgejo добавьте:
+Если используется encrypted DB provider, задайте внешний master key или mounted file. Если используется Vault, его token/AppRole secret-id тоже остаётся bootstrap secret вне управляемого Vault namespace Arachne.
+
+Сервисные credentials Forgejo, GitLab, Proxmox, Nexus и Git-доступ к Ansible playbook repository в `.env` не хранятся. После первого запуска откройте:
+
+```text
+Control -> Secrets
+```
+
+Создайте Provider (`Vault` или encrypted DB), затем Credential и назначьте его в `Service bindings`.
+
+### Forgejo
+
+В `.env` остаются только обычные настройки:
 
 ```dotenv
 FORGEJO_URL=https://forgejo.example.internal
-FORGEJO_TOKEN=токен-сервисной-учётки
 FORGEJO_OWNER=example
 FORGEJO_VERIFY_TLS=true
 ```
 
-Для Proxmox добавьте только параметры подключения:
+В `Control -> Secrets` создайте credential типа `token` и назначьте его binding `Forgejo`.
+
+### GitLab
+
+```dotenv
+GITLAB_URL=https://gitlab.example.internal
+GITLAB_VERIFY_TLS=true
+```
+
+GitLab token хранится как credential типа `token` и назначается binding `GitLab`.
+
+### Proxmox
+
+В `.env` остаются только endpoint и TLS policy:
 
 ```dotenv
 PROXMOX_VE_ENDPOINT=https://pve.example.internal:8006/
-PROXMOX_VE_API_TOKEN=arachne@pve!arachne=<TOKEN_SECRET>
 PROXMOX_VE_INSECURE=false
 ```
+
+API token хранится как credential типа `token` и назначается binding `Proxmox VE`. Arachne материализует его в runtime для API client и OpenTofu provider.
+
+### Nexus
+
+В `.env` остаётся endpoint:
+
+```dotenv
+NEXUS_URL=https://nexus.example.internal
+```
+
+Логин и пароль хранятся как credential типа `basic` и назначаются binding `Nexus`.
+
+Если Nexus upload выполняется внутри Forgejo/GitLab workflow, этот удалённый CI всё равно должен получить credential через собственный secret store. Arachne не пересылает секреты в workflow inputs автоматически.
 
 Если прямой доступ к Terraform/OpenTofu provider registry ограничен, задайте network mirror:
 
@@ -73,7 +110,7 @@ Compose передаст переменную в контейнер, а entrypoi
 
 Не прописывайте VM ID шаблонов, node, datastore и disk metadata в `.env`. После старта они настраиваются через **Control -> Golden Images**, а фактические характеристики template читаются через Proxmox API.
 
-Полный список переменных — в [справочнике конфигурации](/ru/reference/configuration).
+Полный список переменных - в [справочнике конфигурации](/ru/reference/configuration).
 
 ## Внутренний центр сертификации
 
@@ -171,7 +208,7 @@ docker compose exec arachne tofu version
 docker compose exec arachne cat /root/.tofurc
 ```
 
-После настройки Proxmox откройте **Control -> Golden Images**. Если API token и TLS настроены правильно, страница должна показать доступные QEMU templates.
+После настройки `Control -> Secrets` и Proxmox binding откройте **Control -> Golden Images**. Если API token и TLS настроены правильно, страница должна показать доступные QEMU templates.
 
 Первый рабочий профиль удобно создать как:
 
