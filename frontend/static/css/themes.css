@@ -44,6 +44,38 @@
   --run-bg:  #3b3a2c; --run-fg:  #ebcb8b;
 }
 
+/* Native <dialog> lives in the browser top layer and does not reliably inherit
+   the document foreground/color-scheme. Keep Arachne dialogs on the active
+   theme instead of letting CanvasText/native form colors bleed through. */
+.secret-dialog {
+  color: var(--fg) !important;
+  border-color: var(--border) !important;
+  background: var(--surface) !important;
+}
+[data-theme="dracula"] .secret-dialog,
+[data-theme="nord"] .secret-dialog {
+  color-scheme: dark;
+}
+[data-theme="white"] .secret-dialog,
+[data-theme="light"] .secret-dialog {
+  color-scheme: light;
+}
+.secret-dialog .credential-auth-switch button.active {
+  color: var(--fg) !important;
+}
+.secret-dialog input,
+.secret-dialog select,
+.secret-dialog textarea {
+  color: var(--fg);
+  background: var(--surface2);
+  border-color: var(--border);
+}
+.secret-dialog input::placeholder,
+.secret-dialog textarea::placeholder {
+  color: var(--muted);
+  opacity: .8;
+}
+
 /* Keep scrollbars inside the theme instead of letting the browser bolt on a
    bright native control. Firefox uses scrollbar-color; Chromium/WebKit use
    the pseudo-elements below. */
