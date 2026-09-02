@@ -1,4 +1,4 @@
-"""Admin UI for secret providers and credentials."""
+"""Admin UI for secret providers, credentials and service bindings."""
 from __future__ import annotations
 
 from urllib.parse import quote
@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from auth.deps import require_role
 from main import app, render
+from secret_bindings import list_bindings, save_bindings
 from secrets_store import (
     CREDENTIAL_KINDS,
     PROVIDER_KINDS,
@@ -31,6 +32,7 @@ async def admin_secrets(request: Request, user=Depends(require_role("admin"))):
         user=user,
         providers=list_providers(),
         credentials=list_credentials(),
+        bindings=list_bindings(),
         provider_kinds=sorted(PROVIDER_KINDS),
         credential_kinds=sorted(CREDENTIAL_KINDS),
         saved=request.query_params.get("saved", ""),
@@ -114,3 +116,18 @@ async def admin_credential_save(request: Request, user=Depends(require_role("adm
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse(f"/admin/secrets?saved={quote('credential:' + result['slug'])}", status_code=303)
+
+
+@app.post("/admin/secrets/bindings/save")
+async def admin_secret_bindings_save(request: Request, user=Depends(require_role("admin"))):
+    form = await request.form()
+    try:
+        save_bindings({
+            "forgejo": str(form.get("forgejo") or ""),
+            "gitlab": str(form.get("gitlab") or ""),
+            "proxmox": str(form.get("proxmox") or ""),
+            "nexus": str(form.get("nexus") or ""),
+        })
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return RedirectResponse("/admin/secrets?saved=bindings", status_code=303)
