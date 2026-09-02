@@ -1,6 +1,8 @@
 """Admin UI for secret providers and credentials."""
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -71,7 +73,7 @@ async def admin_secret_provider_save(request: Request, user=Depends(require_role
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    return RedirectResponse(f"/admin/secrets?saved=provider:{result['slug']}", status_code=303)
+    return RedirectResponse(f"/admin/secrets?saved={quote('provider:' + result['slug'])}", status_code=303)
 
 
 @app.post("/admin/secrets/providers/{slug}/test")
@@ -79,9 +81,9 @@ def admin_secret_provider_test(slug: str, user=Depends(require_role("admin"))):
     try:
         result = test_provider(slug)
     except (ValueError, RuntimeError) as exc:
-        return RedirectResponse(f"/admin/secrets?error={str(exc)}", status_code=303)
+        return RedirectResponse(f"/admin/secrets?error={quote(str(exc))}", status_code=303)
     detail = str(result.get("detail") or "provider is healthy")
-    return RedirectResponse(f"/admin/secrets?test=ok&detail={detail}", status_code=303)
+    return RedirectResponse(f"/admin/secrets?test=ok&detail={quote(detail)}", status_code=303)
 
 
 @app.post("/admin/secrets/credentials/save")
@@ -111,4 +113,4 @@ async def admin_credential_save(request: Request, user=Depends(require_role("adm
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    return RedirectResponse(f"/admin/secrets?saved=credential:{result['slug']}", status_code=303)
+    return RedirectResponse(f"/admin/secrets?saved={quote('credential:' + result['slug'])}", status_code=303)
