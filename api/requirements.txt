@@ -14,3 +14,4 @@ psycopg-binary>=3.1
 apscheduler>=3.10
 nats-py>=2.6
 cryptography>=43.0
+pywinrm>=0.4.3
