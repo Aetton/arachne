@@ -50,6 +50,8 @@
   .golden-fact-label { color: var(--muted); font-size: .6rem; text-transform: uppercase; letter-spacing: .055em; }
   .golden-fact-value { margin-top: .1rem; font-family: var(--font-mono); font-size: .74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .golden-missing { display: flex; gap: .55rem; align-items: flex-start; color: var(--fail-fg); font-size: .76rem; line-height: 1.4; }
+  .golden-credential { margin-top: .55rem; display: flex; gap: .4rem; align-items: center; color: var(--muted); font-size: .7rem; }
+  .golden-credential code { color: var(--fg); }
 
   .golden-actions { display: flex; gap: .45rem; justify-content: flex-end; padding: .75rem 1rem; }
   .golden-empty { padding: 2.5rem 1.4rem; text-align: center; border: 1px dashed var(--border); border-radius: .85rem; color: var(--muted); }
@@ -77,7 +79,7 @@
         <div class="golden-title-icon"><i class="ti ti-diamond"></i></div>
         <div>
           <h1>Golden Images</h1>
-          <p>Человеческие профили стендов. Вы выбираете template, Арахна сама читает его node, storage, диск и ресурсы из Proxmox.</p>
+          <p>Человеческие профили стендов. Вы выбираете template и credential, Арахна сама читает ресурсы из Proxmox и передаёт доступ следующему spider.</p>
         </div>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
@@ -133,6 +135,7 @@
             <div class="golden-fact"><div class="golden-fact-label">Storage</div><div class="golden-fact-value">{{ profile.live.disk_datastore or '?' }}</div></div>
             <div class="golden-fact"><div class="golden-fact-label">Node</div><div class="golden-fact-value">{{ profile.live.node }}</div></div>
           </div>
+          <div class="golden-credential"><i class="ti ti-key"></i> Target credential: <code>{{ profile.credentials_ref or 'not configured' }}</code></div>
         {% else %}
           <div class="golden-missing">
             <i class="ti ti-alert-triangle text-lg"></i>
@@ -147,7 +150,8 @@
         </form>
         <button class="btn-ghost" type="button"
           data-slug="{{ profile.slug }}" data-label="{{ profile.label }}" data-os="{{ profile.os }}"
-          data-vmid="{{ profile.vm_id }}" data-enabled="{{ '1' if profile.enabled else '0' }}"
+          data-vmid="{{ profile.vm_id }}" data-credential="{{ profile.credentials_ref }}"
+          data-enabled="{{ '1' if profile.enabled else '0' }}"
           onclick="editGoldenDialog(this)"><i class="ti ti-settings mr-1"></i> Настроить</button>
       </div>
     </article>
@@ -167,7 +171,7 @@
     <div class="golden-dialog-head">
       <div>
         <div id="golden-dialog-title" class="font-semibold">Новый Golden Image</div>
-        <div class="golden-help mt-1">Храним только соответствие. Фактическую конфигурацию читает spider.</div>
+        <div class="golden-help mt-1">Template задаёт машину, credential задаёт стандартный способ входа в клоны этого образа.</div>
       </div>
       <button class="btn-ghost" type="button" onclick="document.getElementById('golden-dialog').close()"><i class="ti ti-x"></i></button>
     </div>
@@ -179,7 +183,7 @@
       </div>
       <div class="golden-dialog-grid">
         <label><span>Семейство ОС</span>
-          <select id="golden-os" name="os" required>
+          <select id="golden-os" name="os" required onchange="syncGoldenCredentials()">
             <option value="redos8">RedOS 8</option>
             <option value="redos7">RedOS 7</option>
             <option value="windows">Windows</option>
@@ -194,6 +198,15 @@
           </select>
         </label>
       </div>
+      <label><span>Default credential</span>
+        <select id="golden-credential" name="credentials_ref">
+          <option value="">Не настроен</option>
+          {% for c in target_credentials %}
+          <option value="{{ c.slug }}" data-kind="{{ c.kind }}">{{ c.label }} · {{ c.slug }} · {{ c.kind }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div id="golden-credential-help" class="golden-help"></div>
       <label class="check-control">
         <input id="golden-enabled" type="checkbox" name="enabled" checked>
         <span class="check-control-box"></span>
@@ -211,6 +224,26 @@
 
 {% block scripts %}
 <script>
+  function syncGoldenCredentials(preferredValue) {
+    const os = document.getElementById('golden-os').value;
+    const select = document.getElementById('golden-credential');
+    const expected = os === 'windows' ? 'winrm' : 'ssh';
+    const wanted = preferredValue === undefined ? select.value : preferredValue;
+    let wantedVisible = !wanted;
+    Array.from(select.options).forEach((option, index) => {
+      if (index === 0) return;
+      const visible = option.dataset.kind === expected;
+      option.hidden = !visible;
+      option.disabled = !visible;
+      if (visible && option.value === wanted) wantedVisible = true;
+    });
+    select.value = wantedVisible ? wanted : '';
+    document.getElementById('golden-credential-help').textContent =
+      expected === 'winrm'
+        ? 'Для Windows показываются только WinRM credentials.'
+        : 'Для Linux показываются только SSH credentials.';
+  }
+
   function openGoldenDialog() {
     const d = document.getElementById('golden-dialog');
     document.getElementById('golden-dialog-title').textContent = 'Новый Golden Image';
@@ -219,7 +252,9 @@
     document.getElementById('golden-slug').value = '';
     document.getElementById('golden-os').value = 'redos8';
     document.getElementById('golden-vmid').value = '';
+    document.getElementById('golden-credential').value = '';
     document.getElementById('golden-enabled').checked = true;
+    syncGoldenCredentials('');
     d.showModal();
   }
 
@@ -232,6 +267,7 @@
     document.getElementById('golden-os').value = button.dataset.os;
     document.getElementById('golden-vmid').value = button.dataset.vmid;
     document.getElementById('golden-enabled').checked = button.dataset.enabled === '1';
+    syncGoldenCredentials(button.dataset.credential || '');
     d.showModal();
   }
 </script>
