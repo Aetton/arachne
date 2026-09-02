@@ -7,6 +7,7 @@ catalogues. Those remain Ansible's and Arachne's jobs.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -106,8 +107,9 @@ class PlaybookRepository:
             tail = tail.rsplit(":", 1)[-1]
         if tail.endswith(".git"):
             tail = tail[:-4]
-        safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", tail).strip("-.")
-        return safe or "playbooks"
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", tail).strip("-.") or "playbooks"
+        digest = hashlib.sha256(self.repo_url.encode("utf-8")).hexdigest()[:10]
+        return f"{safe}-{digest}"
 
     def _mirror_path(self) -> Path:
         return self.cache_dir / self._repo_key() / "repo.git"
@@ -152,9 +154,6 @@ class PlaybookRepository:
         if checkout.is_dir():
             return checkout
 
-        tmp = worktrees / f".{sha}.tmp-{os.getpid()}"
-        if tmp.exists():
-            shutil.rmtree(tmp)
         try:
             self._git(
                 "--git-dir",
@@ -162,15 +161,13 @@ class PlaybookRepository:
                 "worktree",
                 "add",
                 "--detach",
-                str(tmp),
+                str(checkout),
                 sha,
             )
-            try:
-                tmp.rename(checkout)
-            except FileExistsError:
-                shutil.rmtree(tmp, ignore_errors=True)
-        except Exception:
-            shutil.rmtree(tmp, ignore_errors=True)
+        except PlaybookRepositoryError:
+            if checkout.is_dir():
+                return checkout
+            shutil.rmtree(checkout, ignore_errors=True)
             raise
         return checkout
 
