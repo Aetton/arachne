@@ -46,6 +46,16 @@ def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User |
     return _user_from_request(request, db)
 
 
+def require_administrator(user: User = Depends(get_current_user)) -> User:
+    """Allow only users with the system Administrator role (`admin`)."""
+    if "admin" in set(user.roles or []):
+        return user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Administrator role required",
+    )
+
+
 def require_role(*allowed: str):
     """Guard factory. Admin always passes."""
     def _check(user: User = Depends(get_current_user)) -> User:
