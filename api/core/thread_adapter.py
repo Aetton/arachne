@@ -1,15 +1,7 @@
 """Thread adapter — puts a local spider onto the bus as a responder.
 
-The spider contract is untouched: the adapter is the ONLY thing that knows the
-bus. It executes exactly one step's lifecycle through one spider — it does NOT
-know scenarios, needs, params, or the web's shape. That's Arachne's job.
-
-Responsibilities:
-  - expose each spider's `run` responder on the bus
-  - stream log lines with a per-step sequence number (ordering under NATS)
-  - return a structured result incl. error{type,message,details} on failure
-  - hold a map of active run_id -> asyncio.Task and honour cancel signals
-    (each spider cancels its own anchor via its own cancel())
+The adapter owns transport. Spiders own one external operation and may return
+both machine-consumable Artifacts and user-visible RunOutputs.
 """
 from __future__ import annotations
 
@@ -18,15 +10,18 @@ import time
 
 from core.bus import get_bus
 from core import subjects, wire_codec
-from core.types import RunStatus, RunError
+from core.types import RunStatus, RunError, RunOutput
 from core.registry import all_spiders, get_spider
 
-# active executions on THIS host: run_key -> {"task", "spider", "handle"}
 _active: dict[str, dict] = {}
 
 
 def _run_key(run_id: str, step_id: str) -> str:
     return f"{run_id}:{step_id}"
+
+
+def _artifact_key(artifact) -> tuple[str, str, str]:
+    return artifact.type, artifact.location, artifact.name
 
 
 async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
@@ -38,18 +33,22 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
         await emit_log(text, stream, seq, step.id)
         seq += 1
 
-    # dispatch can do blocking backend I/O; keep it off the event loop.
     try:
         handle = await asyncio.to_thread(spider.dispatch, step, context)
     except Exception as exc:  # noqa: BLE001
         await log(f"PORTAL ERROR dispatching {step.id}: {exc}", "stderr")
-        return {"status": RunStatus.FAILED.value, "handle": None, "artifacts": [],
-                "error": RunError("DispatchError", str(exc),
-                                  {"step": step.id, "spider": step.spider}).to_dict()}
+        return {
+            "status": RunStatus.FAILED.value,
+            "handle": None,
+            "artifacts": [],
+            "outputs": [],
+            "error": RunError(
+                "DispatchError", str(exc), {"step": step.id, "spider": step.spider}
+            ).to_dict(),
+        }
 
     _active[_run_key(run_id, step.id)]["handle"] = handle
 
-    # stream is already async by contract.
     try:
         async for line in spider.stream_logs(handle):
             await log(line.text, line.stream)
@@ -59,17 +58,35 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
         except Exception as exc:  # noqa: BLE001
             await log(f"cancel cleanup error: {exc}", "stderr")
         await log("thread cancelled", "system")
-        return {"status": RunStatus.CANCELLED.value,
-                "handle": wire_codec.handle_to_dict(handle), "artifacts": [],
-                "error": RunError("Cancelled", "run cancelled by request").to_dict()}
+        return {
+            "status": RunStatus.CANCELLED.value,
+            "handle": wire_codec.handle_to_dict(handle),
+            "artifacts": [],
+            "outputs": [],
+            "error": RunError("Cancelled", "run cancelled by request").to_dict(),
+        }
 
     status = await asyncio.to_thread(spider.get_status, handle)
     arts = await asyncio.to_thread(spider.get_artifacts, handle)
+    outputs = await asyncio.to_thread(spider.get_outputs, handle)
+
+    # Legacy spiders know only about Artifacts. New spiders may add richer panels,
+    # but every uncovered artifact still gets a visible card automatically.
+    covered = {
+        _artifact_key(output.artifact)
+        for output in outputs
+        if isinstance(output, RunOutput) and output.artifact is not None
+    }
+    outputs = list(outputs)
+    for artifact in arts:
+        if _artifact_key(artifact) not in covered:
+            outputs.append(RunOutput.from_artifact(artifact))
 
     result = {
         "status": status.value,
         "handle": wire_codec.handle_to_dict(handle),
         "artifacts": [wire_codec.artifact_to_dict(a) for a in arts],
+        "outputs": [wire_codec.output_to_dict(output) for output in outputs],
         "error": None,
     }
     if status == RunStatus.FAILED:
@@ -77,7 +94,8 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
         result["error"] = RunError(
             "BackendError",
             reason or f"{step.spider} reported failure",
-            {"step": step.id, "spider": step.spider}).to_dict()
+            {"step": step.id, "spider": step.spider},
+        ).to_dict()
     return result
 
 
@@ -92,17 +110,25 @@ def _make_run_responder(expected_kind: str):
 
         async def emit_log(text, stream, seq, step_id):
             await bus.publish(log_subject, {
-                "run_id": run_id, "step_id": step_id, "seq": seq,
-                "stream": stream, "text": text, "ts": time.time(),
+                "run_id": run_id,
+                "step_id": step_id,
+                "seq": seq,
+                "stream": stream,
+                "text": text,
+                "ts": time.time(),
             })
 
         try:
             spider = get_spider(spider_name)
         except KeyError as exc:
             await emit_log(f"PORTAL ERROR: {exc}", "stderr", 0, step.id)
-            return {"status": RunStatus.FAILED.value, "handle": None,
-                    "artifacts": [],
-                    "error": RunError("UnknownSpider", str(exc)).to_dict()}
+            return {
+                "status": RunStatus.FAILED.value,
+                "handle": None,
+                "artifacts": [],
+                "outputs": [],
+                "error": RunError("UnknownSpider", str(exc)).to_dict(),
+            }
 
         key = _run_key(run_id, step.id)
         task = asyncio.create_task(_execute(spider, step, run_id, emit_log, context))

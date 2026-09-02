@@ -4,7 +4,7 @@ Defines the bus payload shape once so adapter and client never drift.
 """
 from __future__ import annotations
 
-from core.types import RunHandle, Artifact, StepSpec, RunError
+from core.types import RunHandle, Artifact, RunOutput, StepSpec, RunError
 
 
 def handle_to_dict(h: RunHandle) -> dict:
@@ -26,6 +26,45 @@ def artifact_from_dict(d: dict) -> Artifact:
                     location=d.get("location", ""),
                     download_url=d.get("download_url"),
                     metadata=d.get("metadata", {}))
+
+
+def output_to_dict(output: RunOutput) -> dict:
+    """Serialize a RunOutput while retaining legacy artifact top-level fields.
+
+    Persisted run.artifacts historically contained raw Artifact dictionaries.
+    Artifact-backed outputs intentionally keep that shape so old UI/actions and
+    VM console routes continue working during the migration.
+    """
+    item = {
+        "output_type": output.kind,
+        "title": output.title,
+        "data": dict(output.data or {}),
+        "links": list(output.links or []),
+        "output_metadata": dict(output.metadata or {}),
+    }
+    if output.artifact is not None:
+        art = artifact_to_dict(output.artifact)
+        item["artifact"] = art
+        item.update(art)
+    return item
+
+
+def output_from_dict(d: dict) -> RunOutput:
+    artifact = None
+    raw_artifact = d.get("artifact")
+    if isinstance(raw_artifact, dict):
+        artifact = artifact_from_dict(raw_artifact)
+    elif d.get("name") is not None and d.get("type") is not None:
+        # Compatibility with early output payloads that only flattened Artifact.
+        artifact = artifact_from_dict(d)
+    return RunOutput(
+        kind=str(d.get("output_type") or ("artifact" if artifact else "generic")),
+        title=str(d.get("title") or (artifact.name if artifact else "Output")),
+        data=dict(d.get("data") or {}),
+        links=list(d.get("links") or []),
+        metadata=dict(d.get("output_metadata") or {}),
+        artifact=artifact,
+    )
 
 
 def error_to_dict(e: RunError | None) -> dict | None:
