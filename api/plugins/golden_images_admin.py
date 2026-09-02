@@ -8,10 +8,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from auth.deps import get_db, require_role
-from database import SessionLocal
 from golden_images import GoldenImageProfile, ensure_schema, validate_profile
 from main import app, render
 from proxmox_api import ProxmoxAPIError, inspect_template, list_templates
+from secrets_store import list_credentials
 
 
 ensure_schema()
@@ -21,6 +21,10 @@ def _profiles(db: Session) -> list[GoldenImageProfile]:
     return db.query(GoldenImageProfile).order_by(
         GoldenImageProfile.enabled.desc(), GoldenImageProfile.label, GoldenImageProfile.slug,
     ).all()
+
+
+def _target_credentials() -> list[dict]:
+    return [row for row in list_credentials() if row.get("kind") in {"ssh", "winrm"}]
 
 
 @app.get("/admin/golden-images", response_class=HTMLResponse)
@@ -46,6 +50,7 @@ async def admin_golden_images(
             "label": row.label,
             "os": row.os,
             "vm_id": row.vm_id,
+            "credentials_ref": row.credentials_ref or "",
             "enabled": row.enabled,
             "live": live,
             "healthy": bool(live),
@@ -58,7 +63,13 @@ async def admin_golden_images(
         profiles=cards,
         templates_available=templates,
         proxmox_error=error,
+        target_credentials=_target_credentials(),
     )
+
+
+@app.get("/api/admin/golden-images/credentials")
+def admin_golden_image_credentials(user=Depends(require_role("admin"))):
+    return {"credentials": _target_credentials()}
 
 
 @app.post("/admin/golden-images/save")
@@ -80,6 +91,19 @@ async def admin_golden_images_save(
     except (ValueError, ProxmoxAPIError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    credentials_ref = str(form.get("credentials_ref") or "").strip().lower()
+    credentials = {row["slug"]: row for row in _target_credentials()}
+    if credentials_ref:
+        credential = credentials.get(credentials_ref)
+        if not credential:
+            raise HTTPException(400, f"Target credential '{credentials_ref}' not found")
+        expected_kind = "winrm" if os_name == "windows" else "ssh"
+        if credential.get("kind") != expected_kind:
+            raise HTTPException(
+                400,
+                f"Golden image {os_name!r} requires a {expected_kind} credential, got {credential.get('kind')!r}",
+            )
+
     row = None
     if original_slug:
         row = db.query(GoldenImageProfile).filter(GoldenImageProfile.slug == original_slug).first()
@@ -99,6 +123,7 @@ async def admin_golden_images_save(
         row.os = os_name
         row.vm_id = vm_id
 
+    row.credentials_ref = credentials_ref or None
     row.enabled = "enabled" in form
     db.commit()
     return RedirectResponse("/admin/golden-images", status_code=303)
