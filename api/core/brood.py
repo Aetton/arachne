@@ -78,6 +78,26 @@ def is_brood_target(artifact: Artifact) -> bool:
     return artifact.metadata.get("contract") == BROOD_TARGET_CONTRACT
 
 
+def _golden_credentials_ref(metadata: dict[str, Any]) -> str:
+    """Resolve the default target credential from the Golden Image profile.
+
+    Legacy Brood spiders only expose the selected image key in flat metadata.
+    Keeping the lookup here means all of them can inherit the image credential
+    without knowing anything about the Secrets implementation.
+    """
+    image = str(metadata.get("image") or "").strip().lower()
+    if not image:
+        return ""
+    try:
+        from golden_images import get_profile
+        profile = get_profile(image)
+    except Exception:
+        return ""
+    if not profile:
+        return ""
+    return str(profile.get("credentials_ref") or "").strip().lower()
+
+
 def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Artifact:
     """Upgrade an old flat provision artifact to Brood target v1 in-place."""
     if is_brood_target(artifact):
@@ -107,6 +127,10 @@ def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Ar
             "requested_resources",
         }
     }
+    credentials_ref = str(md.get("credentials_ref") or "").strip().lower() or _golden_credentials_ref(md)
+    if credentials_ref:
+        md["credentials_ref"] = credentials_ref
+
     contract = build_brood_target_metadata(
         name=artifact.name,
         target_id=str(md.get("vm_id") or artifact.location or artifact.name),
@@ -120,7 +144,7 @@ def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Ar
         lifetime=md.get("lifetime"),
         backend_spider=str(md.get("backend") or spider_name),
         backend_data=backend_data,
-        credentials_ref=md.get("credentials_ref"),
+        credentials_ref=credentials_ref or None,
     )
     artifact.metadata = {**md, **contract}
     return artifact

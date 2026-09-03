@@ -1,7 +1,8 @@
 """Golden image profile registry.
 
-Profiles are human-facing names stored in PostgreSQL. They point only at a Proxmox
-VM ID; live node/storage/disk/hardware facts are always discovered from Proxmox.
+Profiles are human-facing names stored in PostgreSQL. They point at a Proxmox
+VM ID and optionally a default target credential. Live node/storage/disk/hardware
+facts are always discovered from Proxmox.
 """
 from __future__ import annotations
 
@@ -30,6 +31,7 @@ class GoldenImageProfile(Base):
     os = Column(String(32), nullable=False, index=True)
     backend = Column(String(32), default="proxmox", nullable=False)
     vm_id = Column(Integer, nullable=False)
+    credentials_ref = Column(String(64), nullable=True, index=True)
     enabled = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
@@ -37,6 +39,15 @@ class GoldenImageProfile(Base):
 
 def ensure_schema() -> None:
     GoldenImageProfile.__table__.create(bind=engine, checkfirst=True)
+    # Existing installations predate credentials_ref. create(checkfirst=True) does
+    # not alter an existing table, so add the nullable column in-place.
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(golden_image_profiles)")} if engine.dialect.name == "sqlite" else set()
+        if engine.dialect.name == "sqlite":
+            if "credentials_ref" not in columns:
+                conn.exec_driver_sql("ALTER TABLE golden_image_profiles ADD COLUMN credentials_ref VARCHAR(64)")
+        elif engine.dialect.name == "postgresql":
+            conn.exec_driver_sql("ALTER TABLE golden_image_profiles ADD COLUMN IF NOT EXISTS credentials_ref VARCHAR(64)")
 
 
 def validate_profile(*, slug: str, label: str, os_name: str, vm_id) -> tuple[str, str, str, int]:
@@ -75,6 +86,7 @@ def get_profile(slug: str) -> dict | None:
             "os": row.os,
             "backend": row.backend,
             "vm_id": row.vm_id,
+            "credentials_ref": row.credentials_ref or "",
             "enabled": row.enabled,
         }
     finally:
@@ -94,6 +106,7 @@ def list_profiles() -> list[dict]:
                 "os": row.os,
                 "backend": row.backend,
                 "vm_id": row.vm_id,
+                "credentials_ref": row.credentials_ref or "",
                 "enabled": row.enabled,
             }
             for row in rows
