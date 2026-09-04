@@ -146,6 +146,19 @@ def _log_sink(run_id: str, line: LogLine):
     })
 
 
+def _append_runtime_error(run_id: str, text: str) -> None:
+    seq = max(
+        (int(item.get("seq", -1)) for item in _live.get(run_id, []) if isinstance(item, dict)),
+        default=-1,
+    ) + 1
+    _live[run_id].append({
+        "step_id": "",
+        "seq": seq,
+        "stream": "stderr",
+        "text": text,
+    })
+
+
 def _artifact_sink(run_id: str, user_id: int | None, step_id: str, artifact: Artifact) -> None:
     """Keep lifecycle registration separate from human-facing output storage."""
     managed_machines.register_artifact(run_id, user_id, artifact)
@@ -268,8 +281,7 @@ async def cancel_run(run_id: str) -> bool:
     task = _tasks.get(run_id)
     if step is None or task is None or task.done():
         return False
-    await cancel_step(run_id, step.kind, step.spider, step.id)
-    return True
+    return await cancel_step(run_id, step.kind, step.spider, step.id)
 
 
 def active_step(run_id: str) -> StepSpec | None:
@@ -280,9 +292,14 @@ def active_task(run_id: str) -> asyncio.Task | None:
     return _tasks.get(run_id)
 
 
+def has_runtime(run_id: str) -> bool:
+    return run_id in _done
+
+
 async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict):
     clean = {k: v for k, v in params.items() if not k.startswith("__")}
     user_id = params.get("__user_id__")
+    status = RunStatus.FAILED
     try:
         status = await orchestrator.run_scenario(
             run_id,
@@ -298,20 +315,25 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
             step_state_sink=_step_state_sink,
         )
     except Exception as exc:  # noqa: BLE001
-        _live[run_id].append({"step_id": "", "seq": 0, "stream": "stderr",
-                              "text": f"ARACHNE ERROR: {exc}"})
+        _append_runtime_error(run_id, f"ARACHNE ERROR: {exc}")
         status = RunStatus.FAILED
 
-    await asyncio.to_thread(
-        _persist_run,
-        run_id,
-        status,
-        list(_live[run_id]),
-        list(_outputs[run_id]),
-    )
-    _status[run_id] = status
-    _done[run_id] = True
-    _active_steps.pop(run_id, None)
+    try:
+        await asyncio.to_thread(
+            _persist_run,
+            run_id,
+            status,
+            list(_live[run_id]),
+            list(_outputs[run_id]),
+        )
+    except Exception as exc:  # noqa: BLE001
+        status = RunStatus.FAILED
+        _append_runtime_error(run_id, f"ARACHNE ERROR persisting run result: {exc}")
+        print(f"[run_engine] failed to persist run {run_id}: {exc}")
+    finally:
+        _status[run_id] = status
+        _done[run_id] = True
+        _active_steps.pop(run_id, None)
 
 
 def live_records(run_id: str) -> list[dict]:
