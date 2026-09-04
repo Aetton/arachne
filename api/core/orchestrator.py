@@ -17,6 +17,7 @@ from core.types import Artifact, RunOutput, StepSpec, StepResult, RunStatus, Log
 LogSink = Callable[[str, LogLine], None]
 ArtifactSink = Callable[[str, str, Artifact], None]
 OutputSink = Callable[[str, str, RunOutput], None]
+StepStateSink = Callable[[str, StepSpec | None], None]
 
 _FAMILY_TO_WIRE_KIND = {
     "weave": "build",
@@ -73,7 +74,8 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
                        params: dict, log_sink: LogSink,
                        user_id: int | None = None,
                        artifact_sink: ArtifactSink | None = None,
-                       output_sink: OutputSink | None = None) -> RunStatus:
+                       output_sink: OutputSink | None = None,
+                       step_state_sink: StepStateSink | None = None) -> RunStatus:
     ctx = RunContext(params, user_id=user_id)
     steps = parse_steps(scenario)
 
@@ -92,8 +94,20 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
         def _on_log(text, stream, seq, step_id, _rid=run_id):
             log_sink(_rid, LogLine(text, stream, seq=seq, step_id=step_id))
 
-        result = await run_step(run_id, step.kind, step.spider, step_dict, _on_log,
-                                context={"user_id": ctx.user_id})
+        if step_state_sink:
+            step_state_sink(run_id, resolved_step)
+        try:
+            result = await run_step(
+                run_id,
+                step.kind,
+                step.spider,
+                step_dict,
+                _on_log,
+                context={"user_id": ctx.user_id},
+            )
+        finally:
+            if step_state_sink:
+                step_state_sink(run_id, None)
 
         status = result["status"]
         artifacts = result["artifacts"]
