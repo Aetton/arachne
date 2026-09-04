@@ -19,13 +19,16 @@ import managed_machines
 
 from core.registry import load_plugins, all_triggers
 from core import orchestrator, wire_codec
-from core.types import Artifact, RunOutput, LogLine, RunStatus
+from core.thread_client import cancel_step
+from core.types import Artifact, RunOutput, LogLine, RunStatus, StepSpec
 
 _live: dict[str, list[dict]] = defaultdict(list)
 _done: dict[str, bool] = {}
 _status: dict[str, RunStatus] = {}
 _outputs: dict[str, list[dict]] = defaultdict(list)
 _artifact_output_indexes: dict[str, dict[str, int]] = defaultdict(dict)
+_tasks: dict[str, asyncio.Task] = {}
+_active_steps: dict[str, StepSpec] = {}
 
 _initialized = False
 
@@ -188,9 +191,28 @@ def _get_scenario(scenario_key: str) -> dict:
     return scenario
 
 
+def _task_done(run_id: str, task: asyncio.Task) -> None:
+    current = _tasks.get(run_id)
+    if current is task:
+        _tasks.pop(run_id, None)
+    _active_steps.pop(run_id, None)
+
+    if task.cancelled():
+        return
+    try:
+        task.exception()
+    except asyncio.CancelledError:
+        pass
+
+
 def _start_task(run_id: str, scenario_key: str, scenario: dict, params: dict) -> None:
     loop = asyncio.get_running_loop()
-    loop.create_task(_execute(run_id, scenario_key, scenario, params))
+    task = loop.create_task(
+        _execute(run_id, scenario_key, scenario, params),
+        name=f"arachne-run:{run_id}",
+    )
+    _tasks[run_id] = task
+    task.add_done_callback(lambda done, rid=run_id: _task_done(rid, done))
 
 
 def _init_runtime(run_id: str) -> None:
@@ -199,6 +221,14 @@ def _init_runtime(run_id: str) -> None:
     _status[run_id] = RunStatus.RUNNING
     _outputs[run_id] = []
     _artifact_output_indexes[run_id] = {}
+    _active_steps.pop(run_id, None)
+
+
+def _step_state_sink(run_id: str, step: StepSpec | None) -> None:
+    if step is None:
+        _active_steps.pop(run_id, None)
+    else:
+        _active_steps[run_id] = step
 
 
 async def fire_async(scenario_key: str, params: dict, source: str = "manual") -> str:
@@ -228,6 +258,28 @@ def start_run(user_id: int, scenario_key: str, params: dict) -> str:
     return fire(scenario_key, _prepare_params(params, user_id), source="manual")
 
 
+async def cancel_run(run_id: str) -> bool:
+    """Cancel only the currently active spider step for a run.
+
+    The engine task itself is intentionally left alive so the spider can report
+    ``cancelled`` and the orchestrator can persist a normal terminal run state.
+    """
+    step = _active_steps.get(run_id)
+    task = _tasks.get(run_id)
+    if step is None or task is None or task.done():
+        return False
+    await cancel_step(run_id, step.kind, step.spider, step.id)
+    return True
+
+
+def active_step(run_id: str) -> StepSpec | None:
+    return _active_steps.get(run_id)
+
+
+def active_task(run_id: str) -> asyncio.Task | None:
+    return _tasks.get(run_id)
+
+
 async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict):
     clean = {k: v for k, v in params.items() if not k.startswith("__")}
     user_id = params.get("__user_id__")
@@ -243,6 +295,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
                 rid, user_id, sid, artifact
             ),
             output_sink=_output_sink,
+            step_state_sink=_step_state_sink,
         )
     except Exception as exc:  # noqa: BLE001
         _live[run_id].append({"step_id": "", "seq": 0, "stream": "stderr",
@@ -258,6 +311,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
     )
     _status[run_id] = status
     _done[run_id] = True
+    _active_steps.pop(run_id, None)
 
 
 def live_records(run_id: str) -> list[dict]:
