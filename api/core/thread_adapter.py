@@ -27,6 +27,7 @@ def _artifact_key(artifact) -> tuple[str, str, str]:
 async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
     """Drive one spider through one step. Returns the wire result dict."""
     seq = 0
+    handle = None
 
     async def log(text: str, stream: str = "stdout"):
         nonlocal seq
@@ -34,69 +35,72 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
         seq += 1
 
     try:
-        handle = await asyncio.to_thread(spider.dispatch, step, context)
-    except Exception as exc:  # noqa: BLE001
-        await log(f"PORTAL ERROR dispatching {step.id}: {exc}", "stderr")
-        return {
-            "status": RunStatus.FAILED.value,
-            "handle": None,
-            "artifacts": [],
-            "outputs": [],
-            "error": RunError(
-                "DispatchError", str(exc), {"step": step.id, "spider": step.spider}
-            ).to_dict(),
-        }
+        try:
+            handle = await asyncio.to_thread(spider.dispatch, step, context)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            await log(f"PORTAL ERROR dispatching {step.id}: {exc}", "stderr")
+            return {
+                "status": RunStatus.FAILED.value,
+                "handle": None,
+                "artifacts": [],
+                "outputs": [],
+                "error": RunError(
+                    "DispatchError", str(exc), {"step": step.id, "spider": step.spider}
+                ).to_dict(),
+            }
 
-    _active[_run_key(run_id, step.id)]["handle"] = handle
+        entry = _active.get(_run_key(run_id, step.id))
+        if entry is not None:
+            entry["handle"] = handle
 
-    try:
         async for line in spider.stream_logs(handle):
             await log(line.text, line.stream)
+
+        status = await asyncio.to_thread(spider.get_status, handle)
+        arts = await asyncio.to_thread(spider.get_artifacts, handle)
+        outputs = await asyncio.to_thread(spider.get_outputs, handle)
+
+        covered = {
+            _artifact_key(output.artifact)
+            for output in outputs
+            if isinstance(output, RunOutput) and output.artifact is not None
+        }
+        outputs = list(outputs)
+        for artifact in arts:
+            if _artifact_key(artifact) not in covered:
+                outputs.append(RunOutput.from_artifact(artifact))
+
+        result = {
+            "status": status.value,
+            "handle": wire_codec.handle_to_dict(handle),
+            "artifacts": [wire_codec.artifact_to_dict(a) for a in arts],
+            "outputs": [wire_codec.output_to_dict(output) for output in outputs],
+            "error": None,
+        }
+        if status == RunStatus.FAILED:
+            reason = handle.metadata.get("error") if handle.metadata else None
+            result["error"] = RunError(
+                "BackendError",
+                reason or f"{step.spider} reported failure",
+                {"step": step.id, "spider": step.spider},
+            ).to_dict()
+        return result
     except asyncio.CancelledError:
-        try:
-            await asyncio.to_thread(spider.cancel, handle)
-        except Exception as exc:  # noqa: BLE001
-            await log(f"cancel cleanup error: {exc}", "stderr")
+        if handle is not None:
+            try:
+                await asyncio.to_thread(spider.cancel, handle)
+            except Exception as exc:  # noqa: BLE001
+                await log(f"cancel cleanup error: {exc}", "stderr")
         await log("thread cancelled", "system")
         return {
             "status": RunStatus.CANCELLED.value,
-            "handle": wire_codec.handle_to_dict(handle),
+            "handle": wire_codec.handle_to_dict(handle) if handle is not None else None,
             "artifacts": [],
             "outputs": [],
             "error": RunError("Cancelled", "run cancelled by request").to_dict(),
         }
-
-    status = await asyncio.to_thread(spider.get_status, handle)
-    arts = await asyncio.to_thread(spider.get_artifacts, handle)
-    outputs = await asyncio.to_thread(spider.get_outputs, handle)
-
-    # Legacy spiders know only about Artifacts. New spiders may add richer panels,
-    # but every uncovered artifact still gets a visible card automatically.
-    covered = {
-        _artifact_key(output.artifact)
-        for output in outputs
-        if isinstance(output, RunOutput) and output.artifact is not None
-    }
-    outputs = list(outputs)
-    for artifact in arts:
-        if _artifact_key(artifact) not in covered:
-            outputs.append(RunOutput.from_artifact(artifact))
-
-    result = {
-        "status": status.value,
-        "handle": wire_codec.handle_to_dict(handle),
-        "artifacts": [wire_codec.artifact_to_dict(a) for a in arts],
-        "outputs": [wire_codec.output_to_dict(output) for output in outputs],
-        "error": None,
-    }
-    if status == RunStatus.FAILED:
-        reason = handle.metadata.get("error") if handle.metadata else None
-        result["error"] = RunError(
-            "BackendError",
-            reason or f"{step.spider} reported failure",
-            {"step": step.id, "spider": step.spider},
-        ).to_dict()
-    return result
 
 
 def _make_run_responder(expected_kind: str):
