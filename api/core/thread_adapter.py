@@ -24,10 +24,27 @@ def _artifact_key(artifact) -> tuple[str, str, str]:
     return artifact.type, artifact.location, artifact.name
 
 
+async def _cancelled_result(spider, handle, log) -> dict:
+    if handle is not None:
+        try:
+            await asyncio.to_thread(spider.cancel, handle)
+        except Exception as exc:  # noqa: BLE001
+            await log(f"cancel cleanup error: {exc}", "stderr")
+    await log("thread cancelled", "system")
+    return {
+        "status": RunStatus.CANCELLED.value,
+        "handle": wire_codec.handle_to_dict(handle) if handle is not None else None,
+        "artifacts": [],
+        "outputs": [],
+        "error": RunError("Cancelled", "run cancelled by request").to_dict(),
+    }
+
+
 async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
     """Drive one spider through one step. Returns the wire result dict."""
     seq = 0
     handle = None
+    key = _run_key(run_id, step.id)
 
     async def log(text: str, stream: str = "stdout"):
         nonlocal seq
@@ -37,8 +54,6 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
     try:
         try:
             handle = await asyncio.to_thread(spider.dispatch, step, context)
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:  # noqa: BLE001
             await log(f"PORTAL ERROR dispatching {step.id}: {exc}", "stderr")
             return {
@@ -51,9 +66,11 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
                 ).to_dict(),
             }
 
-        entry = _active.get(_run_key(run_id, step.id))
+        entry = _active.get(key)
         if entry is not None:
             entry["handle"] = handle
+            if entry.get("cancel_requested"):
+                return await _cancelled_result(spider, handle, log)
 
         async for line in spider.stream_logs(handle):
             await log(line.text, line.stream)
@@ -88,19 +105,7 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
             ).to_dict()
         return result
     except asyncio.CancelledError:
-        if handle is not None:
-            try:
-                await asyncio.to_thread(spider.cancel, handle)
-            except Exception as exc:  # noqa: BLE001
-                await log(f"cancel cleanup error: {exc}", "stderr")
-        await log("thread cancelled", "system")
-        return {
-            "status": RunStatus.CANCELLED.value,
-            "handle": wire_codec.handle_to_dict(handle) if handle is not None else None,
-            "artifacts": [],
-            "outputs": [],
-            "error": RunError("Cancelled", "run cancelled by request").to_dict(),
-        }
+        return await _cancelled_result(spider, handle, log)
 
 
 def _make_run_responder(expected_kind: str):
@@ -136,7 +141,12 @@ def _make_run_responder(expected_kind: str):
 
         key = _run_key(run_id, step.id)
         task = asyncio.create_task(_execute(spider, step, run_id, emit_log, context))
-        _active[key] = {"task": task, "spider": spider, "handle": None}
+        _active[key] = {
+            "task": task,
+            "spider": spider,
+            "handle": None,
+            "cancel_requested": False,
+        }
         try:
             return await task
         finally:
@@ -152,6 +162,9 @@ async def _cancel_handler(payload: dict) -> dict:
         return {"accepted": False, "reason": "not_found"}
     if entry["task"].done():
         return {"accepted": False, "reason": "already_done"}
+    if entry.get("handle") is None:
+        entry["cancel_requested"] = True
+        return {"accepted": True, "reason": "dispatching"}
     entry["task"].cancel()
     return {"accepted": True}
 
