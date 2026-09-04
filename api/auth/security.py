@@ -9,6 +9,7 @@ from database import utcnow
 
 PROD_ENV_VALUES = {"prod", "production"}
 BAD_JWT_SECRETS = {"", "dev-secret-change-me", "change-me-in-prod"}
+BAD_ADMIN_PASSWORDS = {"", "admin", "changeme", "change-me-in-prod"}
 
 
 def is_prod_env() -> bool:
@@ -23,7 +24,10 @@ def _env_value(name: str, default: str, forbidden_in_prod: set[str]) -> str:
     return value
 
 
+# Resolve bootstrap roots at import time so production cannot start with known
+# development credentials. main.py imports this module before application startup.
 JWT_SECRET = _env_value("JWT_SECRET", "dev-secret-change-me", BAD_JWT_SECRETS)
+ADMIN_PASSWORD = _env_value("ADMIN_PASSWORD", "admin", BAD_ADMIN_PASSWORDS)
 JWT_ALGO = "HS256"
 TOKEN_TTL_DAYS = int(os.getenv("TOKEN_TTL_DAYS", "7"))
 

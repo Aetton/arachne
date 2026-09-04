@@ -34,19 +34,12 @@ _initialized = False
 
 
 def _reconcile_orphaned_runs() -> int:
-    """Close runs left marked as running by a previous Arachne process.
-
-    Runtime tasks, spider handles and adapter state are process-local. Once the
-    process restarts there is nothing the new process can resume or cancel, so a
-    persisted ``running`` row is necessarily orphaned and must not stay live in
-    the UI forever.
-    """
+    """Close runs left marked as running by a previous Arachne process."""
     db = SessionLocal()
     try:
         runs = db.query(Run).filter(Run.status == "running").all()
         if not runs:
             return 0
-
         completed_at = utcnow()
         for run in runs:
             try:
@@ -55,7 +48,6 @@ def _reconcile_orphaned_runs() -> int:
                     records = []
             except (TypeError, ValueError):
                 records = []
-
             seq = max(
                 (int(item.get("seq", -1)) for item in records if isinstance(item, dict)),
                 default=-1,
@@ -72,7 +64,6 @@ def _reconcile_orphaned_runs() -> int:
             run.status = RunStatus.FAILED.value
             run.completed_at = completed_at
             run.log = json.dumps(records, ensure_ascii=False)
-
         db.commit()
         print(f"[run_engine] reconciled {len(runs)} orphaned running run(s)")
         return len(runs)
@@ -146,8 +137,20 @@ def _log_sink(run_id: str, line: LogLine):
     })
 
 
+def _append_runtime_error(run_id: str, text: str) -> None:
+    seq = max(
+        (int(item.get("seq", -1)) for item in _live.get(run_id, []) if isinstance(item, dict)),
+        default=-1,
+    ) + 1
+    _live[run_id].append({
+        "step_id": "",
+        "seq": seq,
+        "stream": "stderr",
+        "text": text,
+    })
+
+
 def _artifact_sink(run_id: str, user_id: int | None, step_id: str, artifact: Artifact) -> None:
-    """Keep lifecycle registration separate from human-facing output storage."""
     managed_machines.register_artifact(run_id, user_id, artifact)
 
 
@@ -156,14 +159,11 @@ def _artifact_key(artifact: Artifact) -> str:
 
 
 def _output_sink(run_id: str, step_id: str, output: RunOutput) -> None:
-    """Persist one RunOutput as one bottom-rail panel."""
     index = len(_outputs[run_id])
     if output.artifact is not None:
         _artifact_output_indexes[run_id][_artifact_key(output.artifact)] = index
-
     item = wire_codec.output_to_dict(output)
     item["step_id"] = step_id
-
     artifact_key = str((output.metadata or {}).get("artifact_key") or "")
     for link in item.get("links", []):
         if link.get("href") == "__arachne_vm_console__":
@@ -173,7 +173,6 @@ def _output_sink(run_id: str, step_id: str, output: RunOutput) -> None:
             else:
                 link["href"] = "#"
                 link["disabled"] = True
-
     _outputs[run_id].append(item)
 
 
@@ -196,7 +195,6 @@ def _task_done(run_id: str, task: asyncio.Task) -> None:
     if current is task:
         _tasks.pop(run_id, None)
     _active_steps.pop(run_id, None)
-
     if task.cancelled():
         return
     try:
@@ -241,7 +239,6 @@ async def fire_async(scenario_key: str, params: dict, source: str = "manual") ->
 
 
 def fire(scenario_key: str, params: dict, source: str = "manual") -> str:
-    """Synchronous compatibility entrypoint."""
     scenario = _get_scenario(scenario_key)
     run_id = new_run_id()
     _create_run(run_id, scenario_key, scenario, params)
@@ -259,17 +256,21 @@ def start_run(user_id: int, scenario_key: str, params: dict) -> str:
 
 
 async def cancel_run(run_id: str) -> bool:
-    """Cancel only the currently active spider step for a run.
-
-    The engine task itself is intentionally left alive so the spider can report
-    ``cancelled`` and the orchestrator can persist a normal terminal run state.
-    """
+    """Cancel the current step, retrying briefly while the responder registers."""
     step = _active_steps.get(run_id)
     task = _tasks.get(run_id)
     if step is None or task is None or task.done():
         return False
-    await cancel_step(run_id, step.kind, step.spider, step.id)
-    return True
+
+    for attempt in range(5):
+        if await cancel_step(run_id, step.kind, step.spider, step.id):
+            return True
+        await asyncio.sleep(0.05)
+        current_step = _active_steps.get(run_id)
+        current_task = _tasks.get(run_id)
+        if current_task is None or current_task.done() or current_step != step:
+            return False
+    return False
 
 
 def active_step(run_id: str) -> StepSpec | None:
@@ -280,9 +281,14 @@ def active_task(run_id: str) -> asyncio.Task | None:
     return _tasks.get(run_id)
 
 
+def has_runtime(run_id: str) -> bool:
+    return run_id in _done
+
+
 async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict):
     clean = {k: v for k, v in params.items() if not k.startswith("__")}
     user_id = params.get("__user_id__")
+    status = RunStatus.FAILED
     try:
         status = await orchestrator.run_scenario(
             run_id,
@@ -297,21 +303,29 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
             output_sink=_output_sink,
             step_state_sink=_step_state_sink,
         )
+    except asyncio.CancelledError:
+        _append_runtime_error(run_id, "ARACHNE ERROR: engine task was cancelled")
+        status = RunStatus.CANCELLED
     except Exception as exc:  # noqa: BLE001
-        _live[run_id].append({"step_id": "", "seq": 0, "stream": "stderr",
-                              "text": f"ARACHNE ERROR: {exc}"})
+        _append_runtime_error(run_id, f"ARACHNE ERROR: {exc}")
         status = RunStatus.FAILED
 
-    await asyncio.to_thread(
-        _persist_run,
-        run_id,
-        status,
-        list(_live[run_id]),
-        list(_outputs[run_id]),
-    )
-    _status[run_id] = status
-    _done[run_id] = True
-    _active_steps.pop(run_id, None)
+    try:
+        await asyncio.to_thread(
+            _persist_run,
+            run_id,
+            status,
+            list(_live[run_id]),
+            list(_outputs[run_id]),
+        )
+    except Exception as exc:  # noqa: BLE001
+        status = RunStatus.FAILED
+        _append_runtime_error(run_id, f"ARACHNE ERROR persisting run result: {exc}")
+        print(f"[run_engine] failed to persist run {run_id}: {exc}")
+    finally:
+        _status[run_id] = status
+        _done[run_id] = True
+        _active_steps.pop(run_id, None)
 
 
 def live_records(run_id: str) -> list[dict]:
@@ -327,7 +341,6 @@ def live_outputs(run_id: str) -> list[dict]:
 
 
 def live_artifacts(run_id: str) -> list[dict]:
-    """Compatibility alias; these entries are RunOutputs now."""
     return live_outputs(run_id)
 
 
