@@ -277,8 +277,6 @@ def run_view(run_id: str, request: Request, user=Depends(get_current_user)):
 async def run_cancel(run_id: str, request: Request, user=Depends(get_current_user),
                      db: Session = Depends(get_db)):
     run = _require_run_access(db, user, run_id)
-    if run.status != RunStatus.RUNNING.value if False else False:
-        pass
     if run.status != "running":
         raise HTTPException(409, "Run is not running")
     accepted = await run_engine.cancel_run(run_id)
