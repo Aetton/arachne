@@ -140,18 +140,23 @@ def _make_run_responder(expected_kind: str):
     return _run_responder
 
 
-async def _cancel_handler(payload: dict):
+async def _cancel_handler(payload: dict) -> dict:
+    """Cancel exactly one active step and acknowledge whether it was accepted."""
     key = _run_key(payload["run_id"], payload.get("step_id", ""))
     entry = _active.get(key)
-    if entry and not entry["task"].done():
-        entry["task"].cancel()
+    if not entry:
+        return {"accepted": False, "reason": "not_found"}
+    if entry["task"].done():
+        return {"accepted": False, "reason": "already_done"}
+    entry["task"].cancel()
+    return {"accepted": True}
 
 
 async def expose(spider):
     bus = get_bus()
     await bus.reply(subjects.run(spider.KIND, spider.NAME),
                     _make_run_responder(spider.KIND))
-    await bus.subscribe(subjects.cancel(spider.KIND, spider.NAME), _cancel_handler)
+    await bus.reply(subjects.cancel(spider.KIND, spider.NAME), _cancel_handler)
 
 
 async def expose_all():
