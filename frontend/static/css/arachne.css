@@ -423,7 +423,7 @@ body::before {
 
 /* Run thread */
 .run-view { padding: 1.2rem 1.25rem 1.35rem; }
-.run-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.run-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .run-title { display: flex; align-items: center; gap: .6rem; font-size: 1.02rem; font-weight: 720; }
 .run-title i { color: var(--web-node); }
 .run-status { display: inline-flex; align-items: center; gap: .4rem; font-size: .68rem; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
@@ -433,9 +433,10 @@ body::before {
 .run-status.cancelled { color: var(--muted); }
 
 .run-params { display: flex; flex-wrap: wrap; gap: .42rem; padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--web-line-dim); }
-.run-param { display: inline-flex; align-items: center; gap: .35rem; max-width: 100%; padding: .24rem .48rem; border-radius: 6px; background: color-mix(in srgb, var(--surface2) 72%, transparent); }
+.run-param { display: inline-flex; flex-wrap: wrap; min-width: 0; align-items: baseline; gap: .35rem; max-width: 100%; padding: .24rem .48rem; border-radius: 6px; background: color-mix(in srgb, var(--surface2) 72%, transparent); }
 .run-param-key { color: var(--muted); font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; }
-.run-param-value { font-size: .66rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-param-value { font-size: .66rem; white-space: pre-wrap; }
+.run-param-key, .run-param-value { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 
 .thread-timeline { position: relative; display: grid; gap: .25rem; }
 .thread-step { position: relative; padding-left: 2rem; }
@@ -478,7 +479,7 @@ body::before {
   text-align: left;
 }
 .step-head:hover { background: color-mix(in srgb, var(--surface2) 38%, transparent); }
-.step-head-main { min-width: 0; display: flex; align-items: center; gap: .45rem; }
+.step-head-main { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
 .step-chevron { color: var(--muted); transition: transform .15s ease; }
 .step-chevron.open { transform: rotate(90deg); }
 .step-title { font-size: .78rem; font-weight: 680; }
@@ -491,7 +492,7 @@ body::before {
 .task-log { max-height: 300px; overflow: auto; padding: .55rem .65rem; border-radius: 6px; background: color-mix(in srgb, var(--bg) 72%, transparent); color: color-mix(in srgb, var(--fg) 78%, var(--muted)); }
 .artifact-block { margin-top: 1rem; padding: .8rem .9rem; border-left: 2px solid var(--ok-fg); background: color-mix(in srgb, var(--ok-bg) 68%, transparent); }
 .artifact-block h4 { margin: 0 0 .4rem; color: var(--ok-fg); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; }
-.run-actions { display: flex; justify-content: flex-end; gap: .55rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--web-line-dim); }
+.run-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .55rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--web-line-dim); }
 
 @keyframes nodePulse {
   0%, 100% { transform: scale(1); }
@@ -516,3 +517,19 @@ body::before {
   .run-row { grid-template-columns: 14px minmax(0, 1fr); }
   .run-row-side { grid-column: 2; justify-content: flex-start; }
 }
+
+/* Long output values must not set the minimum width of the workspace. */
+.run-view, .run-header > div, .artifact-block { min-width: 0; overflow-wrap: anywhere; }
+.run-title { display: block; }
+.run-title > i { margin-right: .4rem; }
+.run-status, .step-summary, .step-chevron { flex-shrink: 0; }
+.output-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: .55rem; }
+.output-card { min-width: 0; padding: .75rem .85rem; border: 1px solid var(--web-line-dim); border-radius: 8px; background: color-mix(in srgb,var(--surface2) 42%,transparent); }
+.output-header, .output-heading, .output-links, .output-meta, .output-params { display: flex; flex-wrap: wrap; min-width: 0; }
+.output-header { align-items: center; justify-content: space-between; gap: .7rem; }
+.output-heading { flex: 1 1 16rem; align-items: center; gap: .55rem; }
+.output-heading > *, .output-meta > *, .output-links > * { min-width: 0; max-width: 100%; }
+.output-heading > i { flex-shrink: 0; }
+.output-links { align-items: center; gap: .4rem; max-width: 100%; }
+.output-meta { gap: .9rem; margin-top: .4rem; }
+.output-params { gap: .45rem; margin-top: .45rem; }
