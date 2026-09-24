@@ -10,6 +10,7 @@ import asyncio
 import os
 import re
 import shutil
+import signal
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -307,16 +308,39 @@ class TofuProxmoxSpider(ProvisionSpider):
             metadata={"name": name, "action": raw_action, "image": backend["image"]},
         )
 
+    @staticmethod
+    async def _stop_process(proc) -> None:
+        """Interrupt OpenTofu and its provider children, then reap the process."""
+        if proc.returncode is not None:
+            return
+        try:
+            os.killpg(proc.pid, signal.SIGINT)
+        except ProcessLookupError:
+            pass
+        try:
+            # This bounds cancellation cleanup, never provisioning runtime.
+            await asyncio.wait_for(proc.communicate(), timeout=10)
+        except asyncio.TimeoutError:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            await proc.communicate()
+
     async def _run_cmd(self, cmd: list[str], *, cwd: Path, env: dict[str, str]) -> AsyncIterator[LogLine]:
         yield LogLine(f"$ {' '.join(cmd)}", "system")
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=str(cwd), env=env,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
         )
-        assert proc.stdout is not None
-        async for raw in proc.stdout:
-            yield LogLine(raw.decode(errors="replace").rstrip("\n"))
-        await proc.wait()
+        try:
+            assert proc.stdout is not None
+            async for raw in proc.stdout:
+                yield LogLine(raw.decode(errors="replace").rstrip("\n"))
+            await proc.wait()
+        finally:
+            await self._stop_process(proc)
         if proc.returncode != 0:
             raise RuntimeError(f"OpenTofu exited with code {proc.returncode}")
 
@@ -325,8 +349,12 @@ class TofuProxmoxSpider(ProvisionSpider):
             "tofu", "output", f"-state={state_path}", "-raw", key,
             cwd=str(cwd), env=env,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
-        out, _ = await proc.communicate()
+        try:
+            out, _ = await proc.communicate()
+        finally:
+            await self._stop_process(proc)
         return out.decode(errors="replace").strip() if proc.returncode == 0 else ""
 
     async def stream_logs(self, handle: RunHandle) -> AsyncIterator[LogLine]:

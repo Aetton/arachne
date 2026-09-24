@@ -74,6 +74,17 @@ resource "proxmox_virtual_environment_vm" "stand" {
   node_name = var.node_name
   started   = true
 
+  # bpg/proxmox v0.111.1 uses context.WithTimeout: zero expires immediately.
+  # It has no unlimited mode. This ~68-year horizon removes practical build
+  # deadlines without overflowing a Go duration; operator cancellation still works.
+  timeout_clone       = 2147483647
+  timeout_create      = 2147483647
+  timeout_migrate     = 2147483647
+  timeout_reboot      = 2147483647
+  timeout_shutdown_vm = 2147483647
+  timeout_start_vm    = 2147483647
+  timeout_stop_vm     = 2147483647
+
   clone {
     vm_id        = var.template_vm_id
     node_name    = var.template_node_name != "" ? var.template_node_name : null
@@ -109,6 +120,7 @@ resource "proxmox_virtual_environment_vm" "stand" {
 
   agent {
     enabled = true
+    timeout = "2147483647s"
   }
 
   # Keep the golden-image tag set untouched. Managing registered Proxmox tags
