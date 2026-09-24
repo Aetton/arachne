@@ -32,6 +32,7 @@
   min-width: 0;
   min-height: 42px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: .45rem;
   padding: .38rem .5rem;
