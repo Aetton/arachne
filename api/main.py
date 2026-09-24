@@ -1,7 +1,6 @@
 """Arachne — FastAPI entrypoint.
 
 Run: uvicorn main:app --reload  (from api/ dir)
-Seeds an 'admin/admin' user on first boot (change immediately).
 """
 import os
 import json
@@ -21,7 +20,7 @@ from database import (
     SessionLocal, User, Team, Role, Permission, RolePermission, Run, Component, Scenario,
     ScenarioACL, ScenarioVersion, utcnow,
 )
-from auth.security import hash_password, verify_password, create_token
+from auth.security import hash_password, verify_password, create_token, ADMIN_PASSWORD
 from auth.deps import (
     get_db, get_current_user, get_optional_user, require_role, COOKIE_NAME,
 )
@@ -50,11 +49,11 @@ async def lifespan(app: FastAPI):
     db.close()
     from core.bus import start_bus
     from core import events as _events
-    await start_bus()                       # bring the bus up first
-    run_engine.init()                       # load plugins + wire triggers
-    await _events.wire()                    # flush queued subscriptions onto the bus
+    await start_bus()
+    run_engine.init()
+    await _events.wire()
     from core.thread_adapter import expose_all
-    await expose_all()                       # put local drivers onto the bus as responders
+    await expose_all()
     try:
         from plugins.triggers.schedule import start_scheduler
         start_scheduler()
@@ -64,7 +63,7 @@ async def lifespan(app: FastAPI):
     if not db.query(User).filter(User.username == "admin").first():
         db.add(User(
             username="admin",
-            password_hash=hash_password(os.getenv("ADMIN_PASSWORD", "admin")),
+            password_hash=hash_password(ADMIN_PASSWORD),
             full_name="Administrator",
             roles=["admin"], teams=[], is_active=True,
         ))
@@ -86,24 +85,18 @@ def healthz():
     return {"status": "ok"}
 
 
-# ---------- thread callbacks (runners report back here) ----------
-# Law of the thread: a signal is accepted only if its token matches the one the
-# spider stamped at dispatch. No auth cookie — runners are external; the token
-# IS the auth.
-
 class BlockSignal(BaseModel):
     step: str
-    status: str = "ok"           # ok | failed
+    status: str = "ok"
     output: str = ""
 
 
 class FinalSignal(BaseModel):
-    status: str                  # success | failed | cancelled
+    status: str
     artifacts: list[dict] = []
 
 
 def _thread_token(request: Request) -> str:
-    # accept token via header (preferred) or ?token= for curl simplicity
     return (request.headers.get("X-Arachne-Token")
             or request.query_params.get("token", ""))
 
@@ -126,7 +119,6 @@ async def thread_status(build_id: str, final: FinalSignal, request: Request):
     return {"accepted": True}
 
 
-# ---------- helpers ----------
 def render(request, name, **ctx):
     return templates.TemplateResponse(request, name, ctx)
 
@@ -147,7 +139,23 @@ def _fmt_when(dt) -> str:
     return dt.strftime("%Y-%m-%d %H:%M")
 
 
-# ---------- auth ----------
+def _require_run_access(db: Session, user, run_id: str) -> Run:
+    run = db.get(Run, run_id)
+    if not run:
+        raise HTTPException(404, "Run not found")
+    if "admin" not in (user.roles or []) and run.user_id != user.id:
+        raise HTTPException(403, "Run is not available to this user")
+    return run
+
+
+def _load_persisted_records(run: Run) -> list[dict]:
+    try:
+        records = json.loads(run.log or "[]")
+    except (ValueError, TypeError):
+        return []
+    return records if isinstance(records, list) else []
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, user=Depends(get_optional_user)):
     if user:
@@ -176,7 +184,6 @@ def logout():
     return resp
 
 
-# ---------- dashboard ----------
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, user=Depends(get_optional_user), db: Session = Depends(get_db)):
     if not user:
@@ -200,7 +207,6 @@ def dashboard(request: Request, user=Depends(get_optional_user), db: Session = D
     return render(request, "dashboard.html", user=user, scenario_groups=groups)
 
 
-# ---------- scenarios ----------
 @app.get("/scenarios/{key}/form", response_class=HTMLResponse)
 def scenario_form(key: str, request: Request, user=Depends(get_current_user),
                   db: Session = Depends(get_db)):
@@ -233,38 +239,33 @@ async def scenario_run(key: str, request: Request, user=Depends(get_current_user
             params[name] = form.get(name, p.get("default", ""))
 
     run_id = await run_engine.start_run_async(user.id, key, params)
-
     resp = _render_run(request, user, run_id)
     resp.headers["HX-Trigger"] = "runStarted"
     return resp
 
 
-# ---------- runs ----------
 def _render_run(request, user, run_id) -> HTMLResponse:
     db = SessionLocal()
-    run = db.get(Run, run_id)
-    s = config_loader.get_scenario(run.scenario) or {"label": run.scenario}
-
-    if run.status == "running":
-        records = run_engine.live_records(run_id)
-    else:
-        try:
-            records = json.loads(run.log or "[]")
-        except (ValueError, TypeError):
-            records = []
-
-    steps = runview.build(records, run.status)
-
-    arts = [
-        {"name": a.get("name", "artifact"),
-         "url": a.get("download_url") or "#",
-         "repo": a.get("type", "")}
-        for a in (run.artifacts or [])
-        if a.get("download_url")
-    ]
-    db.close()
-    return render(request, "run_view.html",
-                  user=user, run=run, s=s, steps=steps, artifacts=arts)
+    try:
+        run = _require_run_access(db, user, run_id)
+        s = config_loader.get_scenario(run.scenario) or {"label": run.scenario}
+        records = (
+            run_engine.live_records(run_id)
+            if run.status == "running" and run_engine.has_runtime(run_id)
+            else _load_persisted_records(run)
+        )
+        steps = runview.build(records, run.status)
+        arts = [
+            {"name": a.get("name", "artifact"),
+             "url": a.get("download_url") or "#",
+             "repo": a.get("type", "")}
+            for a in (run.artifacts or [])
+            if a.get("download_url")
+        ]
+        return render(request, "run_view.html",
+                      user=user, run=run, s=s, steps=steps, artifacts=arts)
+    finally:
+        db.close()
 
 
 @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
@@ -273,19 +274,14 @@ def run_view(run_id: str, request: Request, user=Depends(get_current_user)):
 
 
 @app.post("/runs/{run_id}/cancel")
-async def run_cancel(run_id: str, request: Request, user=Depends(get_current_user)):
-    """Signal cancel for the run's currently active step(s). Best-effort: the
-    spider cuts its own thread. Full per-step targeting is a later refinement."""
-    db = SessionLocal()
-    run = db.get(Run, run_id)
-    scenario = config_loader.get_scenario(run.scenario) if run else None
-    db.close()
-    if not scenario:
-        raise HTTPException(404)
-    from core.thread_client import cancel_step
-    from core import orchestrator
-    for step in orchestrator.parse_steps(scenario):
-        await cancel_step(run_id, step.kind, step.spider, step.id)
+async def run_cancel(run_id: str, request: Request, user=Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    run = _require_run_access(db, user, run_id)
+    if run.status != "running":
+        raise HTTPException(409, "Run is not running")
+    accepted = await run_engine.cancel_run(run_id)
+    if not accepted:
+        raise HTTPException(409, "Run has no cancellable active step")
     return Response("", headers={"HX-Trigger": "runStarted"})
 
 
@@ -307,8 +303,23 @@ def runs_history(request: Request, user=Depends(get_current_user), db: Session =
 
 
 @app.get("/runs/{run_id}/stream")
-async def run_stream(run_id: str, user=Depends(get_current_user)):
-    """SSE raw log tail — for clients that want token-level streaming."""
+async def run_stream(run_id: str, user=Depends(get_current_user),
+                     db: Session = Depends(get_db)):
+    run = _require_run_access(db, user, run_id)
+    persisted_records = _load_persisted_records(run)
+    persisted_status = run.status
+
+    if not run_engine.has_runtime(run_id):
+        if persisted_status == "running":
+            raise HTTPException(409, "Run runtime is unavailable")
+
+        async def persisted_gen():
+            for record in persisted_records:
+                yield f"data: {record.get('text', '')}\n\n"
+            yield "event: done\ndata: end\n\n"
+
+        return StreamingResponse(persisted_gen(), media_type="text/event-stream")
+
     async def gen():
         import asyncio
         sent = 0
@@ -324,7 +335,6 @@ async def run_stream(run_id: str, user=Depends(get_current_user)):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
-# ---------- admin ----------
 @app.get("/admin/users", response_class=HTMLResponse)
 def admin_users(request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)):
     users = db.query(User).order_by(User.username).all()
@@ -357,9 +367,12 @@ async def admin_user_create(request: Request, user=Depends(require_role("admin")
     form = await request.form()
     if db.query(User).filter(User.username == form["username"]).first():
         raise HTTPException(400, "User exists")
+    password = str(form.get("password") or "")
+    if not password:
+        raise HTTPException(400, "Password is required")
     db.add(User(
         username=form["username"],
-        password_hash=hash_password(form.get("password") or "changeme"),
+        password_hash=hash_password(password),
         full_name=form.get("full_name", ""),
         roles=form.getlist("roles"),
         teams=[int(x) for x in form.getlist("teams")],
@@ -395,7 +408,6 @@ def admin_user_delete(uid: int, user=Depends(require_role("admin")), db: Session
     return Response("")
 
 
-# ---------- scenario administration ----------
 @app.get("/admin/scenarios", response_class=HTMLResponse)
 def admin_scenarios(request: Request, user=Depends(require_role("admin")),
                     db: Session = Depends(get_db)):
@@ -588,7 +600,6 @@ def admin_scenarios_export(user=Depends(require_role("admin")),
     )
 
 
-# ---------- RBAC administration ----------
 @app.get("/admin/rbac", response_class=HTMLResponse)
 def admin_rbac(request: Request, user=Depends(require_role("admin")),
                db: Session = Depends(get_db)):

@@ -1,0 +1,42 @@
+name: Backend tests
+
+on:
+  pull_request:
+    paths:
+      - "api/**"
+      - "tests/**"
+      - ".github/workflows/backend-tests.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "api/**"
+      - "tests/**"
+      - ".github/workflows/backend-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install --disable-pip-version-check -r api/requirements.txt
+
+      - name: Compile backend
+        run: python -m compileall -q api tests
+
+      - name: Run backend tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v

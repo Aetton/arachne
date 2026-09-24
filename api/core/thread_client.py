@@ -13,6 +13,7 @@ from core import subjects, wire_codec
 from core.types import RunStatus
 
 STEP_TIMEOUT = 7200.0
+CANCEL_TIMEOUT = 5.0
 
 LogCB = Callable[[str, str, int, str], None]
 
@@ -79,7 +80,13 @@ async def run_step(run_id: str, kind: str, spider_name: str, step_dict: dict,
     }
 
 
-async def cancel_step(run_id: str, kind: str, spider_name: str, step_id: str):
-    """Signal a running step to cancel. Fire-and-forget over the bus."""
-    await get_bus().publish(subjects.cancel(kind, spider_name),
-                            {"run_id": run_id, "step_id": step_id})
+async def cancel_step(run_id: str, kind: str, spider_name: str, step_id: str) -> bool:
+    """Ask the responder to cancel one active step and require acknowledgement."""
+    result = await get_bus().request(
+        subjects.cancel(kind, spider_name),
+        {"run_id": run_id, "step_id": step_id},
+        timeout=CANCEL_TIMEOUT,
+    )
+    if result.get("error"):
+        return False
+    return bool(result.get("accepted"))
