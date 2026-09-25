@@ -1,8 +1,13 @@
 (() => {
   const STEP_MARK = /^━+ step '([^']+)' via (\S+) ━+/;
-  const GROUP_START = /^(?:::group::|##\[group\])(.+)$/;
+  const GROUP_START = /^(?:::group::|##\[group\])(.*)$/;
   const GROUP_END = /^(?:::endgroup::|##\[endgroup\])\s*$/;
-  const TASK_MARK = /^(TASK|PLAY|PLAY RECAP|RUNNING HANDLER)\b(?:\s*\[(.*?)\])?/;
+  // Forgejo prefixes downloaded log lines with RFC3339 timestamps. Normalize
+  // only for marker detection; displayed/copied payloads keep their raw text.
+  const LOG_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\s+/;
+  const ANSI_ESCAPE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/g;
+  const BUILD_STAGE = /^Starting:\s+(.+?)\s*$/;
+  const TASK_MARK = /^(PLAY RECAP|RUNNING HANDLER|TASK|PLAY)\b(?:\s*\[(.*?)\])?/;
   const NX_MARK = /^>\s+nx\s+run\s+(.+)$/i;
 
   function escapeSelector(value) {
@@ -72,7 +77,12 @@
   }
 
   function openExplicitGroup(viewer, title) {
+    const parentTarget = currentTarget(viewer);
+    const parentImplicit = viewer._arachneImplicitGroup;
     const group = createGroup(viewer, title, { live: viewer.classList.contains('is-live'), open: true });
+    group.parentTarget = parentTarget;
+    group.parentImplicit = parentImplicit;
+    viewer._arachneImplicitGroup = null;
     viewer._arachneExplicitGroups ||= [];
     viewer._arachneExplicitGroups.push(group);
     viewer._arachneTarget = group.body;
@@ -81,18 +91,21 @@
   function closeExplicitGroup(viewer) {
     const groups = viewer._arachneExplicitGroups || [];
     const group = groups.pop();
-    if (group) group.details.classList.remove('is-live-group');
-    viewer._arachneTarget = groups.length
-      ? groups[groups.length - 1].body
-      : (viewer._arachneImplicitGroup?.body || viewer.querySelector('.log-lines'));
+    if (!group) return; // An unmatched end must not reset the current scope.
+    viewer._arachneImplicitGroup?.details.classList.remove('is-live-group');
+    group.details.classList.remove('is-live-group');
+    viewer._arachneTarget = group.parentTarget;
+    viewer._arachneImplicitGroup = group.parentImplicit;
   }
 
   function openImplicitGroup(viewer, title) {
-    if ((viewer._arachneExplicitGroups || []).length) return false;
     if (viewer._arachneImplicitGroup) {
       viewer._arachneImplicitGroup.details.classList.remove('is-live-group');
     }
-    viewer._arachneTarget = viewer.querySelector('.log-lines');
+    const groups = viewer._arachneExplicitGroups || [];
+    viewer._arachneTarget = groups.length
+      ? groups[groups.length - 1].body
+      : viewer.querySelector('.log-lines');
     const group = createGroup(viewer, title, { live: viewer.classList.contains('is-live'), open: true });
     viewer._arachneImplicitGroup = group;
     viewer._arachneTarget = group.body;
@@ -133,23 +146,27 @@
 
   function appendLine(viewer, text, stream = 'stdout') {
     if (!viewer) return;
-    const groupStart = text.match(GROUP_START);
+    const marker = text.replace(ANSI_ESCAPE, '').replace(LOG_TIMESTAMP, '');
+    const groupStart = marker.match(GROUP_START);
     if (groupStart) {
       openExplicitGroup(viewer, groupStart[1]);
       return;
     }
-    if (GROUP_END.test(text)) {
+    if (GROUP_END.test(marker)) {
       closeExplicitGroup(viewer);
       return;
     }
 
-    const task = text.match(TASK_MARK);
+    const task = marker.match(TASK_MARK);
     if (task) {
       const title = task[2] || task[1].replace(/\b\w/g, c => c.toUpperCase());
       if (openImplicitGroup(viewer, title)) return;
     }
-    const nx = text.match(NX_MARK);
+    const nx = marker.match(NX_MARK);
     if (nx && openImplicitGroup(viewer, `nx ${nx[1]}`)) return;
+
+    const stage = marker.match(BUILD_STAGE);
+    if (stage) openImplicitGroup(viewer, stage[1]);
 
     appendVisualLine(viewer, text, stream);
     applySearch(viewer);
