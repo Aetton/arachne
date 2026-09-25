@@ -21,9 +21,7 @@
     const lines = viewer.querySelector('.log-lines');
     if (!lines) return;
     lines.replaceChildren();
-    viewer._arachneTarget = lines;
-    viewer._arachneExplicitGroups = [];
-    viewer._arachneImplicitGroup = null;
+    window.ArachneLogViewer.resetTarget(viewer);
     viewer.dataset.nextLine = '1';
 
     rows.forEach(row => window.ArachneLogViewer.appendLine(viewer, row.text, row.stream));

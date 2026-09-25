@@ -94,3 +94,38 @@ test('timestamped Ansible and nx boundaries still group inside wrappers', () => 
   assert.deepEqual(lines(viewer), ['installed','recap','built']);
   dom.window.close();
 });
+
+test('actual spider deltas resume stages across polls and matrix jobs', () => {
+  const {execFileSync} = require('node:child_process');
+  const batches = JSON.parse(execFileSync('python', ['-c', `
+import sys,json
+sys.path.insert(0, 'api')
+from plugins.spiders.forgejo import ForgejoSpider
+
+def snap(a,b):
+ return '\\n'.join(['::group::Job A','::group::Step',*a,'::endgroup::','::endgroup::','::group::Job B',*b,'::endgroup::'])
+first=snap(['Starting: Compile','a1'],['b1'])
+second=snap(['Starting: Compile','a1','a2','Starting: Package','a3'],['b1','b2'])
+third=snap(['Starting: Compile','a1','a2','Starting: Package','a3','a4'],['b1','b2'])
+cursor={}
+print(json.dumps([ForgejoSpider._new_log_lines('',first,cursor),ForgejoSpider._new_log_lines(first,second,cursor),ForgejoSpider._new_log_lines(second,third,cursor)]))
+`], {cwd:path.join(__dirname,'..'), encoding:'utf8'}));
+  const live=setup(), saved=setup();
+  batches.flat().forEach(live.append);
+  assert.deepEqual(titles(live.viewer), ['Job A','Step','Compile','Package','Job B']);
+  const groups=Array.from(live.viewer.querySelectorAll('.log-group'));
+  const group=title=>groups.find(x=>x.querySelector('summary').textContent===title);
+  assert.deepEqual(lines(group('Compile')), ['Starting: Compile','a1','a2']);
+  assert.deepEqual(lines(group('Package')), ['Starting: Package','a3','a4']);
+  assert.deepEqual(lines(group('Job B')), ['b1','b2']);
+  for(const raw of batches.flat()) {
+    const row=saved.dom.window.document.createElement('div');
+    row.className='log-line'; row.dataset.raw=raw;
+    saved.viewer.querySelector('.log-lines').append(row);
+  }
+  saved.dom.window.eval(fs.readFileSync(path.join(scripts,'log-group-hydrator.js'),'utf8'));
+  saved.dom.window.document.dispatchEvent(new saved.dom.window.Event('DOMContentLoaded'));
+  assert.deepEqual(titles(saved.viewer), titles(live.viewer));
+  assert.deepEqual(lines(saved.viewer), lines(live.viewer));
+  live.dom.window.close(); saved.dom.window.close();
+});
