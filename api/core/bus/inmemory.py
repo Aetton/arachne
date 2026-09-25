@@ -75,7 +75,7 @@ class InMemoryBus(Bus):
         if not handlers:
             self._subs.pop(subscription.subject, None)
 
-    async def request(self, subject: str, payload: dict, timeout: float = 30.0) -> dict:
+    async def request(self, subject: str, payload: dict, timeout: float | None = 30.0) -> dict:
         # find the reply handler whose subject matches
         for pattern, handler in self._replies.items():
             if _matches(pattern, subject):

@@ -37,7 +37,7 @@ class Bus(ABC):
         ...
 
     @abstractmethod
-    async def request(self, subject: str, payload: dict, timeout: float = 30.0) -> dict:
+    async def request(self, subject: str, payload: dict, timeout: float | None = 30.0) -> dict:
         ...
 
     @abstractmethod

@@ -58,7 +58,7 @@ class NatsBus(Bus):
             except ValueError:
                 pass
 
-    async def request(self, subject: str, payload: dict, timeout: float = 30.0) -> dict:
+    async def request(self, subject: str, payload: dict, timeout: float | None = 30.0) -> dict:
         try:
             msg = await self._nc.request(
                 subject, json.dumps(payload).encode(), timeout=timeout)
