@@ -57,13 +57,15 @@ def register_artifact(run_id: str, user_id: int | None, artifact: Artifact) -> N
                 ManagedMachine.backend == backend,
                 ManagedMachine.vm_id == vm_id,
                 ManagedMachine.state.in_(_ACTIVE_STATES),
-            ).order_by(ManagedMachine.id.desc()).first()
+            ).order_by(ManagedMachine.id.desc()).all()
+            machine = next((r for r in machine if (r.backend_metadata or {}).get("connection", "") == md.get("connection", "")), None)
         if machine is None:
             machine = db.query(ManagedMachine).filter(
                 ManagedMachine.backend == backend,
                 ManagedMachine.name == name,
                 ManagedMachine.state.in_(_ACTIVE_STATES),
-            ).order_by(ManagedMachine.id.desc()).first()
+            ).order_by(ManagedMachine.id.desc()).all()
+            machine = next((r for r in machine if (r.backend_metadata or {}).get("connection", "") == md.get("connection", "")), None)
 
         if state == "destroyed":
             if machine:
@@ -214,19 +216,14 @@ async def destroy_expired_machine(machine_id: int) -> None:
     if not claimed:
         return
 
-    if claimed["backend"] != "tofu-proxmox":
-        await asyncio.to_thread(
-            _mark_reap_failed,
-            machine_id,
-            f"No lifecycle destroy adapter for backend {claimed['backend']}",
-        )
-        return
-
     try:
-        spider = get_spider("tofu-proxmox")
+        spider = get_spider(claimed["backend"])
+        if not getattr(spider, "SUPPORTS_DESTROY", False):
+            raise ValueError(f"No lifecycle destroy adapter for backend {claimed['backend']}")
         md = claimed["backend_metadata"]
         destroy_with = {"name": claimed["name"], "os": claimed["os"]}
         for key in (
+            "connection",
             "template_vm_id",
             "template_node_name",
             "node_name",
@@ -237,7 +234,7 @@ async def destroy_expired_machine(machine_id: int) -> None:
 
         step = StepSpec(
             id=f"ttl-{machine_id}",
-            spider="tofu-proxmox",
+            spider=claimed["backend"],
             action="destroy",
             kind=spider.KIND,
             with_=destroy_with,

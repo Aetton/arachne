@@ -18,27 +18,29 @@ class ProxmoxAPIError(RuntimeError):
     pass
 
 
-def _settings() -> tuple[str, str, bool | str]:
-    endpoint = os.getenv("PROXMOX_VE_ENDPOINT", "").strip().rstrip("/")
-    token = os.getenv("PROXMOX_VE_API_TOKEN", "").strip()
+def _settings(connection: str = "") -> tuple[str, str, bool | str]:
+    from infrastructure_connections import execution_env
+    settings = {**os.environ, **execution_env(connection, "proxmox")} if connection else os.environ
+    endpoint = settings.get("PROXMOX_VE_ENDPOINT", "").strip().rstrip("/")
+    token = settings.get("PROXMOX_VE_API_TOKEN", "").strip()
     if not endpoint:
         raise ProxmoxAPIError("Proxmox endpoint is not configured")
     if not token:
         raise ProxmoxAPIError("Proxmox API token is not configured")
 
-    insecure = os.getenv("PROXMOX_VE_INSECURE", "false").strip().lower() in {
+    insecure = settings.get("PROXMOX_VE_INSECURE", "false").strip().lower() in {
         "1", "true", "yes", "on",
     }
     if insecure:
         verify: bool | str = False
     else:
-        ca_file = os.getenv("SSL_CERT_FILE", "").strip()
+        ca_file = settings.get("SSL_CERT_FILE", "").strip()
         verify = ca_file if ca_file and Path(ca_file).is_file() else True
     return endpoint, token, verify
 
 
-def _client() -> httpx.Client:
-    endpoint, token, verify = _settings()
+def _client(connection: str = "") -> httpx.Client:
+    endpoint, token, verify = _settings(connection)
     return httpx.Client(
         base_url=f"{endpoint}/api2/json",
         headers={"Authorization": f"PVEAPIToken={token}"},
@@ -125,10 +127,10 @@ def _template_details(client: httpx.Client, resource: dict) -> dict:
     }
 
 
-def list_templates() -> list[dict]:
+def list_templates(connection: str = "") -> list[dict]:
     """Return QEMU templates visible to the configured token with live metadata."""
     try:
-        with _client() as client:
+        with _client(connection) as client:
             resources = _data(client.get("/cluster/resources", params={"type": "vm"})) or []
             templates = [
                 row for row in resources
@@ -142,9 +144,9 @@ def list_templates() -> list[dict]:
         raise ProxmoxAPIError(f"Cannot reach Proxmox: {exc}") from exc
 
 
-def inspect_template(vm_id: int) -> dict:
+def inspect_template(vm_id: int, connection: str = "") -> dict:
     """Resolve a VM ID to its current node/config and verify it is still a template."""
-    with _client() as client:
+    with _client(connection) as client:
         resources = _data(client.get("/cluster/resources", params={"type": "vm"})) or []
         resource = next(
             (
@@ -161,14 +163,14 @@ def inspect_template(vm_id: int) -> dict:
         return details
 
 
-def novnc_console_url(node: str, vm_id: int, name: str = "") -> str:
+def novnc_console_url(node: str, vm_id: int, name: str = "", connection: str = "") -> str:
     """Return the built-in Proxmox noVNC console URL for a QEMU VM.
 
     Arachne deliberately does not proxy or reimplement noVNC. The browser is
     redirected to Proxmox's existing web console, which owns the VNC websocket,
     authentication and console lifecycle.
     """
-    endpoint, _, _ = _settings()
+    endpoint, _, _ = _settings(connection)
     query = urlencode({
         "console": "kvm",
         "novnc": 1,

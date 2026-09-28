@@ -115,15 +115,28 @@ SPIDER_CONTRACTS: dict[str, dict] = {
 }
 
 
+SPIDER_CONTRACTS["tofu-ovirt"] = deepcopy(SPIDER_CONTRACTS["tofu-proxmox"])
+SPIDER_CONTRACTS["tofu-ovirt"]["description"] = "Создаёт и удаляет oVirt VM через OpenTofu."
+SPIDER_CONTRACTS["tofu-ovirt"]["docs_url"] = f"{DOCS_BASE}/operations/optional-spiders"
+SPIDER_CONTRACTS["tofu-ovirt"]["example"] = SPIDER_CONTRACTS["tofu-proxmox"]["example"].replace("tofu-proxmox", "tofu-ovirt")
+SPIDER_CONTRACTS["tofu-ovirt"]["inputs"]["resources"] = {"description": "cpu, memory_gb; диски наследуются от template."}
+for backend in ("tofu-proxmox", "tofu-ovirt"):
+    SPIDER_CONTRACTS[backend]["inputs"]["connection"] = {"description": "Подключение к гипервизору; должно совпадать с Golden Image. При destroy используйте исходное подключение."}
+SPIDER_CONTRACTS["tofu-ovirt"]["inputs"].update({
+    "ip_interface": {"description": "Имя гостевого интерфейса для ожидания IPv4."},
+    "ip_cidr": {"description": "Подсеть IPv4 для ожидания адреса, например 10.81.0.0/16."},
+})
+
+
 @app.get("/api/admin/scenario-dsl")
 def scenario_dsl_metadata(user=Depends(require_role("admin"))):
     profiles = [row for row in list_profiles() if row.get("enabled")]
     spiders = []
     for name, spider in sorted(all_spiders().items()):
         contract = deepcopy(SPIDER_CONTRACTS.get(name, {}))
-        if name == "tofu-proxmox" and profiles:
+        if name in {"tofu-proxmox", "tofu-ovirt"} and profiles:
             contract.setdefault("inputs", {}).setdefault("image", {})["options"] = [
-                row["slug"] for row in profiles
+                row["slug"] for row in profiles if row["backend"] == name.removeprefix("tofu-")
             ]
 
         family = getattr(spider, "FAMILY", "weave")

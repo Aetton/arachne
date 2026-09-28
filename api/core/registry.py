@@ -58,4 +58,6 @@ def load_plugins(package: str = "plugins"):
         if ispkg:
             load_plugins(sub)
         else:
-            importlib.import_module(sub)
+            from core.optional_plugins import module_enabled
+            if module_enabled(sub):
+                importlib.import_module(sub)

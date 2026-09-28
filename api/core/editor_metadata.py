@@ -63,6 +63,14 @@ SPIDER_CONTRACTS: dict[str, dict] = {
     },
 }
 
+for backend in ("tofu-proxmox", "tofu-ovirt"):
+    SPIDER_CONTRACTS[backend] = {
+        "description": f"Provision or destroy through {backend}.",
+        "actions": ["brood", "provision", "destroy"],
+        "inputs": {"name": {"required": True}, "connection": {}, "image": {}, "os": {}, "lifetime": {}, "resources": {}},
+    }
+SPIDER_CONTRACTS["tofu-ovirt"]["inputs"].update({"ip_interface": {}, "ip_cidr": {}})
+
 
 def scenario_dsl_metadata() -> dict:
     spiders = []

@@ -5,6 +5,7 @@ on:
     paths:
       - "api/**"
       - "tests/**"
+      - "tofu/**"
       - ".github/workflows/backend-tests.yml"
   push:
     branches:
@@ -12,6 +13,7 @@ on:
     paths:
       - "api/**"
       - "tests/**"
+      - "tofu/**"
       - ".github/workflows/backend-tests.yml"
   workflow_dispatch:
 
@@ -40,3 +42,20 @@ jobs:
 
       - name: Run backend tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
+
+  tofu-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenTofu
+        run: |
+          curl --fail --show-error --location --output /tmp/tofu.zip \
+            https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_linux_amd64.zip
+          unzip -q /tmp/tofu.zip tofu -d /tmp/tofu-bin
+          echo /tmp/tofu-bin >> "$GITHUB_PATH"
+      - name: Validate oVirt module against provider schema
+        working-directory: tofu/ovirt
+        run: |
+          tofu init -backend=false -input=false -lockfile=readonly
+          tofu validate -no-color

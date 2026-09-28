@@ -20,12 +20,13 @@ class TimeoutTests(unittest.IsolatedAsyncioTestCase):
         async def slow(payload):
             await asyncio.sleep(.03)
             return {"status": "success"}
-        for spider in ("tofu-proxmox", "other"):
+        for spider in ("tofu-proxmox", "tofu-ovirt", "other"):
             await bus.reply(subjects.run("provision", spider), slow)
         with patch.object(thread_client, "get_bus", return_value=bus), patch.object(thread_client, "STEP_TIMEOUT", .005):
             async def run(spider):
                 return await thread_client.run_step("test", "provision", spider, {"id": "stand"}, lambda *args: None)
             self.assertEqual((await run("tofu-proxmox"))["status"], RunStatus.SUCCESS)
+            self.assertEqual((await run("tofu-ovirt"))["status"], RunStatus.SUCCESS)
             self.assertEqual((await run("other"))["error"]["type"], "TransportError")
         self.assertFalse(bus._subs)
 

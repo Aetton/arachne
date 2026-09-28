@@ -7,7 +7,10 @@
 
 services:
   arachne:
-    build: .
+    build:
+      context: .
+      args:
+        ARACHNE_PLUGINS: "${ARACHNE_PLUGINS:-}"
     container_name: arachne
     restart: unless-stopped
     ports:

@@ -1,5 +1,8 @@
 # Proxmox и OpenTofu
 
+Спайдер теперь необязательный: [установка и именованные подключения](optional-spiders.md).
+Для существующих установок перед пересборкой задайте `ARACHNE_PLUGINS=tofu-proxmox,ansible-local`.
+
 `tofu-proxmox` создаёт временные VM полным клонированием заранее подготовленных
 Proxmox templates. Пользователь сценария работает с человеческими Golden Image
 профилями; VM ID, node, datastore, disk interface и фактические ресурсы шаблона

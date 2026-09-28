@@ -79,12 +79,12 @@
         <div class="golden-title-icon"><i class="ti ti-diamond"></i></div>
         <div>
           <h1>Golden Images</h1>
-          <p>Человеческие профили стендов. Вы выбираете template и credential, Арахна сама читает ресурсы из Proxmox и передаёт доступ следующему spider.</p>
+          <p>Человеческие профили стендов. Вы выбираете template и credential, Арахна сама читает ресурсы из гипервизора и передаёт доступ следующему spider.</p>
         </div>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         {% if proxmox_error %}
-          <span class="golden-status bad"><span class="golden-dot"></span> Proxmox недоступен</span>
+          <span class="golden-status bad"><span class="golden-dot"></span> Есть недоступные подключения</span>
         {% else %}
           <span class="golden-status ok"><span class="golden-dot"></span> {{ templates_available|length }} templates видно</span>
         {% endif %}
@@ -95,7 +95,7 @@
 
   {% if proxmox_error %}
   <div class="surface rounded-lg p-4 text-sm" style="border-color: color-mix(in srgb, var(--fail-fg) 35%, var(--border));">
-    <div class="font-semibold" style="color: var(--fail-fg);"><i class="ti ti-plug-connected-x mr-1"></i> Не удалось опросить Proxmox</div>
+    <div class="font-semibold" style="color: var(--fail-fg);"><i class="ti ti-plug-connected-x mr-1"></i> Не удалось опросить подключения</div>
     <div class="muted mt-1">{{ proxmox_error }}</div>
   </div>
   {% endif %}
@@ -111,7 +111,7 @@
           </div>
           <div>
             <h2>{{ profile.label }}</h2>
-            <div class="golden-slug">{{ profile.slug }} · {{ profile.os }}</div>
+            <div class="golden-slug">{{ profile.slug }} · {{ profile.os }} · {{ profile.connection or "legacy" }}</div>
           </div>
         </div>
         {% if not profile.enabled %}
@@ -150,7 +150,7 @@
         </form>
         <button class="btn-ghost" type="button"
           data-slug="{{ profile.slug }}" data-label="{{ profile.label }}" data-os="{{ profile.os }}"
-          data-vmid="{{ profile.vm_id }}" data-credential="{{ profile.credentials_ref }}"
+          data-connection="{{ profile.connection }}" data-vmid="{{ profile.vm_id }}" data-credential="{{ profile.credentials_ref }}"
           data-enabled="{{ '1' if profile.enabled else '0' }}"
           onclick="editGoldenDialog(this)"><i class="ti ti-settings mr-1"></i> Настроить</button>
       </div>
@@ -189,11 +189,12 @@
             <option value="windows">Windows</option>
           </select>
         </label>
-        <label><span>Template в Proxmox</span>
+        <label><span>Подключение</span><select id="golden-connection" name="connection" onchange="syncGoldenTemplates()">{% for c in connections %}<option value="{{ c.slug }}">{{ c.label }} · {{ c.backend }}</option>{% endfor %}</select></label>
+        <label><span>Template</span>
           <select id="golden-vmid" name="vm_id" required {% if not templates_available %}disabled{% endif %}>
             <option value="">Выбрать template…</option>
             {% for t in templates_available %}
-            <option value="{{ t.vm_id }}">{{ t.name }} · #{{ t.vm_id }} · {{ t.node }} · {{ t.cpu }} CPU · {{ t.memory_gb }} GiB</option>
+            <option value="{{ t.vm_id }}" data-connection="{{ t.connection }}">{{ t.name }} · #{{ t.vm_id }} · {{ t.node }} · {{ t.cpu }} CPU · {{ t.memory_gb }} GiB</option>
             {% endfor %}
           </select>
         </label>
@@ -224,6 +225,15 @@
 
 {% block scripts %}
 <script>
+  function syncGoldenTemplates(wanted = '') {
+    const connection = document.getElementById('golden-connection').value;
+    const select = document.getElementById('golden-vmid');
+    for (const option of select.options) {
+      option.hidden = option.disabled = !!option.value && option.dataset.connection !== connection;
+      option.selected = !!wanted && option.value === wanted && !option.disabled;
+    }
+    if (!wanted || !Array.from(select.options).some(o => o.selected && !o.disabled && o.value)) select.value = '';
+  }
   function syncGoldenCredentials(preferredValue) {
     const os = document.getElementById('golden-os').value;
     const select = document.getElementById('golden-credential');
@@ -254,6 +264,7 @@
     document.getElementById('golden-vmid').value = '';
     document.getElementById('golden-credential').value = '';
     document.getElementById('golden-enabled').checked = true;
+    syncGoldenTemplates();
     syncGoldenCredentials('');
     d.showModal();
   }
@@ -265,7 +276,8 @@
     document.getElementById('golden-label').value = button.dataset.label;
     document.getElementById('golden-slug').value = button.dataset.slug;
     document.getElementById('golden-os').value = button.dataset.os;
-    document.getElementById('golden-vmid').value = button.dataset.vmid;
+    document.getElementById('golden-connection').value = button.dataset.connection;
+    syncGoldenTemplates(button.dataset.vmid);
     document.getElementById('golden-enabled').checked = button.dataset.enabled === '1';
     syncGoldenCredentials(button.dataset.credential || '');
     d.showModal();

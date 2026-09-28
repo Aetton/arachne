@@ -11,6 +11,8 @@ RUN npm run docs:build
 FROM python:3.12-slim-bookworm
 
 ARG TOFU_VERSION=1.12.6
+ARG ARACHNE_PLUGINS=""
+ENV ARACHNE_PLUGINS=${ARACHNE_PLUGINS}
 
 # ansible + openssh-client for playbooks that provision/deploy over SSH.
 # sshpass enables password-backed SSH credentials from Control -> Secrets.
@@ -22,8 +24,10 @@ RUN sed -i \
         /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        ansible openssh-client sshpass curl ca-certificates bash git rsync \
-    && arch="$(dpkg --print-architecture)" \
+        curl ca-certificates bash git rsync \
+    && case ",${ARACHNE_PLUGINS}," in *",ansible-local,"*) apt-get install -y --no-install-recommends ansible openssh-client sshpass ;; esac \
+    && if echo ",${ARACHNE_PLUGINS}," | grep -Eq ',tofu-(proxmox|ovirt),'; then \
+       arch="$(dpkg --print-architecture)" \
     && case "$arch" in \
          amd64) tofu_arch=amd64 ;; \
          arm64) tofu_arch=arm64 ;; \
@@ -33,13 +37,14 @@ RUN sed -i \
         "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_${tofu_arch}.deb" \
     && apt-get install -y --no-install-recommends /tmp/tofu.deb \
     && tofu version \
-    && rm -f /tmp/tofu.deb \
+    && rm -f /tmp/tofu.deb; fi \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY api/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY api/requirements*.txt ./
+RUN pip install --no-cache-dir -r requirements.txt \
+    && case ",${ARACHNE_PLUGINS}," in *",ansible-local,"*) pip install --no-cache-dir -r requirements-ansible.txt ;; esac
 
 COPY api/ ./api/
 COPY alembic.ini ./alembic.ini
@@ -52,7 +57,8 @@ COPY hubs/ ./hubs/
 COPY scripts/ ./scripts/
 COPY --from=docs-builder /docs/.vitepress/dist /app/wiki/
 
-RUN chmod +x api/runners/demo_play.sh \
+RUN PYTHONPATH=api python scripts/select-plugin-bundles.py \
+    && chmod +x api/runners/demo_play.sh \
     && chmod +x scripts/*.sh \
     && mkdir -p /var/lib/arachne/tofu-state \
     && mkdir -p /usr/local/share/ca-certificates/arachne

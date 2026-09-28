@@ -30,12 +30,16 @@ async def _cancelled_result(spider, handle, log) -> dict:
             await asyncio.to_thread(spider.cancel, handle)
         except Exception as exc:  # noqa: BLE001
             await log(f"cancel cleanup error: {exc}", "stderr")
+    artifacts, outputs = [], []
+    if handle is not None and getattr(spider, "PRESERVE_CANCEL_ARTIFACTS", False):
+        artifacts = [wire_codec.artifact_to_dict(a) for a in spider.get_artifacts(handle)]
+        outputs = [wire_codec.output_to_dict(o) for o in spider.get_outputs(handle)]
     await log("thread cancelled", "system")
     return {
         "status": RunStatus.CANCELLED.value,
         "handle": wire_codec.handle_to_dict(handle) if handle is not None else None,
-        "artifacts": [],
-        "outputs": [],
+        "artifacts": artifacts,
+        "outputs": outputs,
         "error": RunError("Cancelled", "run cancelled by request").to_dict(),
     }
 

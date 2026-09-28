@@ -53,3 +53,9 @@ docker compose logs -f arachne
 ## Лицензия
 
 Apache License 2.0. Подробности — в `LICENSE` и `NOTICE`.
+
+## Optional execution plugins
+
+Fresh images contain no OpenTofu or Ansible runtime. Set `ARACHNE_PLUGINS` at build time.
+Existing Proxmox + Ansible installations must set `tofu-proxmox,ansible-local` before rebuilding.
+Add `tofu-ovirt` for oVirt. See [installation and migration](docs/ru/operations/optional-spiders.md).

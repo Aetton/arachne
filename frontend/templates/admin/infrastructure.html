@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Подключения · Arachne{% endblock %}
+{% block content %}
+<div class="space-y-4" style="max-width:1000px;margin:auto">
+  <h1 class="text-xl font-semibold">Подключения к гипервизорам</h1>
+  <p class="muted">У каждого подключения свой адрес и credential из <a href="/admin/secrets">Secrets</a>. Golden Image закрепляется за подключением.</p>
+  {% if not backends %}<p class="surface p-4 rounded-lg">Спайдеры гипервизоров не установлены. Подключите нужный пакет при сборке Арахны.</p>{% endif %}
+  {% for c in connections %}
+  <form class="surface p-4 rounded-lg space-y-3" method="post" action="/admin/infrastructure/save">
+    <div class="font-semibold">{{ c.label }} · {{ c.backend }} · {{ c.slug }}</div>
+    <input type="hidden" name="slug" value="{{ c.slug }}"><input type="hidden" name="backend" value="{{ c.backend }}"><input type="hidden" name="endpoint" value="{{ c.endpoint }}">
+    <p class="muted" style="overflow-wrap:anywhere">{{ c.endpoint }}</p>
+    <label>Название <input name="label" value="{{ c.label }}" required></label>
+    <label>Credential <select name="credential_slug" required>{% for s in credentials %}{% if (c.backend == 'proxmox' and s.kind == 'token') or (c.backend == 'ovirt' and s.kind == 'basic') %}<option value="{{ s.slug }}" {% if s.slug == c.credential_slug %}selected{% endif %}>{{ s.label }} · {{ s.slug }}</option>{% endif %}{% endfor %}</select></label>
+    <label><input type="checkbox" name="enabled" {% if c.enabled %}checked{% endif %}> Разрешить новые ВМ</label>
+    <label><input type="checkbox" name="insecure" {% if c.insecure %}checked{% endif %}> Отключить проверку TLS</label>
+    <button class="btn" type="submit">Сохранить</button>
+  </form>
+  {% endfor %}
+  {% if backends %}
+  <form class="surface p-4 rounded-lg space-y-3" method="post" action="/admin/infrastructure/save">
+    <h2 class="font-semibold">Новое подключение</h2>
+    <label>Ключ <input name="slug" pattern="[a-z0-9][a-z0-9._-]{0,63}" placeholder="ovirt-test" required></label>
+    <label>Название <input name="label" required></label>
+    <label>Платформа <select name="backend" id="connection-backend" onchange="filterCredentials()">{% for b in backends %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select></label>
+    <label>Адрес API <input name="endpoint" type="url" placeholder="https://engine/ovirt-engine/api" required></label>
+    <label>Credential <select name="credential_slug" id="connection-credential" required><option value="">Выбрать…</option>{% for s in credentials %}<option value="{{ s.slug }}" data-kind="{{ s.kind }}">{{ s.label }} · {{ s.kind }}</option>{% endfor %}</select></label>
+    <label><input type="checkbox" name="enabled" checked> Разрешить новые ВМ</label>
+    <label><input type="checkbox" name="insecure"> Отключить проверку TLS</label>
+    <button class="btn" type="submit">Добавить</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script>
+function filterCredentials() {
+  const backend = document.getElementById('connection-backend');
+  if (!backend) return;
+  const select = document.getElementById('connection-credential');
+  for (const option of select.options) {
+    option.hidden = option.disabled = !!option.value && option.dataset.kind !== (backend.value === 'proxmox' ? 'token' : 'basic');
+  }
+  if (select.selectedOptions[0]?.disabled) select.value = '';
+}
+filterCredentials();
+</script>{% endblock %}
