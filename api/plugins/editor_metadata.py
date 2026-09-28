@@ -53,6 +53,26 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
         "example": """- id: build-backend\n  spider: gitlab\n  action: weave\n  with:\n    project: platform/backend\n    ref: main\n    version: \"${params.version}\"""",
     },
+    "koji": {
+        "description": "Отправляет RPM-сборку в Koji и возвращает task logs и RPM artifacts.",
+        "docs_url": f"{DOCS_BASE}/reference/spiders#koji",
+        "actions": {
+            "weave": "Запустить Koji build task и дождаться результата.",
+        },
+        "inputs": {
+            "source": {"required": True, "description": "SCM URL или другой source, принимаемый Koji build."},
+            "src": {"description": "Псевдоним для source."},
+            "target": {"required": True, "description": "Koji build target."},
+            "profile": {"default": "KOJI_PROFILE", "description": "Имя стандартного Koji client profile."},
+            "scratch": {"description": "Запустить scratch build."},
+            "skip_tag": {"description": "Не тегировать успешную сборку в destination tag."},
+            "fail_fast": {"description": "Остановить multi-arch build при первой ошибке."},
+            "arches": {"description": "Ограничить архитектуры сборки."},
+            "priority": {"description": "Koji task priority."},
+            "channel": {"description": "Koji builder channel."},
+        },
+        "example": """- id: build-rpm\n  spider: koji\n  action: weave\n  with:\n    source: "git+https://git.example.internal/rpms/backend?#${params.commit}"\n    target: redos8\n    profile: redsoft-koji""",
+    },
     "ansible-local": {
         "description": "Выполняет ansible-playbook локально. Может принимать Brood artifact целиком как target.",
         "docs_url": f"{DOCS_BASE}/reference/spiders#ansible-local",
