@@ -44,7 +44,8 @@ WORKDIR /app
 
 COPY api/requirements*.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
-    && case ",${ARACHNE_PLUGINS}," in *",ansible-local,"*) pip install --no-cache-dir -r requirements-ansible.txt ;; esac
+    && case ",${ARACHNE_PLUGINS}," in *",ansible-local,"*) pip install --no-cache-dir -r requirements-ansible.txt ;; esac \
+    && case ",${ARACHNE_PLUGINS}," in *",koji,"*) pip install --no-cache-dir -r requirements-koji.txt ;; esac
 
 COPY api/ ./api/
 COPY alembic.ini ./alembic.ini
