@@ -61,7 +61,7 @@ def open_vm_console(
 
     node, vm_id, name = _vm_console_target(artifacts[artifact_index])
     return RedirectResponse(
-        novnc_console_url(node, vm_id, name),
+        novnc_console_url(node, vm_id, name, connection=str((artifacts[artifact_index].get("metadata") or {}).get("connection") or "")),
         status_code=302,
         headers={"Cache-Control": "no-store"},
     )

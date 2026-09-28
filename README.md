@@ -159,3 +159,9 @@ Before real users touch the portal:
 
 Arachne is licensed under the Apache License, Version 2.0. See `LICENSE` and
 `NOTICE`.
+
+## Optional execution plugins
+
+Fresh images contain no OpenTofu or Ansible runtime. Set `ARACHNE_PLUGINS` at build time.
+Existing Proxmox + Ansible installations must set `tofu-proxmox,ansible-local` before rebuilding.
+Add `tofu-ovirt` for oVirt. See [installation and migration](docs/ru/operations/optional-spiders.md).

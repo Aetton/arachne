@@ -94,6 +94,7 @@ const russianSidebar = [
     items: [
       { text: "Развёртывание", link: "/ru/operations/deployment" },
       { text: "Golden Images", link: "/ru/operations/golden-images" },
+      { text: "Пакеты спайдеров и подключения", link: "/ru/operations/optional-spiders" },
       { text: "Proxmox и OpenTofu", link: "/ru/operations/proxmox-opentofu" },
       { text: "Резервные копии и миграция", link: "/ru/operations/backup-and-migration" },
       { text: "Диагностика", link: "/ru/operations/troubleshooting" }

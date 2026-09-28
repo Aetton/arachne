@@ -43,7 +43,7 @@ async def run_step(run_id: str, kind: str, spider_name: str, step_dict: dict,
         }
         result = await bus.request(subjects.run(kind, spider_name), payload,
                                    # Provisioning duration depends on storage and guest startup.
-                                   timeout=None if spider_name == "tofu-proxmox" else STEP_TIMEOUT)
+                                   timeout=None if spider_name in {"tofu-proxmox", "tofu-ovirt"} else STEP_TIMEOUT)
     finally:
         await bus.unsubscribe(subscription)
 

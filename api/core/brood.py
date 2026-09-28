@@ -117,6 +117,7 @@ def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Ar
         key: value
         for key, value in md.items()
         if key in {
+            "connection",
             "image",
             "vm_id",
             "template_vm_id",
