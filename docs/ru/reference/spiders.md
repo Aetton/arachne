@@ -36,6 +36,35 @@
 
 Отмена вызывает Forgejo endpoint `/cancel`. Значения inputs с `token`, `secret` или `password` в имени маскируются в диагностике HTTP-ошибок.
 
+## `koji`
+
+`koji` — прямой Weave-коннектор к Koji. Он использует штатный Koji client profile, отправляет `build` task, читает task state и task logs через hub API, а после успешной обычной сборки возвращает произведённые RPM как Arachne artifacts.
+
+```yaml
+- id: rpm
+  spider: koji
+  action: weave
+  with:
+    source: "git+https://git.example.internal/rpms/backend?#deadbeef"
+    target: redos8
+    profile: redsoft-koji
+```
+
+Обязательны `source` (или `src`) и `target`. Дополнительно поддерживаются `scratch`, `skip_tag`, `fail_fast`, `arches`, `priority`, `channel`, `wait_repo` и `wait_builds`.
+
+Подключение и authentication не дублируются в Arachne. Spider читает обычный Koji profile из стандартных мест клиента (`/etc/koji.conf`, `/etc/koji.conf.d/*.conf`, `~/.koji/config.d/*.conf`). Это позволяет использовать штатные GSSAPI/Kerberos, SSL client certificate или тестовый password auth тем же способом, что и `koji` CLI.
+
+Плагин опциональный:
+
+```text
+ARACHNE_PLUGINS=koji
+KOJI_PROFILE=redsoft-koji
+```
+
+При container deployment Koji config и необходимые certificate/keytab/ccache нужно смонтировать внутрь контейнера. `KOJI_POLL_INTERVAL` задаёт период polling, по умолчанию 2 секунды.
+
+Текущая выдача artifacts рассчитана на обычные импортированные build-ы: spider находит build по task ID, вызывает `listBuildRPMs` и строит ссылки через `topurl` профиля. Scratch build отслеживается и логируется, но его RPM пока не публикуются как download artifacts, потому что они живут в task/scratch storage, а не в постоянном build storage.
+
 ## `ansible-local`
 
 Запускает `ansible-playbook` внутри контейнера.
