@@ -58,6 +58,9 @@
     viewer._arachneTarget = viewer.querySelector('.log-lines');
     viewer._arachneExplicitGroups = [];
     viewer._arachneImplicitGroup = null;
+    viewer._arachneScopes = new Map();
+    viewer._arachneScopeKey = '';
+    viewer._arachneRootImplicit = null;
   }
 
   function createGroup(viewer, title, options = {}) {
@@ -112,6 +115,39 @@
     return true;
   }
 
+  // Polling may resume any job/step. Reuse its DOM and implicit stage rather
+  // than interpreting the end of a downloaded snapshot as an end of the job.
+  function selectScope(viewer, scope) {
+    if (!Array.isArray(scope) || !scope.every(item =>
+      item && typeof item.id === 'string' && typeof item.title === 'string')) return false;
+    viewer._arachneScopes ||= new Map();
+    const previous = viewer._arachneScopes.get(viewer._arachneScopeKey);
+    if (previous) previous.implicit = viewer._arachneImplicitGroup;
+    else viewer._arachneRootImplicit = viewer._arachneImplicitGroup;
+
+    let target = viewer.querySelector('.log-lines');
+    const groups = [];
+    for (const item of scope) {
+      let group = viewer._arachneScopes.get(item.id);
+      if (!group) {
+        viewer._arachneTarget = target;
+        group = createGroup(viewer, item.title, {live: viewer.classList.contains('is-live')});
+        group.parentTarget = target;
+        group.parentImplicit = null;
+        viewer._arachneScopes.set(item.id, group);
+      }
+      groups.push(group);
+      target = group.body;
+    }
+    viewer._arachneScopeKey = scope.length ? scope[scope.length - 1].id : '';
+    viewer._arachneExplicitGroups = groups;
+    viewer._arachneImplicitGroup = groups.length
+      ? groups[groups.length - 1].implicit || null
+      : viewer._arachneRootImplicit;
+    viewer._arachneTarget = viewer._arachneImplicitGroup?.body || target;
+    return true;
+  }
+
   function appendVisualLine(viewer, text, stream = 'stdout') {
     const lineNo = Number(viewer.dataset.nextLine || 1);
     viewer.dataset.nextLine = String(lineNo + 1);
@@ -146,6 +182,12 @@
 
   function appendLine(viewer, text, stream = 'stdout') {
     if (!viewer) return;
+    const scopePrefix = '::arachne-log-scope::';
+    if (text.startsWith(scopePrefix)) {
+      try {
+        if (selectScope(viewer, JSON.parse(text.slice(scopePrefix.length)))) return;
+      } catch (_) { /* Malformed control records remain visible as ordinary text. */ }
+    }
     const marker = text.replace(ANSI_ESCAPE, '').replace(LOG_TIMESTAMP, '');
     const groupStart = marker.match(GROUP_START);
     if (groupStart) {
@@ -431,5 +473,5 @@
 
   document.addEventListener('DOMContentLoaded', () => init());
   document.body.addEventListener('htmx:afterSwap', event => init(event.target));
-  window.ArachneLogViewer = { init, appendLine };
+  window.ArachneLogViewer = { init, appendLine, resetTarget };
 })();

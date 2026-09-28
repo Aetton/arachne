@@ -11,6 +11,9 @@ No Arachne callback inputs or switchboard telemetry are required.
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
+import hashlib
+import json
 from datetime import datetime
 from io import BytesIO
 import os
@@ -451,7 +454,7 @@ class ForgejoSpider(BuildSpider):
                 label = name.rsplit("/", 1)[-1]
                 chunks.append(f"::group::Forgejo job: {label}")
                 chunks.append(body.rstrip("\n"))
-                chunks.append("::endgroup::")
+                chunks.append("::arachne-endgroup::job")
 
         return "\n".join(chunk for chunk in chunks if chunk != "")
 
@@ -505,7 +508,7 @@ class ForgejoSpider(BuildSpider):
 
             if next_active != active:
                 if opened:
-                    output.append("::endgroup::")
+                    output.append("::arachne-endgroup::step")
                 active = next_active
                 if active >= 0:
                     _, number, name = timeline[active]
@@ -515,7 +518,7 @@ class ForgejoSpider(BuildSpider):
             output.append(line)
 
         if opened:
-            output.append("::endgroup::")
+            output.append("::arachne-endgroup::step")
         return "\n".join(output)
 
     async def _fetch_jobs(
@@ -583,7 +586,7 @@ class ForgejoSpider(BuildSpider):
                     chunks.extend((
                         f"::group::Forgejo job: {job_name}",
                         body,
-                        "::endgroup::",
+                        "::arachne-endgroup::job",
                     ))
 
                 if chunks:
@@ -604,23 +607,100 @@ class ForgejoSpider(BuildSpider):
             return None
 
     @staticmethod
-    def _new_log_lines(previous: str, current: str) -> list[str]:
-        if not current:
-            return []
-        if previous and current.startswith(previous):
-            tail = current[len(previous):]
-            return tail.splitlines()
-        if previous == current:
-            return []
+    def _snapshot_records(text: str):
+        """Decode balanced snapshots into (scope, payload) without streaming EOFs."""
+        stack = []
+        siblings = Counter()
+        for line in text.splitlines():
+            marker = _LOG_TIMESTAMP_RE.sub("", _ANSI_ESCAPE_RE.sub("", line), count=1)
+            boundary = re.match(r"^::arachne-endgroup::(job|step)$", line)
+            if boundary:
+                prefix = "Forgejo job:" if boundary[1] == "job" else "Forgejo step "
+                for index in range(len(stack) - 1, -1, -1):
+                    if stack[index]["title"].startswith(prefix):
+                        del stack[index:]
+                        break
+                continue
+            start = re.match(r"^(?:::group::|##\[group\])(.*)$", marker)
+            if start:
+                title = start[1].strip() or "output"
+                parent = stack[-1]["id"] if stack else ""
+                siblings[(parent, title)] += 1
+                identity = json.dumps([parent, title, siblings[(parent, title)]])
+                stack.append({"id": hashlib.sha256(identity.encode()).hexdigest(), "title": title})
+                yield list(stack), None
+            elif re.match(r"^(?:::endgroup::|##\[endgroup\])\s*$", marker):
+                if stack:
+                    stack.pop()
+            else:
+                yield list(stack), line
 
-        old = previous.splitlines()
-        new = current.splitlines()
-        common = 0
-        for left, right in zip(old, new):
-            if left != right:
-                break
-            common += 1
-        return new[common:]
+    @classmethod
+    def _new_log_lines(cls, previous: str, current: str, cursor: dict | None = None) -> list[str]:
+        """Emit new occurrences with a resumable scope, not a sliced snapshot tail.
+
+        A snapshot's closing groups are not completion events. Matrix jobs can
+        also grow before other jobs in the snapshot. Keep occurrence high-water
+        marks across polls, including temporary fallback/truncated responses.
+        """
+        def job_key(scope):
+            # Step/group metadata may arrive later; deduplicate within a job,
+            # not within its transient presentation path.
+            return scope[0]["id"] if scope else ""
+
+        if cursor is None:
+            cursor = {}
+        if "counts" not in cursor:
+            cursor["counts"] = Counter()
+            cursor["scopes"] = set()
+            for scope, line in cls._snapshot_records(previous):
+                cursor["scopes"].update(item["id"] for item in scope)
+                if line is not None:
+                    cursor["counts"][(job_key(scope), line)] += 1
+        seen = cursor["counts"]
+        counts = Counter()
+        output = []
+        selected = None
+        # A run-level plain-text fallback can precede job metadata. Consume its
+        # occurrences once when those same lines acquire a job wrapper.
+        unscoped = Counter({line: count for (job, line), count in seen.items() if not job})
+        scoped_totals = Counter()
+        for (job, line), count in seen.items():
+            if job:
+                scoped_totals[line] += count
+
+        def select(scope):
+            nonlocal selected
+            ids = tuple(item["id"] for item in scope)
+            if selected != ids:
+                output.append("::arachne-log-scope::" + json.dumps(scope, ensure_ascii=False))
+                selected = ids
+
+        for scope, line in cls._snapshot_records(current):
+            if line is None:
+                if scope[-1]["id"] not in cursor["scopes"]:
+                    select(scope)
+                    cursor["scopes"].add(scope[-1]["id"])
+                continue
+            key = (job_key(scope), line)
+            counts[key] += 1
+            if counts[key] > seen[key]:
+                if key[0] and unscoped[line] > 0:
+                    unscoped[line] -= 1
+                    seen[("", line)] -= 1
+                elif not key[0] and counts[key] <= scoped_totals[line]:
+                    continue
+                else:
+                    select(scope)
+                    output.append(line)
+        for key, count in counts.items():
+            if not key[0]:
+                count = max(0, count - scoped_totals[key[1]])
+            seen[key] = max(seen[key], count)
+        if output:
+            # Status messages following the batch belong outside job groups.
+            select([])
+        return output
 
     async def stream_logs(self, handle: RunHandle) -> AsyncIterator[LogLine]:
         state = self._runs[handle.external_id]
@@ -631,12 +711,13 @@ class ForgejoSpider(BuildSpider):
             "system",
         )
 
+        log_cursor: dict = {}
         deadline = time.monotonic() + FORGEJO_DEADLINE
 
         while True:
             text = await self._fetch_log_text(state)
             if text is not None:
-                for line in self._new_log_lines(state["last_log_text"], text):
+                for line in self._new_log_lines(state["last_log_text"], text, log_cursor):
                     yield LogLine(line)
                 state["last_log_text"] = text
 
@@ -654,7 +735,7 @@ class ForgejoSpider(BuildSpider):
             if status in (RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED):
                 final_text = await self._fetch_log_text(state)
                 if final_text is not None:
-                    for line in self._new_log_lines(state["last_log_text"], final_text):
+                    for line in self._new_log_lines(state["last_log_text"], final_text, log_cursor):
                         yield LogLine(line)
                     state["last_log_text"] = final_text
 
