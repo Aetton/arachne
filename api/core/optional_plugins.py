@@ -8,6 +8,7 @@ BUNDLES = {
     "tofu-proxmox": "plugins.spiders.tofu_proxmox",
     "tofu-ovirt": "plugins.spiders.tofu_ovirt",
     "ansible-local": "plugins.spiders.ansible_local",
+    "koji": "plugins.spiders.koji",
 }
 
 
