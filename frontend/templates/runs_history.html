@@ -1,3 +1,4 @@
+<div class="text-right mb-2"><a class="link text-xs" href="/journal">Полный журнал →</a></div>
 {% set active_runs = runs | selectattr('status', 'equalto', 'running') | list %}
 {% set recent_runs = runs | rejectattr('status', 'equalto', 'running') | list %}
 
