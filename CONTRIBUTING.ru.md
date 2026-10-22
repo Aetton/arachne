@@ -51,3 +51,21 @@ npm run docs:build
 
 Отправляя изменение в Arachne, вы соглашаетесь распространять свой вклад по
 лицензии Apache License 2.0.
+
+## Проверки кода
+
+Из активированного Python virtualenv:
+
+```bash
+pip install -r requirements-dev.txt
+npm ci
+python scripts/check.py
+```
+
+Runner запускает Python-наборы в отдельных процессах: часть тестов подменяет
+модули и переменные окружения. Также проверяются синтаксис всего frontend JS,
+DOM-тесты логов и поиска, неопределённые Python-имена. Тесты гипервизоров используют
+подмены API — это не проверка реального provision/destroy.
+
+Форматирование изменённых Python-файлов: `ruff format <files>`.
+JS/CSS менеджера сценариев: `npm run format:manager`.

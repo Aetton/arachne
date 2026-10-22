@@ -2,6 +2,7 @@
 
 Run: uvicorn main:app --reload  (from api/ dir)
 """
+
 import os
 import json
 import re
@@ -10,19 +11,38 @@ from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    RedirectResponse,
+    StreamingResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 import database
 from database import (
-    SessionLocal, User, Team, Role, Permission, RolePermission, Run, Component, Scenario,
-    ScenarioACL, ScenarioVersion, utcnow,
+    SessionLocal,
+    User,
+    Team,
+    Role,
+    Permission,
+    RolePermission,
+    Run,
+    Component,
+    Scenario,
+    ScenarioACL,
+    ScenarioVersion,
+    utcnow,
 )
 from auth.security import hash_password, verify_password, create_token, ADMIN_PASSWORD
 from auth.deps import (
-    get_db, get_current_user, get_optional_user, require_role, COOKIE_NAME,
+    get_db,
+    get_current_user,
+    get_optional_user,
+    require_role,
+    COOKIE_NAME,
 )
 import config_loader
 import scenario_store
@@ -31,7 +51,9 @@ import access
 import run_engine
 import runview
 from core import switchboard
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
+from scenario_layout import apply_layout
 
 BASE_DIR = os.path.dirname(__file__)
 TEMPLATES_DIR = os.path.join(BASE_DIR, "..", "frontend", "templates")
@@ -50,28 +72,36 @@ async def lifespan(app: FastAPI):
     db.close()
     from core.bus import start_bus
     from core import events as _events
+
     await start_bus()
     run_engine.init()
     await _events.wire()
     from core.thread_adapter import expose_all
+
     await expose_all()
     try:
         from plugins.triggers.schedule import start_scheduler
+
         start_scheduler()
     except Exception as exc:  # noqa: BLE001
         print(f"[lifespan] scheduler not started: {exc}")
     db = SessionLocal()
     if not db.query(User).filter(User.username == "admin").first():
-        db.add(User(
-            username="admin",
-            password_hash=hash_password(ADMIN_PASSWORD),
-            full_name="Administrator",
-            roles=["admin"], teams=[], is_active=True,
-        ))
+        db.add(
+            User(
+                username="admin",
+                password_hash=hash_password(ADMIN_PASSWORD),
+                full_name="Administrator",
+                roles=["admin"],
+                teams=[],
+                is_active=True,
+            )
+        )
         db.commit()
     db.close()
     yield
     from core.bus import stop_bus
+
     await stop_bus()
 
 
@@ -98,8 +128,9 @@ class FinalSignal(BaseModel):
 
 
 def _thread_token(request: Request) -> str:
-    return (request.headers.get("X-Arachne-Token")
-            or request.query_params.get("token", ""))
+    return request.headers.get("X-Arachne-Token") or request.query_params.get(
+        "token", ""
+    )
 
 
 @app.post("/api/threads/{build_id}/signal")
@@ -165,16 +196,25 @@ def login_page(request: Request, user=Depends(get_optional_user)):
 
 
 @app.post("/login")
-def login(request: Request, username: str = Form(...), password: str = Form(...),
-          db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
     u = db.query(User).filter(User.username == username).first()
     if not u or not u.is_active or not verify_password(password, u.password_hash):
         return render(request, "login.html", user=None, error="Invalid credentials")
     u.last_login = utcnow()
     db.commit()
     resp = RedirectResponse("/", status_code=302)
-    resp.set_cookie(COOKIE_NAME, create_token(u.username), httponly=True,
-                    samesite="lax", max_age=7 * 86400)
+    resp.set_cookie(
+        COOKIE_NAME,
+        create_token(u.username),
+        httponly=True,
+        samesite="lax",
+        max_age=7 * 86400,
+    )
     return resp
 
 
@@ -186,31 +226,47 @@ def logout():
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request, user=Depends(get_optional_user), db: Session = Depends(get_db)):
+def dashboard(
+    request: Request, user=Depends(get_optional_user), db: Session = Depends(get_db)
+):
     if not user:
         return RedirectResponse("/login", status_code=302)
     group_items = {}
-    components = db.query(Component).order_by(
-        Component.sort_order, Component.label,
-    ).all()
-    for component in components:
-        items = []
-        scenarios = db.query(Scenario).filter(
-            Scenario.enabled.is_(True),
-            Scenario.component == component.slug,
-        ).order_by(Scenario.sort_order, Scenario.label, Scenario.slug).all()
-        for scenario in scenarios:
-            definition = scenario_store.published_definition(db, scenario)
-            if definition and access.can_access_scenario(db, user, scenario, "view"):
-                items.append({"slug": scenario.slug, "definition": definition})
-        group_items[component.slug] = items
+    components = (
+        db.query(Component)
+        .order_by(
+            Component.sort_order,
+            Component.label,
+        )
+        .all()
+    )
+    for scenario, version in (
+        db.query(Scenario, ScenarioVersion)
+        .join(ScenarioVersion, Scenario.current_version_id == ScenarioVersion.id)
+        .filter(Scenario.enabled.is_(True))
+        .order_by(Scenario.sort_order, Scenario.label, Scenario.slug)
+    ):
+        if access.can_access_scenario(db, user, scenario, "view"):
+            group_items.setdefault(scenario.component, []).append(
+                {
+                    "slug": scenario.slug,
+                    "definition": {
+                        **version.definition,
+                        "sort_order": scenario.sort_order,
+                    },
+                }
+            )
     groups = build_tree(components, group_items, prune=True)
     return render(request, "dashboard.html", user=user, scenario_groups=groups)
 
 
 @app.get("/scenarios/{key}/form", response_class=HTMLResponse)
-def scenario_form(key: str, request: Request, user=Depends(get_current_user),
-                  db: Session = Depends(get_db)):
+def scenario_form(
+    key: str,
+    request: Request,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     stored = db.query(Scenario).filter(Scenario.slug == key).first()
     if not stored or not access.can_access_scenario(db, user, stored, "view"):
         raise HTTPException(404, "Unknown scenario")
@@ -221,8 +277,12 @@ def scenario_form(key: str, request: Request, user=Depends(get_current_user),
 
 
 @app.post("/scenarios/{key}/run", response_class=HTMLResponse)
-async def scenario_run(key: str, request: Request, user=Depends(get_current_user),
-                       db: Session = Depends(get_db)):
+async def scenario_run(
+    key: str,
+    request: Request,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     stored = db.query(Scenario).filter(Scenario.slug == key).first()
     if not stored or not access.can_access_scenario(db, user, stored, "run"):
         raise HTTPException(403, "Scenario run is not allowed")
@@ -257,14 +317,23 @@ def _render_run(request, user, run_id) -> HTMLResponse:
         )
         steps = runview.build(records, run.status)
         arts = [
-            {"name": a.get("name", "artifact"),
-             "url": a.get("download_url") or "#",
-             "repo": a.get("type", "")}
+            {
+                "name": a.get("name", "artifact"),
+                "url": a.get("download_url") or "#",
+                "repo": a.get("type", ""),
+            }
             for a in (run.artifacts or [])
             if a.get("download_url")
         ]
-        return render(request, "run_view.html",
-                      user=user, run=run, s=s, steps=steps, artifacts=arts)
+        return render(
+            request,
+            "run_view.html",
+            user=user,
+            run=run,
+            s=s,
+            steps=steps,
+            artifacts=arts,
+        )
     finally:
         db.close()
 
@@ -275,8 +344,12 @@ def run_view(run_id: str, request: Request, user=Depends(get_current_user)):
 
 
 @app.post("/runs/{run_id}/cancel")
-async def run_cancel(run_id: str, request: Request, user=Depends(get_current_user),
-                     db: Session = Depends(get_db)):
+async def run_cancel(
+    run_id: str,
+    request: Request,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     run = _require_run_access(db, user, run_id)
     if run.status != "running":
         raise HTTPException(409, "Run is not running")
@@ -287,7 +360,9 @@ async def run_cancel(run_id: str, request: Request, user=Depends(get_current_use
 
 
 @app.get("/runs/history", response_class=HTMLResponse)
-def runs_history(request: Request, user=Depends(get_current_user), db: Session = Depends(get_db)):
+def runs_history(
+    request: Request, user=Depends(get_current_user), db: Session = Depends(get_db)
+):
     q = db.query(Run)
     if "admin" not in (user.roles or []):
         q = q.filter(Run.user_id == user.id)
@@ -295,17 +370,22 @@ def runs_history(request: Request, user=Depends(get_current_user), db: Session =
     rows = []
     for r in runs:
         s = config_loader.get_scenario(r.scenario) or {}
-        rows.append({
-            "id": r.id, "status": r.status, "params": r.params or {},
-            "scenario_label": s.get("label", r.scenario),
-            "when": _fmt_when(r.created_at),
-        })
+        rows.append(
+            {
+                "id": r.id,
+                "status": r.status,
+                "params": r.params or {},
+                "scenario_label": s.get("label", r.scenario),
+                "when": _fmt_when(r.created_at),
+            }
+        )
     return render(request, "runs_history.html", user=user, runs=rows)
 
 
 @app.get("/runs/{run_id}/stream")
-async def run_stream(run_id: str, user=Depends(get_current_user),
-                     db: Session = Depends(get_db)):
+async def run_stream(
+    run_id: str, user=Depends(get_current_user), db: Session = Depends(get_db)
+):
     run = _require_run_access(db, user, run_id)
     persisted_records = _load_persisted_records(run)
     persisted_status = run.status
@@ -323,6 +403,7 @@ async def run_stream(run_id: str, user=Depends(get_current_user),
 
     async def gen():
         import asyncio
+
         sent = 0
         while True:
             lines = run_engine.live_lines(run_id)
@@ -333,59 +414,93 @@ async def run_stream(run_id: str, user=Depends(get_current_user),
                 yield "event: done\ndata: end\n\n"
                 return
             await asyncio.sleep(0.4)
+
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.get("/admin/users", response_class=HTMLResponse)
-def admin_users(request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)):
+def admin_users(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     users = db.query(User).order_by(User.username).all()
-    return render(request, "admin/users.html", user=user, users=users, current_user=user)
+    return render(
+        request, "admin/users.html", user=user, users=users, current_user=user
+    )
 
 
 @app.get("/admin/users/new", response_class=HTMLResponse)
-def admin_user_new(request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)):
+def admin_user_new(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     teams = db.query(Team).all()
     roles = db.query(Role).order_by(Role.slug).all()
-    return render(request, "admin/user_form.html", user=user, edit=False, u=None,
-                  all_roles=roles, all_teams=teams, action="/admin/users")
+    return render(
+        request,
+        "admin/user_form.html",
+        user=user,
+        edit=False,
+        u=None,
+        all_roles=roles,
+        all_teams=teams,
+        action="/admin/users",
+    )
 
 
 @app.get("/admin/users/{uid}/edit", response_class=HTMLResponse)
-def admin_user_edit(uid: int, request: Request, user=Depends(require_role("admin")),
-                    db: Session = Depends(get_db)):
+def admin_user_edit(
+    uid: int,
+    request: Request,
+    user=Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
     u = db.get(User, uid)
     if not u:
         raise HTTPException(404)
     teams = db.query(Team).all()
     roles = db.query(Role).order_by(Role.slug).all()
-    return render(request, "admin/user_form.html", user=user, edit=True, u=u,
-                  all_roles=roles, all_teams=teams, action=f"/admin/users/{uid}")
+    return render(
+        request,
+        "admin/user_form.html",
+        user=user,
+        edit=True,
+        u=u,
+        all_roles=roles,
+        all_teams=teams,
+        action=f"/admin/users/{uid}",
+    )
 
 
 @app.post("/admin/users")
-async def admin_user_create(request: Request, user=Depends(require_role("admin")),
-                            db: Session = Depends(get_db)):
+async def admin_user_create(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     form = await request.form()
     if db.query(User).filter(User.username == form["username"]).first():
         raise HTTPException(400, "User exists")
     password = str(form.get("password") or "")
     if not password:
         raise HTTPException(400, "Password is required")
-    db.add(User(
-        username=form["username"],
-        password_hash=hash_password(password),
-        full_name=form.get("full_name", ""),
-        roles=form.getlist("roles"),
-        teams=[int(x) for x in form.getlist("teams")],
-        is_active="is_active" in form,
-    ))
+    db.add(
+        User(
+            username=form["username"],
+            password_hash=hash_password(password),
+            full_name=form.get("full_name", ""),
+            roles=form.getlist("roles"),
+            teams=[int(x) for x in form.getlist("teams")],
+            is_active="is_active" in form,
+        )
+    )
     db.commit()
     return RedirectResponse("/admin/users", status_code=303)
 
 
 @app.post("/admin/users/{uid}")
-async def admin_user_update(uid: int, request: Request, user=Depends(require_role("admin")),
-                            db: Session = Depends(get_db)):
+async def admin_user_update(
+    uid: int,
+    request: Request,
+    user=Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
     u = db.get(User, uid)
     if not u:
         raise HTTPException(404)
@@ -401,7 +516,9 @@ async def admin_user_update(uid: int, request: Request, user=Depends(require_rol
 
 
 @app.delete("/admin/users/{uid}")
-def admin_user_delete(uid: int, user=Depends(require_role("admin")), db: Session = Depends(get_db)):
+def admin_user_delete(
+    uid: int, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     u = db.get(User, uid)
     if u and u.username != user.username:
         db.delete(u)
@@ -410,60 +527,48 @@ def admin_user_delete(uid: int, user=Depends(require_role("admin")), db: Session
 
 
 @app.get("/admin/scenarios", response_class=HTMLResponse)
-def admin_scenarios(request: Request, user=Depends(require_role("admin")),
-                    db: Session = Depends(get_db)):
-    scenarios = db.query(Scenario).order_by(Scenario.sort_order, Scenario.label, Scenario.slug).all()
-    components = db.query(Component).order_by(
-        Component.sort_order, Component.label,
-    ).all()
+def admin_scenarios(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
+    scenarios = (
+        db.query(Scenario)
+        .order_by(Scenario.sort_order, Scenario.label, Scenario.slug)
+        .all()
+    )
+    components = (
+        db.query(Component)
+        .order_by(
+            Component.sort_order,
+            Component.label,
+        )
+        .all()
+    )
     return render(
-        request, "admin/scenarios.html", user=user,
-        scenarios=scenarios, components=components,
+        request,
+        "admin/scenarios.html",
+        user=user,
+        scenarios=scenarios,
+        components=components,
         group_tree=build_tree(components, {}),
     )
 
 
+class LayoutChange(BaseModel):
+    kind: Literal["group", "scenario", "move_scenario"]
+    slug: str = Field(min_length=1, max_length=96)
+    before: str | None = None
+    parent_group: str | None = None
+    group: str | None = None
+
+
 @app.post("/admin/scenarios/layout")
-async def admin_scenario_layout(request: Request, user=Depends(require_role("admin")),
-                                db: Session = Depends(get_db)):
-    payload = await request.json()
-    if not isinstance(payload, dict):
-        raise HTTPException(400, "Expected an object")
-    kind, slug, before = payload.get("kind"), payload.get("slug"), payload.get("before")
+def admin_scenario_layout(
+    payload: LayoutChange,
+    user=Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
     try:
-        if kind == "move_scenario":
-            scenario_store.move_to_group(db, slug, payload.get("group"), user.id)
-            return {"ok": True}
-        if kind == "group":
-            rows = db.query(Component).order_by(Component.sort_order, Component.label, Component.slug).with_for_update().all()
-            mapping = {r.slug: r for r in rows}
-            if slug not in mapping:
-                raise ValueError("Unknown group")
-            parent = payload.get("parent_group") or None
-            parents = {r.slug: r.parent_group for r in rows}
-            parents[slug] = parent
-            validate_parents(parents)
-            siblings = [r for r in rows if r.parent_group == parent and r.slug != slug]
-            if before and before not in {r.slug for r in siblings}:
-                raise ValueError("Invalid target group")
-            row = mapping[slug]
-            row.parent_group = parent
-        elif kind == "scenario":
-            row = db.query(Scenario).filter(Scenario.slug == slug).first()
-            if not row:
-                raise ValueError("Unknown scenario")
-            siblings = db.query(Scenario).filter(Scenario.component == row.component).order_by(
-                Scenario.sort_order, Scenario.label, Scenario.slug).with_for_update().all()
-            siblings = [r for r in siblings if r.slug != slug]
-            if before and before not in {r.slug for r in siblings}:
-                raise ValueError("Scenarios can only be reordered within their group")
-        else:
-            raise ValueError("Unknown layout operation")
-        index = next((i for i, r in enumerate(siblings) if r.slug == before), len(siblings))
-        siblings.insert(index, row)
-        for index, item in enumerate(siblings):
-            item.sort_order = index
-        db.commit()
+        apply_layout(db, payload.model_dump(), user.id)
     except (ValueError, TypeError) as exc:
         db.rollback()
         raise HTTPException(400, str(exc)) from exc
@@ -471,50 +576,78 @@ async def admin_scenario_layout(request: Request, user=Depends(require_role("adm
 
 
 @app.get("/admin/scenarios/new", response_class=HTMLResponse)
-def admin_scenario_new(request: Request, user=Depends(require_role("admin")),
-                       db: Session = Depends(get_db)):
+def admin_scenario_new(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     roles = db.query(Role).order_by(Role.slug).all()
     teams = db.query(Team).order_by(Team.name).all()
-    components = db.query(Component).order_by(
-        Component.sort_order, Component.label,
-    ).all()
+    components = (
+        db.query(Component)
+        .order_by(
+            Component.sort_order,
+            Component.label,
+        )
+        .all()
+    )
     default_component = components[0].slug if components else ""
     return render(
-        request, "admin/scenario_form.html", user=user, scenario=None,
+        request,
+        "admin/scenario_form.html",
+        user=user,
+        scenario=None,
         yaml_text=f"label: New scenario\ncomponent: {default_component}\ntriggers:\n  - type: manual\nsteps:\n  - id: build\n    spider: forgejo\n    action: build\n    with: {{}}\n",
-        roles=roles, teams=teams, components=components, acl=[],
+        roles=roles,
+        teams=teams,
+        components=components,
+        acl=[],
         default_acl_roles=set(user.roles or []),
         default_acl_teams={int(team_id) for team_id in (user.teams or [])},
     )
 
 
 @app.get("/admin/scenarios/{slug}/edit", response_class=HTMLResponse)
-def admin_scenario_edit(slug: str, request: Request, user=Depends(require_role("admin")),
-                        db: Session = Depends(get_db)):
+def admin_scenario_edit(
+    slug: str,
+    request: Request,
+    user=Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
     import yaml
+
     scenario = db.query(Scenario).filter(Scenario.slug == slug).first()
     if not scenario:
         raise HTTPException(404)
-    definition = scenario_store.published_definition(db, scenario) or {}
+    definition = scenario_store.editable_definition(db, scenario) or {}
     return render(
-        request, "admin/scenario_form.html", user=user, scenario=scenario,
+        request,
+        "admin/scenario_form.html",
+        user=user,
+        scenario=scenario,
         yaml_text=yaml.safe_dump(definition, allow_unicode=True, sort_keys=False),
         roles=db.query(Role).order_by(Role.slug).all(),
         teams=db.query(Team).order_by(Team.name).all(),
-        components=db.query(Component).order_by(
-            Component.sort_order, Component.label,
-        ).all(),
+        components=db.query(Component)
+        .order_by(
+            Component.sort_order,
+            Component.label,
+        )
+        .all(),
         acl=db.query(ScenarioACL).filter(ScenarioACL.scenario_id == scenario.id).all(),
-        versions=db.query(ScenarioVersion).filter(
+        versions=db.query(ScenarioVersion)
+        .filter(
             ScenarioVersion.scenario_id == scenario.id,
-        ).order_by(ScenarioVersion.version.desc()).all(),
+        )
+        .order_by(ScenarioVersion.version.desc())
+        .all(),
     )
 
 
 @app.post("/admin/scenarios/save")
-async def admin_scenario_save(request: Request, user=Depends(require_role("admin")),
-                              db: Session = Depends(get_db)):
+async def admin_scenario_save(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     import yaml
+
     form = await request.form()
     slug = str(form.get("slug", "")).strip()
     original_slug = str(form.get("original_slug", "")).strip()
@@ -534,10 +667,14 @@ async def admin_scenario_save(request: Request, user=Depends(require_role("admin
             scenario = db.query(Scenario).filter(Scenario.slug == original_slug).first()
             if not scenario:
                 raise HTTPException(404, "Scenario not found")
-            conflict = db.query(Scenario).filter(
-                Scenario.slug == slug,
-                Scenario.id != scenario.id,
-            ).first()
+            conflict = (
+                db.query(Scenario)
+                .filter(
+                    Scenario.slug == slug,
+                    Scenario.id != scenario.id,
+                )
+                .first()
+            )
             if conflict:
                 raise HTTPException(409, f"Scenario slug '{slug}' already exists")
         elif db.query(Scenario).filter(Scenario.slug == slug).first():
@@ -552,10 +689,15 @@ async def admin_scenario_save(request: Request, user=Depends(require_role("admin
             )
             db.flush()
         version = scenario_store.save_draft(
-            db, slug, definition, user.id, str(form.get("comment", "")),
+            db,
+            slug,
+            definition,
+            user.id,
+            str(form.get("comment", "")),
+            commit=False,
         )
         scenario = db.query(Scenario).filter(Scenario.slug == slug).one()
-        scenario_store.publish(db, scenario, version)
+        scenario_store.publish(db, scenario, version, commit=False)
         entries = []
         mode = str(form.get("match_mode", "all"))
         submitted_subjects = any(
@@ -570,29 +712,44 @@ async def admin_scenario_save(request: Request, user=Depends(require_role("admin
                 role_slugs = [str(role) for role in (user.roles or [])]
                 team_ids = [str(team_id) for team_id in (user.teams or [])]
             for role_slug in role_slugs:
-                entries.append({
-                    "subject_type": "role", "subject_key": role_slug,
-                    "permission": action, "effect": "allow", "match_mode": mode,
-                })
+                entries.append(
+                    {
+                        "subject_type": "role",
+                        "subject_key": role_slug,
+                        "permission": action,
+                        "effect": "allow",
+                        "match_mode": mode,
+                    }
+                )
             for team_id in team_ids:
-                entries.append({
-                    "subject_type": "team", "subject_key": team_id,
-                    "permission": action, "effect": "allow", "match_mode": mode,
-                })
-        scenario_store.replace_acl(db, scenario.id, entries)
-    except (ValueError, yaml.YAMLError) as exc:
+                entries.append(
+                    {
+                        "subject_type": "team",
+                        "subject_key": team_id,
+                        "permission": action,
+                        "effect": "allow",
+                        "match_mode": mode,
+                    }
+                )
+        scenario_store.replace_acl(db, scenario.id, entries, commit=False)
+        db.commit()
+    except (ValueError, TypeError, yaml.YAMLError) as exc:
+        db.rollback()
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse("/admin/scenarios", status_code=303)
 
 
 @app.post("/admin/components")
-async def admin_component_save(request: Request, user=Depends(require_role("admin")),
-                               db: Session = Depends(get_db)):
+async def admin_component_save(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     form = await request.form()
     slug = str(form.get("slug", "")).strip()
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,95}", slug):
         raise HTTPException(400, "Invalid group slug")
-    parents = {c.slug: c.parent_group for c in db.query(Component).with_for_update().all()}
+    parents = {
+        c.slug: c.parent_group for c in db.query(Component).with_for_update().all()
+    }
     parents[slug] = str(form.get("parent_group") or "").strip() or None
     try:
         validate_parents(parents)
@@ -614,8 +771,9 @@ async def admin_component_save(request: Request, user=Depends(require_role("admi
 
 
 @app.post("/admin/components/{slug}/delete")
-def admin_component_delete(slug: str, user=Depends(require_role("admin")),
-                           db: Session = Depends(get_db)):
+def admin_component_delete(
+    slug: str, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     component = db.get(Component, slug)
     if not component:
         raise HTTPException(404, "Component not found")
@@ -633,15 +791,21 @@ def admin_component_delete(slug: str, user=Depends(require_role("admin")),
 
 
 @app.post("/admin/scenarios/{slug}/versions/{version_id}/restore")
-def admin_scenario_restore(slug: str, version_id: int,
-                           user=Depends(require_role("admin")),
-                           db: Session = Depends(get_db)):
+def admin_scenario_restore(
+    slug: str,
+    version_id: int,
+    user=Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
     scenario = db.query(Scenario).filter(Scenario.slug == slug).first()
     version = db.get(ScenarioVersion, version_id)
     if not scenario or not version or version.scenario_id != scenario.id:
         raise HTTPException(404)
     restored = scenario_store.save_draft(
-        db, slug, dict(version.definition), user.id,
+        db,
+        slug,
+        dict(version.definition),
+        user.id,
         f"Restored from version {version.version}",
     )
     scenario_store.publish(db, scenario, restored)
@@ -649,8 +813,9 @@ def admin_scenario_restore(slug: str, version_id: int,
 
 
 @app.get("/admin/scenarios-export.yaml")
-def admin_scenarios_export(user=Depends(require_role("admin")),
-                           db: Session = Depends(get_db)):
+def admin_scenarios_export(
+    user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     return Response(
         scenario_store.export_yaml(db),
         media_type="application/yaml",
@@ -659,27 +824,36 @@ def admin_scenarios_export(user=Depends(require_role("admin")),
 
 
 @app.get("/admin/rbac", response_class=HTMLResponse)
-def admin_rbac(request: Request, user=Depends(require_role("admin")),
-               db: Session = Depends(get_db)):
+def admin_rbac(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     roles = db.query(Role).order_by(Role.slug).all()
     teams = db.query(Team).order_by(Team.name).all()
     permissions = db.query(Permission).order_by(Permission.slug).all()
     role_permissions = {
         role.id: {
             row.permission.slug
-            for row in db.query(RolePermission).filter(RolePermission.role_id == role.id)
+            for row in db.query(RolePermission).filter(
+                RolePermission.role_id == role.id
+            )
         }
         for role in roles
     }
     return render(
-        request, "admin/rbac.html", user=user, roles=roles, teams=teams,
-        permissions=permissions, role_permissions=role_permissions,
+        request,
+        "admin/rbac.html",
+        user=user,
+        roles=roles,
+        teams=teams,
+        permissions=permissions,
+        role_permissions=role_permissions,
     )
 
 
 @app.post("/admin/roles")
-async def admin_role_save(request: Request, user=Depends(require_role("admin")),
-                          db: Session = Depends(get_db)):
+async def admin_role_save(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     form = await request.form()
     slug = str(form.get("slug", "")).strip()
     if not slug:
@@ -700,8 +874,9 @@ async def admin_role_save(request: Request, user=Depends(require_role("admin")),
 
 
 @app.post("/admin/teams")
-async def admin_team_save(request: Request, user=Depends(require_role("admin")),
-                          db: Session = Depends(get_db)):
+async def admin_team_save(
+    request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)
+):
     form = await request.form()
     slug = str(form.get("slug", "")).strip()
     if not slug:
@@ -712,7 +887,8 @@ async def admin_team_save(request: Request, user=Depends(require_role("admin")),
         db.add(team)
     team.name = form.get("name") or slug
     team.components = [
-        value.strip() for value in str(form.get("components", "")).split(",")
+        value.strip()
+        for value in str(form.get("components", "")).split(",")
         if value.strip()
     ]
     db.commit()

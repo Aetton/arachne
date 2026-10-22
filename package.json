@@ -1,0 +1,12 @@
+{
+  "name": "arachne-checks",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.cjs",
+    "format:manager": "prettier --write frontend/static/js/scenario-manager.js frontend/static/css/scenario-manager.css"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0",
+    "prettier": "3.5.3"
+  }
+}

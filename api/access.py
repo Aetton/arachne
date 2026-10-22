@@ -1,4 +1,5 @@
 """Permission and scenario ACL evaluation."""
+
 from __future__ import annotations
 
 from sqlalchemy.orm import Session
@@ -47,7 +48,9 @@ def seed_rbac(db: Session) -> None:
             db.flush()
         existing = {
             row.permission_id
-            for row in db.query(RolePermission).filter(RolePermission.role_id == role.id)
+            for row in db.query(RolePermission).filter(
+                RolePermission.role_id == role.id
+            )
         }
         for permission_slug in spec["permissions"]:
             permission = permissions[permission_slug]
@@ -81,23 +84,38 @@ def has_permission(db: Session, user: User, permission_slug: str) -> bool:
     roles = effective_role_slugs(db, user)
     if "admin" in roles:
         return True
-    return db.query(RolePermission).join(Role).join(Permission).filter(
-        Role.slug.in_(roles), Permission.slug == permission_slug,
-    ).first() is not None
+    return (
+        db.query(RolePermission)
+        .join(Role)
+        .join(Permission)
+        .filter(
+            Role.slug.in_(roles),
+            Permission.slug == permission_slug,
+        )
+        .first()
+        is not None
+    )
 
 
 def can_access_scenario(
-    db: Session, user: User, scenario: Scenario, action: str,
+    db: Session,
+    user: User,
+    scenario: Scenario,
+    action: str,
 ) -> bool:
     roles = effective_role_slugs(db, user)
     if "admin" in roles:
         return True
     if not has_permission(db, user, f"scenarios.{action}"):
         return False
-    rows = db.query(ScenarioACL).filter(
-        ScenarioACL.scenario_id == scenario.id,
-        ScenarioACL.permission.in_([action, "manage"]),
-    ).all()
+    rows = (
+        db.query(ScenarioACL)
+        .filter(
+            ScenarioACL.scenario_id == scenario.id,
+            ScenarioACL.permission.in_([action, "manage"]),
+        )
+        .all()
+    )
     if not rows:
         return False
     team_ids = {str(team_id) for team_id in (user.teams or [])}
@@ -116,14 +134,22 @@ def can_access_scenario(
     if denied:
         return False
     allowed_roles = {
-        row.subject_key for row in rows
+        row.subject_key
+        for row in rows
         if row.effect == "allow" and row.subject_type == "role"
     }
     allowed_teams = {
-        row.subject_key for row in rows
+        row.subject_key
+        for row in rows
         if row.effect == "allow" and row.subject_type == "team"
     }
-    role_match = bool(roles & allowed_roles) if allowed_roles else True
-    team_match = bool(teams & allowed_teams) if allowed_teams else True
+    # An absent dimension is not an allow rule, especially with match=any.
+    matches = []
+    if allowed_roles:
+        matches.append(bool(roles & allowed_roles))
+    if allowed_teams:
+        matches.append(bool(teams & allowed_teams))
+    if not matches:
+        return False
     mode = next((row.match_mode for row in rows if row.effect == "allow"), "all")
-    return (role_match or team_match) if mode == "any" else (role_match and team_match)
+    return any(matches) if mode == "any" else all(matches)
