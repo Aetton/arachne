@@ -238,3 +238,41 @@ def replace_acl(db: Session, scenario_id: int, entries: list[dict]) -> None:
     for entry in entries:
         db.add(ScenarioACL(scenario_id=scenario_id, **entry))
     db.commit()
+
+
+def move_to_group(db: Session, slug: str, target: str, user_id: int) -> None:
+    """Move without changing ACL, enabled status or historical definitions."""
+    # Serialize group changes with layout operations and validate destination.
+    groups = {c.slug for c in db.query(Component).with_for_update().all()}
+    if target not in groups:
+        raise ValueError("Unknown destination group")
+    scenario = db.query(Scenario).filter(Scenario.slug == slug).with_for_update().first()
+    if not scenario:
+        raise ValueError("Unknown scenario")
+    if scenario.component == target:
+        return
+    source = db.get(ScenarioVersion, scenario.current_version_id) if scenario.current_version_id else (
+        db.query(ScenarioVersion).filter(ScenarioVersion.scenario_id == scenario.id)
+        .order_by(ScenarioVersion.version.desc()).first()
+    )
+    if not source:
+        raise ValueError("Scenario has no definition to move")
+    order = db.query(func.max(Scenario.sort_order)).filter(Scenario.component == target).scalar()
+    order = (order if order is not None else -1) + 1
+    definition = dict(source.definition)
+    definition.update(component=target, sort_order=order)
+    validate_definition(definition)
+    next_version = (db.query(func.max(ScenarioVersion.version)).filter(
+        ScenarioVersion.scenario_id == scenario.id).scalar() or 0) + 1
+    published = bool(scenario.current_version_id)
+    version = ScenarioVersion(scenario_id=scenario.id, version=next_version,
+        definition=definition, status="published" if published else "draft",
+        created_by=user_id, comment=f"Moved from {scenario.component} to {target}")
+    db.add(version)
+    db.flush()
+    if published:
+        source.status = "archived"
+        scenario.current_version_id = version.id
+    scenario.component = target
+    scenario.sort_order = order
+    db.commit()

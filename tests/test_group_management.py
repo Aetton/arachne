@@ -10,7 +10,7 @@ _tmp = tempfile.TemporaryDirectory()
 os.environ["DATABASE_URL"] = "sqlite:///" + _tmp.name + "/groups.db"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 from fastapi.testclient import TestClient
-from database import Base, engine, SessionLocal, Component, Scenario, User
+from database import Base, engine, SessionLocal, Component, Scenario, ScenarioVersion, ScenarioACL, User
 from auth.security import create_token
 from group_tree import validate_parents, build_tree
 import main
@@ -83,6 +83,43 @@ class GroupTests(unittest.TestCase):
         self.assertEqual([r.slug for r in roots], ["other", "root"])
         self.assertEqual(self.post(dict(kind="group", slug="root", parent_group="leaf", before="missing")).status_code, 400)
         self.assertEqual(self.post(dict(kind="scenario", slug="a", before="missing")).status_code, 400)
+
+    def test_move_scenario_updates_definition_and_preserves_history_acl(self):
+        scenario = self.db.query(Scenario).filter_by(slug="a").one()
+        old_id = scenario.current_version_id
+        old_definition = dict(self.db.get(ScenarioVersion, old_id).definition)
+        scenario.enabled = False
+        scenario_store.replace_acl(self.db, scenario.id, [dict(subject_type="role", subject_key="developer", permission="view", effect="allow", match_mode="all")])
+        result = self.post(dict(kind="move_scenario", slug="a", group="other"))
+        self.assertEqual(result.status_code, 200, result.text)
+        self.db.expire_all()
+        self.assertEqual(scenario.component, "other")
+        self.assertFalse(scenario.enabled)
+        self.assertNotEqual(scenario.current_version_id, old_id)
+        self.assertEqual(self.db.get(ScenarioVersion, old_id).definition, old_definition)
+        self.assertEqual(scenario_store.published_definition(self.db, scenario)["component"], "other")
+        self.assertEqual(self.db.query(ScenarioACL).filter_by(scenario_id=scenario.id).count(), 1)
+        version_id = scenario.current_version_id
+        self.assertEqual(self.post(dict(kind="move_scenario", slug="a", group="missing")).status_code, 400)
+        self.assertEqual(self.post(dict(kind="move_scenario", slug="a", group="other")).status_code, 200)
+        self.db.expire_all()
+        self.assertEqual(scenario.current_version_id, version_id)
+
+    def test_move_draft_stays_draft_and_appends(self):
+        definition = dict(label="Draft", component="root", steps=[dict(id="step", spider="demo", action="run")])
+        old = scenario_store.save_draft(self.db, "draft", definition, None)
+        old_id = old.id
+        result = self.post(dict(kind="move_scenario", slug="draft", group="leaf"))
+        self.assertEqual(result.status_code, 200, result.text)
+        self.db.expire_all()
+        scenario = self.db.query(Scenario).filter_by(slug="draft").one()
+        self.assertIsNone(scenario.current_version_id)
+        self.assertEqual(scenario.component, "leaf")
+        self.assertEqual(scenario.sort_order, 1)
+        latest = self.db.query(ScenarioVersion).filter_by(scenario_id=scenario.id).order_by(ScenarioVersion.version.desc()).first()
+        self.assertEqual(latest.definition["component"], "leaf")
+        self.assertEqual(latest.status, "draft")
+        self.assertEqual(self.db.get(ScenarioVersion, old_id).definition["component"], "root")
 
     def test_authorization(self):
         self.client.cookies.clear()

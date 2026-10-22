@@ -431,6 +431,9 @@ async def admin_scenario_layout(request: Request, user=Depends(require_role("adm
         raise HTTPException(400, "Expected an object")
     kind, slug, before = payload.get("kind"), payload.get("slug"), payload.get("before")
     try:
+        if kind == "move_scenario":
+            scenario_store.move_to_group(db, slug, payload.get("group"), user.id)
+            return {"ok": True}
         if kind == "group":
             rows = db.query(Component).order_by(Component.sort_order, Component.label, Component.slug).with_for_update().all()
             mapping = {r.slug: r for r in rows}

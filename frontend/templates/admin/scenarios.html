@@ -191,7 +191,7 @@
     </details>
   </aside>
   <section class="manager-list surface rounded-xl">
-    <div class="manager-pane-head"><div><h2 id="selected-group-title" class="font-semibold">Все сценарии</h2><p class="muted text-xs">Перетаскивание и стрелки меняют порядок внутри группы.</p></div><span id="scenario-count" class="muted"></span></div>
+    <div class="manager-pane-head"><div><h2 id="selected-group-title" class="font-semibold">Все сценарии</h2><p class="muted text-xs">Перетащите сценарий на группу слева или выберите группу в строке. Стрелки меняют порядок.</p></div><span id="scenario-count" class="muted"></span></div>
     <div class="manager-table-wrap"><table class="w-full text-sm">
       <thead><tr><th>Порядок</th><th>Сценарий</th><th>Группа</th><th>Статус</th><th></th></tr></thead>
       <tbody id="manager-scenarios">
@@ -199,7 +199,9 @@
         <tr data-scenario-slug="{{ s.slug }}" data-group="{{ s.component }}" data-search="{{ s.label }} {{ s.slug }} {{ s.component }} {{ s.component_ref.label }}" draggable="true">
           <td><div class="row-order"><i class="ti ti-grip-vertical muted"></i><button type="button" data-move="up" aria-label="Поднять {{ s.label }}">↑</button><button type="button" data-move="down" aria-label="Опустить {{ s.label }}">↓</button></div></td>
           <td><a class="scenario-edit" href="/admin/scenarios/{{ s.slug }}/edit">{{ s.label }}</a><code class="muted text-xs block">{{ s.slug }}</code></td>
-          <td class="muted">{{ s.component_ref.label }}</td>
+          <td><select data-move-group aria-label="Перенести {{ s.label }} в группу" style="max-width:240px">
+            {% for c in components %}<option value="{{ c.slug }}" {% if c.slug == s.component %}selected{% endif %}>{{ c.label }} · {{ c.slug }}</option>{% endfor %}
+          </select></td>
           <td><span class="manager-badge">{{ 'Опубликован' if s.current_version_id and s.enabled else 'Отключён' if not s.enabled else 'Черновик' }}</span></td>
           <td><a class="link" href="/admin/scenarios/{{ s.slug }}/edit" aria-label="Редактировать {{ s.label }}"><i class="ti ti-pencil"></i></a></td>
         </tr>
@@ -211,5 +213,5 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
 <script src="/static/js/scenario-yaml-import.js?v=2"></script>
-<script src="/static/js/scenario-manager.js?v=1"></script>
+<script src="/static/js/scenario-manager.js?v=2"></script>
 {% endblock %}
