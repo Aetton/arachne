@@ -310,6 +310,105 @@ class GroupTests(unittest.TestCase):
         self.assertFalse(check([rule("developer", "deny")]))
         self.assertFalse(check([rule("tester"), rule("tester", "deny")]))
 
+    def import_yaml(self, bundle, mode="update"):
+        return self.client.post(
+            "/admin/scenarios/import?mode=" + mode,
+            content=yaml.safe_dump(bundle),
+            headers={"Content-Type": "application/yaml"},
+        )
+
+    def test_atomic_import_rolls_back_late_failure(self):
+        original = self.db.query(Scenario).filter_by(slug="a").one()
+        version_id = original.current_version_id
+        response = self.import_yaml(
+            {
+                "components": {"fresh": {"label": "Fresh"}},
+                "scenarios": {
+                    "a": {
+                        "label": "Changed",
+                        "component": "fresh",
+                        "steps": [{"id": "run", "spider": "demo", "action": "run"}],
+                    },
+                    "bad": {"label": "Bad", "component": "fresh", "steps": []},
+                },
+            }
+        )
+        self.assertEqual(response.status_code, 400, response.text)
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(Component, "fresh"))
+        self.assertEqual(original.current_version_id, version_id)
+        self.assertEqual(original.component, "leaf")
+
+    def test_atomic_import_forward_parents_and_add_only(self):
+        bundle = {
+            "components": {
+                "nested": {"label": "Nested", "parent_group": "parent"},
+                "parent": {"label": "Parent"},
+            },
+            "scenarios": {},
+        }
+        response = self.import_yaml(bundle)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(Component, "nested").parent_group, "parent")
+        bundle["components"]["nested"]["label"] = "Ignored"
+        response = self.import_yaml(bundle, "add")
+        self.assertEqual(response.json()["componentsSkipped"], 2)
+        self.db.expire_all()
+        self.assertEqual(self.db.get(Component, "nested").label, "Nested")
+
+    def test_import_acl_roundtrip_preserves_deny(self):
+        scenario = self.db.query(Scenario).filter_by(slug="a").one()
+        entries = [
+            dict(
+                subject_type="role",
+                subject_key="tester",
+                permission="view",
+                effect="deny",
+                match_mode="any",
+            )
+        ]
+        scenario_store.replace_acl(self.db, scenario.id, entries)
+        bundle = yaml.safe_load(scenario_store.export_yaml(self.db))
+        self.assertEqual(bundle["scenarios"]["a"]["access_rules"], entries)
+        response = self.import_yaml(bundle)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.db.expire_all()
+        self.assertEqual(
+            self.db.query(ScenarioACL).filter_by(scenario_id=scenario.id).one().effect,
+            "deny",
+        )
+        bundle["scenarios"]["a"].pop("access_rules")
+        response = self.import_yaml({"scenarios": {"a": bundle["scenarios"]["a"]}})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.db.expire_all()
+        self.assertEqual(
+            self.db.query(ScenarioACL).filter_by(scenario_id=scenario.id).one().effect,
+            "deny",
+        )
+
+    def test_import_rejects_duplicate_keys_cycles_and_oversize(self):
+        response = self.client.post(
+            "/admin/scenarios/import", content="components: {}\ncomponents: {}"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            self.import_yaml(
+                {"components": {"root": {"parent_group": "leaf"}}}
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/admin/scenarios/import", content=" " * (5 * 1024 * 1024 + 1)
+            ).status_code,
+            413,
+        )
+        self.client.cookies.clear()
+        self.assertEqual(
+            self.import_yaml({"components": {"new": {"label": "New"}}}).status_code, 401
+        )
+
     def test_authorization(self):
         self.client.cookies.clear()
         self.assertEqual(
