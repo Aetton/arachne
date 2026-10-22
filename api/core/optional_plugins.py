@@ -12,13 +12,19 @@ BUNDLES = {
 }
 
 
-def installed_bundles():
-    names = {
-        n.strip() for n in os.getenv("ARACHNE_PLUGINS", "").split(",") if n.strip()
-    }
-    unknown = names - BUNDLES.keys()
+def resolve_bundles(value):
+    """Expand all from the registry, while still rejecting misspelled names."""
+    names = {n.strip() for n in value.split(",") if n.strip()}
+    unknown = names - BUNDLES.keys() - {"all"}
     if unknown:
         raise ValueError("Unknown ARACHNE_PLUGINS: " + ", ".join(sorted(unknown)))
+    if "all" in names:
+        return set(BUNDLES)
+    return names
+
+
+def installed_bundles():
+    names = resolve_bundles(os.getenv("ARACHNE_PLUGINS", ""))
     manifest = Path(__file__).resolve().parents[2] / "installed-bundles.json"
     if manifest.exists():
         missing = names - set(json.loads(manifest.read_text()))
@@ -38,3 +44,7 @@ def module_enabled(module):
         if module == path:
             return name in installed_bundles()
     return True
+
+
+if __name__ == "__main__":
+    print(",".join(sorted(resolve_bundles(os.getenv("ARACHNE_PLUGINS", "")))))
