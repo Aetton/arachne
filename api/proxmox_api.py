@@ -22,6 +22,9 @@ def _settings(connection: str = "") -> tuple[str, str, bool | str]:
     from infrastructure_connections import execution_env
     settings = {**os.environ, **execution_env(connection, "proxmox")} if connection else os.environ
     endpoint = settings.get("PROXMOX_VE_ENDPOINT", "").strip().rstrip("/")
+    # Accept both the server URL and a complete JSON API endpoint.
+    # Normalize on read so existing saved connections also work unchanged.
+    endpoint = endpoint.removesuffix("/api2/json").rstrip("/")
     token = settings.get("PROXMOX_VE_API_TOKEN", "").strip()
     if not endpoint:
         raise ProxmoxAPIError("Proxmox endpoint is not configured")
