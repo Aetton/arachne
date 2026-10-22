@@ -168,22 +168,19 @@ def export_yaml(db: Session) -> str:
         rows = (
             db.query(ScenarioACL).filter(ScenarioACL.scenario_id == scenario.id).all()
         )
-        if not rows:
-            continue
-        access: dict = {}
-        for row in rows:
-            rule = access.setdefault(
-                row.permission,
-                {
-                    "match": row.match_mode,
-                    "roles": [],
-                    "teams": [],
-                },
-            )
-            rule["roles" if row.subject_type == "role" else "teams"].append(
-                row.subject_key
-            )
-        scenarios[scenario.slug]["access"] = access
+        scenarios[scenario.slug]["access_rules"] = [
+            {
+                field: getattr(row, field)
+                for field in (
+                    "subject_type",
+                    "subject_key",
+                    "permission",
+                    "effect",
+                    "match_mode",
+                )
+            }
+            for row in rows
+        ]
     return yaml.safe_dump(
         {
             "components": {
@@ -250,33 +247,14 @@ def bootstrap_from_yaml(db: Session) -> int:
         if db.query(Scenario).filter(Scenario.slug == slug).first():
             continue
         definition = dict(definition)
-        access = definition.pop("access", {})
+        from scenario_import import acl_entries
+
+        entries = acl_entries(definition)
+        definition.pop("access", None)
+        definition.pop("access_rules", None)
         version = save_draft(db, slug, definition, None, "Imported from YAML bootstrap")
         scenario = db.query(Scenario).filter(Scenario.slug == slug).one()
         publish(db, scenario, version)
-        entries = []
-        for permission, rule in access.items():
-            mode = rule.get("match", "all")
-            for role in rule.get("roles", []):
-                entries.append(
-                    {
-                        "subject_type": "role",
-                        "subject_key": str(role),
-                        "permission": permission,
-                        "effect": "allow",
-                        "match_mode": mode,
-                    }
-                )
-            for team in rule.get("teams", []):
-                entries.append(
-                    {
-                        "subject_type": "team",
-                        "subject_key": str(team),
-                        "permission": permission,
-                        "effect": "allow",
-                        "match_mode": mode,
-                    }
-                )
         if entries:
             replace_acl(db, scenario.id, entries)
         imported += 1

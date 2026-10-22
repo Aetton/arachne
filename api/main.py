@@ -575,6 +575,34 @@ def admin_scenario_layout(
     return {"ok": True}
 
 
+@app.post("/admin/scenarios/import")
+async def admin_scenarios_import(
+    request: Request,
+    mode: Literal["add", "update"] = "add",
+    user=Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    import yaml
+    from sqlalchemy.exc import IntegrityError
+    from scenario_import import import_bundle, MAX_BYTES
+
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_BYTES:
+            raise HTTPException(413, "YAML file is larger than 5 MiB")
+    try:
+        return import_bundle(db, body.decode("utf-8-sig"), mode, user)
+    except (ValueError, TypeError, yaml.YAMLError, RecursionError) as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            409, "Import conflicts with current data; refresh and retry"
+        ) from exc
+
+
 @app.get("/admin/scenarios/new", response_class=HTMLResponse)
 def admin_scenario_new(
     request: Request, user=Depends(require_role("admin")), db: Session = Depends(get_db)

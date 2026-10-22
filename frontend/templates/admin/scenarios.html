@@ -124,7 +124,7 @@
           <option value="add" selected>Add only · skip existing</option>
           <option value="update">Update existing · create and publish a new version</option>
         </select>
-        <p class="muted text-xs mt-1">Update mode also applies imported component labels, icons and sort order.</p>
+        <p class="muted text-xs mt-1">Весь пакет сохраняется одной транзакцией. Ошибка откатывает все изменения.</p>
       </div>
 
       <div id="scenario-import-status" class="scenario-import-status" role="status" aria-live="polite">
@@ -211,7 +211,6 @@
     <p id="manager-empty" class="muted">Сценарии не найдены. Измените поиск или выберите другую группу.</p>
   </section>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
-<script src="/static/js/scenario-yaml-import.js?v=2"></script>
+<script src="/static/js/scenario-yaml-import.js?v=3"></script>
 <script src="/static/js/scenario-manager.js?v=3"></script>
 {% endblock %}
