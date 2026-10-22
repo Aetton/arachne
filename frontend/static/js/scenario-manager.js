@@ -72,6 +72,11 @@
     try { const value = localStorage.getItem(key); if (value !== null) d.open = value === 'true'; } catch (_) {}
     d.addEventListener('toggle', e => { if (e.target !== d || search.value) return; try {localStorage.setItem(key, d.open);} catch (_) {} });
   });
+  rows.forEach(row => row.querySelector('[data-move-group]').addEventListener('change', e => {
+    const target = e.target.value;
+    e.target.value = row.dataset.group;
+    if (target !== row.dataset.group) save({kind:'move_scenario', slug:row.dataset.scenarioSlug, group:target});
+  }));
   rows.forEach(row => row.querySelectorAll('[data-move]').forEach(b => b.onclick = () => {
     const siblings = rows.filter(r => r.dataset.group === row.dataset.group), i = siblings.indexOf(row);
     const before = b.dataset.move === 'up' ? siblings[i-1]?.dataset.scenarioSlug : siblings[i+2]?.dataset.scenarioSlug;
@@ -85,7 +90,7 @@
   });
   function target(e) {
     if (!drag) return null;
-    return drag.kind === 'group' ? e.target.closest('[data-before-group],[data-drag-group],[data-drop-root]') : e.target.closest('#manager-scenarios tr');
+    return drag.kind === 'group' ? e.target.closest('[data-before-group],[data-drag-group],[data-drop-root]') : e.target.closest('[data-drag-group],#manager-scenarios tr');
   }
   document.addEventListener('dragover', e => { const t = target(e); if(t){e.preventDefault();t.classList.add('drop-active');} });
   document.addEventListener('dragleave', e => { const t = target(e); if(t)t.classList.remove('drop-active'); });
@@ -100,6 +105,8 @@
         payload.parent_group=t.closest('.manager-group').dataset.parent || null;
         payload.before=t.dataset.beforeGroup;
       } else payload.parent_group=t.dataset.dragGroup || null;
+    } else if(t.hasAttribute('data-drag-group')) {
+      payload.kind='move_scenario'; payload.group=t.dataset.dragGroup;
     } else {
       if(t.dataset.scenarioSlug === payload.slug)return;
       payload.before=t.dataset.scenarioSlug;
