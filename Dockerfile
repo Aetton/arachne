@@ -14,11 +14,16 @@ ARG TOFU_VERSION=1.12.6
 ARG ARACHNE_PLUGINS=""
 ENV ARACHNE_PLUGINS=${ARACHNE_PLUGINS}
 
+# Resolve once from the same registry used by runtime and bundle pruning.
+COPY api/core/optional_plugins.py /tmp/arachne-optional-plugins.py
+RUN python /tmp/arachne-optional-plugins.py > /tmp/arachne-selected-plugins
+
 # ansible + openssh-client for playbooks that provision/deploy over SSH.
 # sshpass enables password-backed SSH credentials from Control -> Secrets.
 # git/rsync are needed by hub bootstrap tasks that publish reusable Forgejo actions.
 # Pin the Debian release and use the reachable mirror instead of deb.debian.org.
-RUN sed -i \
+RUN ARACHNE_PLUGINS="$(cat /tmp/arachne-selected-plugins)" \
+    && sed -i \
         -e 's|http://deb.debian.org/debian|https://mirror.yandex.ru/debian|g' \
         -e 's|http://deb.debian.org/debian-security|https://mirror.yandex.ru/debian-security|g' \
         /etc/apt/sources.list.d/debian.sources \
@@ -43,7 +48,8 @@ RUN sed -i \
 WORKDIR /app
 
 COPY api/requirements*.txt ./
-RUN pip install --no-cache-dir -r requirements.txt \
+RUN ARACHNE_PLUGINS="$(cat /tmp/arachne-selected-plugins)" \
+    && pip install --no-cache-dir -r requirements.txt \
     && case ",${ARACHNE_PLUGINS}," in *",ansible-local,"*) pip install --no-cache-dir -r requirements-ansible.txt ;; esac \
     && case ",${ARACHNE_PLUGINS}," in *",koji,"*) pip install --no-cache-dir -r requirements-koji.txt ;; esac
 
