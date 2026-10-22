@@ -46,6 +46,7 @@ from auth.deps import (
 )
 import config_loader
 import scenario_store
+from run_journal import create_router as create_journal_router
 from group_tree import build_tree, validate_parents
 import access
 import run_engine
@@ -893,3 +894,6 @@ async def admin_team_save(
     ]
     db.commit()
     return RedirectResponse("/admin/rbac", status_code=303)
+
+# Full journal is separate from the compact dashboard history fragment.
+app.include_router(create_journal_router(render, _require_run_access))
