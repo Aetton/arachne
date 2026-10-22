@@ -12,20 +12,20 @@
             <div>
               <div class="eyebrow">Scenario web</div>
             </div>
-            <span class="web-count">{{ scenario_groups | map(attribute='scenarios') | map('length') | sum }}</span>
+            <span class="web-count">{{ scenario_groups | map(attribute='count') | sum }}</span>
           </div>
           <div class="scenario-search-shell">
             <i class="ti ti-search"></i>
             <input id="scenario-search" type="search" placeholder="Search the web…" aria-label="Search scenarios">
           </div>
 
-          {% for group in scenario_groups %}
+          {% macro render_group(group) %}
           <details class="scenario-group" data-component="{{ group.component.slug }}" open>
             <summary>
               <i class="ti ti-chevron-right scenario-group-chevron"></i>
               <i class="ti {{ group.component.icon or 'ti-box' }} group-icon"></i>
               <span class="group-label">{{ group.component.label }}</span>
-              <span class="web-count scenario-group-count">{{ group.scenarios|length }}</span>
+              <span class="web-count scenario-group-count">{{ group.count }}</span>
             </summary>
             <div class="scenario-list">
               {% for item in group.scenarios %}
@@ -45,7 +45,12 @@
               </button>
               {% endfor %}
             </div>
+            <div class="nested-groups" style="margin-left:14px;border-left:1px solid var(--border);padding-left:8px">
+              {% for child in group.children %}{{ render_group(child) }}{% endfor %}
+            </div>
           </details>
+          {% endmacro %}
+          {% for group in scenario_groups %}{{ render_group(group) }}
           {% else %}
           <div class="run-empty">No scenarios are available.</div>
           {% endfor %}

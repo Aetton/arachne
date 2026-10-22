@@ -9,6 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import Component, Scenario, ScenarioACL, ScenarioVersion
+from group_tree import validate_parents
 
 
 _FAMILIES = {"weave", "brood", "command"}
@@ -41,7 +42,11 @@ def published_definition(db: Session, scenario: Scenario) -> dict | None:
     if not scenario.current_version_id:
         return None
     version = db.get(ScenarioVersion, scenario.current_version_id)
-    return dict(version.definition) if version else None
+    if not version:
+        return None
+    definition = dict(version.definition)
+    definition["sort_order"] = scenario.sort_order
+    return definition
 
 
 def get_published(db: Session, slug: str) -> tuple[Scenario, ScenarioVersion] | None:
@@ -86,6 +91,8 @@ def save_draft(
         )
         db.add(scenario)
         db.flush()
+    if "sort_order" in definition:
+        scenario.sort_order = int(definition["sort_order"])
     scenario.label = definition["label"]
     scenario.component = definition["component"]
     next_version = (
@@ -127,6 +134,7 @@ def export_yaml(db: Session) -> str:
     for scenario in db.query(Scenario).all():
         if scenario.slug not in scenarios:
             continue
+        scenarios[scenario.slug]["sort_order"] = scenario.sort_order
         rows = db.query(ScenarioACL).filter(ScenarioACL.scenario_id == scenario.id).all()
         if not rows:
             continue
@@ -146,6 +154,7 @@ def export_yaml(db: Session) -> str:
                     "label": component.label,
                     "icon": component.icon,
                     "sort_order": component.sort_order,
+                    "parent_group": component.parent_group,
                 }
                 for component in db.query(Component).order_by(
                     Component.sort_order, Component.label,
@@ -170,6 +179,7 @@ def bootstrap_from_yaml(db: Session) -> int:
     if not path:
         return 0
     payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    imported_groups = []
     for index, (slug, spec) in enumerate((payload.get("components") or {}).items()):
         component = db.get(Component, slug)
         if component:
@@ -180,12 +190,19 @@ def bootstrap_from_yaml(db: Session) -> int:
                 component.sort_order = int(spec.get("sort_order", index))
             continue
         spec = spec or {}
+        imported_groups.append((slug, spec.get("parent_group") or None))
         db.add(Component(
             slug=slug,
             label=spec.get("label") or slug,
             icon=spec.get("icon") or "ti-box",
             sort_order=int(spec.get("sort_order", index)),
         ))
+    db.flush()
+    parents = {c.slug: c.parent_group for c in db.query(Component).all()}
+    parents.update(dict(imported_groups))
+    validate_parents(parents)
+    for slug, parent in imported_groups:
+        db.get(Component, slug).parent_group = parent
     db.commit()
 
     imported = 0

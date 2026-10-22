@@ -16,6 +16,7 @@ def all_components() -> dict:
                 "label": component.label,
                 "icon": component.icon,
                 "sort_order": component.sort_order,
+                "parent_group": component.parent_group,
             }
             for component in db.query(Component).order_by(
                 Component.sort_order, Component.label,

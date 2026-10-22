@@ -78,13 +78,13 @@
 </style>
 <div class="flex items-center justify-between mb-5">
   <div>
-    <h1 class="text-xl font-semibold">Scenario management</h1>
-    <p class="muted text-sm">Published definitions live in the database. YAML is import/export.</p>
+    <h1 class="text-xl font-semibold">Сценарии</h1>
+    <p class="muted text-sm">Группы, порядок запуска и библиотека сценариев.</p>
   </div>
   <div class="flex gap-2">
     <button class="btn-ghost" id="scenario-import-open" type="button"><i class="ti ti-upload"></i> Import YAML</button>
     <a class="btn-ghost" href="/admin/scenarios-export.yaml"><i class="ti ti-download"></i> Export YAML</a>
-    <a class="btn" href="/admin/scenarios/new"><i class="ti ti-plus"></i> New scenario</a>
+    <a class="btn" href="/admin/scenarios/new"><i class="ti ti-plus"></i> Новый сценарий</a>
   </div>
 </div>
 
@@ -141,74 +141,75 @@
   </form>
 </dialog>
 
-<div class="surface rounded-xl p-4 mb-5">
-  <div class="flex items-center justify-between mb-3">
-    <div>
-      <h2 class="font-semibold">Components</h2>
-      <p class="muted text-xs">Database-backed scenario groups.</p>
+<link rel="stylesheet" href="/static/css/scenario-manager.css">
+<div class="manager-toolbar">
+  <label class="manager-search"><i class="ti ti-search"></i><input id="manager-search" type="search" placeholder="Поиск по названию, slug или группе" aria-label="Поиск сценариев и групп"></label>
+  <button class="btn-ghost" id="expand-groups" type="button">Раскрыть группы</button>
+  <button class="btn-ghost" id="collapse-groups" type="button">Свернуть</button>
+</div>
+<p id="manager-status" role="status" aria-live="polite" class="muted text-sm mb-3">Перетащите группу на название другой, чтобы вложить её. Полоска над группой меняет порядок.</p>
+<div class="scenario-manager">
+  <aside class="manager-groups surface rounded-xl">
+    <div class="manager-pane-head"><h2 class="font-semibold">Группы</h2><button class="btn-ghost" id="all-scenarios" type="button">Все</button></div>
+    <div class="group-root-drop" data-drop-root>↑ В корень — перетащите группу сюда</div>
+    {% macro group_node(node) %}
+    {% set c = node.component %}
+    <div class="manager-group" data-group="{{ c.slug }}" data-parent="{{ c.parent_group or '' }}" data-label="{{ c.label }}">
+      <div class="group-before" data-before-group="{{ c.slug }}" title="Поместить перед группой"></div>
+      <details open>
+        <summary draggable="true" data-drag-group="{{ c.slug }}">
+          <span class="tree-chevron" aria-hidden="true">▸</span><i class="ti ti-grip-vertical muted"></i><i class="ti {{ c.icon }}"></i>
+          <button type="button" class="group-select" data-select-group="{{ c.slug }}">{{ c.label }}</button>
+          <span class="muted">{{ c.scenarios|length }}</span>
+        </summary>
+        <div class="group-settings">
+          <details><summary class="muted text-xs">Настройки группы</summary>
+            <form method="post" action="/admin/components" data-component-slug="{{ c.slug }}">
+              <input type="hidden" name="slug" value="{{ c.slug }}">
+              <label>Название<input name="label" value="{{ c.label }}" required></label>
+              <label>Иконка<input name="icon" value="{{ c.icon }}"></label>
+              <label>Родитель<select name="parent_group"><option value="">Корень</option>{% for parent in components if parent.slug != c.slug %}<option value="{{ parent.slug }}" {% if parent.slug == c.parent_group %}selected{% endif %}>{{ parent.label }} · {{ parent.slug }}</option>{% endfor %}</select></label>
+              <label>Порядок<input name="sort_order" type="number" value="{{ c.sort_order }}"></label>
+              <div class="flex gap-2"><button class="btn-ghost">Сохранить</button><button class="btn-ghost" formaction="/admin/components/{{ c.slug }}/delete" {% if c.scenarios or node.children %}disabled title="Группа не пуста"{% else %}onclick="return confirm('Удалить пустую группу?')"{% endif %}>Удалить</button></div>
+              <code class="muted text-xs">{{ c.slug }}</code>
+            </form>
+          </details>
+        </div>
+        <div class="group-children">{% for child in node.children %}{{ group_node(child) }}{% endfor %}</div>
+      </details>
     </div>
-  </div>
-  <div class="grid gap-2 mb-4">
-    {% for component in components %}
-    <form method="post" action="/admin/components"
-          data-component-slug="{{ component.slug }}"
-          class="grid grid-cols-12 gap-2 items-center">
-      <input type="hidden" name="slug" value="{{ component.slug }}">
-      <span class="col-span-2 font-mono text-sm">{{ component.slug }}</span>
-      <input class="col-span-3" name="label" value="{{ component.label }}" aria-label="Component label">
-      <input class="col-span-2" name="icon" value="{{ component.icon }}" aria-label="Component icon">
-      <input class="col-span-1" name="sort_order" type="number" value="{{ component.sort_order }}" aria-label="Sort order">
-      <button class="btn-ghost col-span-2" type="submit">Save</button>
-      {% set scenario_count = component.scenarios|length %}
-      <button class="btn-ghost col-span-2" type="submit"
-              formaction="/admin/components/{{ component.slug }}/delete"
-              {% if scenario_count %}
-              disabled title="Used by {{ scenario_count }} scenario(s)"
-              {% else %}
-              onclick="return confirm('Delete this component?')"
-              {% endif %}>
-        Delete{% if scenario_count %} · {{ scenario_count }}{% endif %}
-      </button>
-    </form>
-    {% endfor %}
-  </div>
-  <form method="post" action="/admin/components"
-        class="grid grid-cols-12 gap-2 items-center pt-3" style="border-top:1px solid var(--border)">
-    <input class="col-span-2" name="slug" required placeholder="slug">
-    <input class="col-span-4" name="label" required placeholder="Label">
-    <input class="col-span-3" name="icon" value="ti-box" placeholder="ti-box">
-    <input class="col-span-1" name="sort_order" type="number" value="0">
-    <button class="btn col-span-2" type="submit">Add</button>
-  </form>
+    {% endmacro %}
+    <div id="manager-tree">{% for node in group_tree %}{{ group_node(node) }}{% endfor %}</div>
+    <details class="manager-add"><summary>＋ Новая группа</summary>
+      <form method="post" action="/admin/components">
+        <label>Slug<input name="slug" required placeholder="broker-services"></label>
+        <label>Название<input name="label" required placeholder="Сервисы брокера"></label>
+        <input type="hidden" name="icon" value="ti-folder"><input type="hidden" name="sort_order" value="0">
+        <label>Родитель<select name="parent_group"><option value="">Корень</option>{% for c in components %}<option value="{{ c.slug }}">{{ c.label }} · {{ c.slug }}</option>{% endfor %}</select></label>
+        <button class="btn" type="submit">Создать группу</button>
+      </form>
+    </details>
+  </aside>
+  <section class="manager-list surface rounded-xl">
+    <div class="manager-pane-head"><div><h2 id="selected-group-title" class="font-semibold">Все сценарии</h2><p class="muted text-xs">Перетаскивание и стрелки меняют порядок внутри группы.</p></div><span id="scenario-count" class="muted"></span></div>
+    <div class="manager-table-wrap"><table class="w-full text-sm">
+      <thead><tr><th>Порядок</th><th>Сценарий</th><th>Группа</th><th>Статус</th><th></th></tr></thead>
+      <tbody id="manager-scenarios">
+      {% for s in scenarios %}
+        <tr data-scenario-slug="{{ s.slug }}" data-group="{{ s.component }}" data-search="{{ s.label }} {{ s.slug }} {{ s.component }} {{ s.component_ref.label }}" draggable="true">
+          <td><div class="row-order"><i class="ti ti-grip-vertical muted"></i><button type="button" data-move="up" aria-label="Поднять {{ s.label }}">↑</button><button type="button" data-move="down" aria-label="Опустить {{ s.label }}">↓</button></div></td>
+          <td><a class="scenario-edit" href="/admin/scenarios/{{ s.slug }}/edit">{{ s.label }}</a><code class="muted text-xs block">{{ s.slug }}</code></td>
+          <td class="muted">{{ s.component_ref.label }}</td>
+          <td><span class="manager-badge">{{ 'Опубликован' if s.current_version_id and s.enabled else 'Отключён' if not s.enabled else 'Черновик' }}</span></td>
+          <td><a class="link" href="/admin/scenarios/{{ s.slug }}/edit" aria-label="Редактировать {{ s.label }}"><i class="ti ti-pencil"></i></a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p id="manager-empty" class="muted">Сценарии не найдены. Измените поиск или выберите другую группу.</p>
+  </section>
 </div>
-<div class="surface rounded-xl overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="surface-2"><tr class="text-left muted">
-      <th class="px-4 py-2.5">Slug</th><th class="px-4 py-2.5">Label</th>
-      <th class="px-4 py-2.5">Component</th><th class="px-4 py-2.5">Published version</th>
-      <th class="px-4 py-2.5"></th>
-    </tr></thead>
-    <tbody>
-    {% for s in scenarios %}
-      <tr class="scenario-row" style="border-top:1px solid var(--border)"
-          data-scenario-slug="{{ s.slug }}"
-          data-href="/admin/scenarios/{{ s.slug }}/edit"
-          role="link" tabindex="0" aria-label="Edit scenario {{ s.label }}"
-          onclick="if (!event.target.closest('a, button, input, select, textarea')) window.location.href = this.dataset.href"
-          onkeydown="if (event.key === 'Enter') window.location.href = this.dataset.href">
-        <td class="px-4 py-2.5 font-mono">{{ s.slug }}</td>
-        <td class="px-4 py-2.5">{{ s.label }}</td>
-        <td class="px-4 py-2.5 muted">{{ s.component }}</td>
-        <td class="px-4 py-2.5">{{ s.current_version_id or "draft" }}</td>
-        <td class="px-4 py-2.5 text-right"><a class="link" href="/admin/scenarios/{{ s.slug }}/edit">Edit</a></td>
-      </tr>
-    {% else %}
-      <tr><td class="px-4 py-8 muted text-center" colspan="5">No scenarios yet.</td></tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
-<script src="/static/js/scenario-yaml-import.js?v=1"></script>
+<script src="/static/js/scenario-yaml-import.js?v=2"></script>
+<script src="/static/js/scenario-manager.js?v=1"></script>
 {% endblock %}
