@@ -26,6 +26,7 @@ from auth.deps import (
 )
 import config_loader
 import scenario_store
+from group_tree import build_tree, validate_parents
 import access
 import run_engine
 import runview
@@ -188,7 +189,7 @@ def logout():
 def dashboard(request: Request, user=Depends(get_optional_user), db: Session = Depends(get_db)):
     if not user:
         return RedirectResponse("/login", status_code=302)
-    groups = []
+    group_items = {}
     components = db.query(Component).order_by(
         Component.sort_order, Component.label,
     ).all()
@@ -197,13 +198,13 @@ def dashboard(request: Request, user=Depends(get_optional_user), db: Session = D
         scenarios = db.query(Scenario).filter(
             Scenario.enabled.is_(True),
             Scenario.component == component.slug,
-        ).order_by(Scenario.label).all()
+        ).order_by(Scenario.sort_order, Scenario.label, Scenario.slug).all()
         for scenario in scenarios:
             definition = scenario_store.published_definition(db, scenario)
             if definition and access.can_access_scenario(db, user, scenario, "view"):
                 items.append({"slug": scenario.slug, "definition": definition})
-        if items:
-            groups.append({"component": component, "scenarios": items})
+        group_items[component.slug] = items
+    groups = build_tree(components, group_items, prune=True)
     return render(request, "dashboard.html", user=user, scenario_groups=groups)
 
 
@@ -411,14 +412,59 @@ def admin_user_delete(uid: int, user=Depends(require_role("admin")), db: Session
 @app.get("/admin/scenarios", response_class=HTMLResponse)
 def admin_scenarios(request: Request, user=Depends(require_role("admin")),
                     db: Session = Depends(get_db)):
-    scenarios = db.query(Scenario).order_by(Scenario.slug).all()
+    scenarios = db.query(Scenario).order_by(Scenario.sort_order, Scenario.label, Scenario.slug).all()
     components = db.query(Component).order_by(
         Component.sort_order, Component.label,
     ).all()
     return render(
         request, "admin/scenarios.html", user=user,
         scenarios=scenarios, components=components,
+        group_tree=build_tree(components, {}),
     )
+
+
+@app.post("/admin/scenarios/layout")
+async def admin_scenario_layout(request: Request, user=Depends(require_role("admin")),
+                                db: Session = Depends(get_db)):
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Expected an object")
+    kind, slug, before = payload.get("kind"), payload.get("slug"), payload.get("before")
+    try:
+        if kind == "group":
+            rows = db.query(Component).order_by(Component.sort_order, Component.label, Component.slug).with_for_update().all()
+            mapping = {r.slug: r for r in rows}
+            if slug not in mapping:
+                raise ValueError("Unknown group")
+            parent = payload.get("parent_group") or None
+            parents = {r.slug: r.parent_group for r in rows}
+            parents[slug] = parent
+            validate_parents(parents)
+            siblings = [r for r in rows if r.parent_group == parent and r.slug != slug]
+            if before and before not in {r.slug for r in siblings}:
+                raise ValueError("Invalid target group")
+            row = mapping[slug]
+            row.parent_group = parent
+        elif kind == "scenario":
+            row = db.query(Scenario).filter(Scenario.slug == slug).first()
+            if not row:
+                raise ValueError("Unknown scenario")
+            siblings = db.query(Scenario).filter(Scenario.component == row.component).order_by(
+                Scenario.sort_order, Scenario.label, Scenario.slug).with_for_update().all()
+            siblings = [r for r in siblings if r.slug != slug]
+            if before and before not in {r.slug for r in siblings}:
+                raise ValueError("Scenarios can only be reordered within their group")
+        else:
+            raise ValueError("Unknown layout operation")
+        index = next((i for i, r in enumerate(siblings) if r.slug == before), len(siblings))
+        siblings.insert(index, row)
+        for index, item in enumerate(siblings):
+            item.sort_order = index
+        db.commit()
+    except (ValueError, TypeError) as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True}
 
 
 @app.get("/admin/scenarios/new", response_class=HTMLResponse)
@@ -541,12 +587,19 @@ async def admin_component_save(request: Request, user=Depends(require_role("admi
                                db: Session = Depends(get_db)):
     form = await request.form()
     slug = str(form.get("slug", "")).strip()
-    if not slug:
-        raise HTTPException(400, "Component slug is required")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,95}", slug):
+        raise HTTPException(400, "Invalid group slug")
+    parents = {c.slug: c.parent_group for c in db.query(Component).with_for_update().all()}
+    parents[slug] = str(form.get("parent_group") or "").strip() or None
+    try:
+        validate_parents(parents)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     component = db.get(Component, slug)
     if not component:
         component = Component(slug=slug, label=slug)
         db.add(component)
+    component.parent_group = parents[slug]
     component.label = str(form.get("label") or slug).strip()
     component.icon = str(form.get("icon") or "ti-box").strip()
     try:
@@ -564,6 +617,8 @@ def admin_component_delete(slug: str, user=Depends(require_role("admin")),
     if not component:
         raise HTTPException(404, "Component not found")
     scenario_count = db.query(Scenario).filter(Scenario.component == slug).count()
+    if db.query(Component).filter(Component.parent_group == slug).count():
+        raise HTTPException(409, "Move child groups before deleting this group")
     if scenario_count:
         raise HTTPException(
             409,

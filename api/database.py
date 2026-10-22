@@ -96,6 +96,8 @@ class Component(Base):
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
+    parent_group = Column(String(96), ForeignKey("components.slug", ondelete="RESTRICT", name="fk_component_parent"), nullable=True, default=None, index=True)
+
     scenarios = relationship("Scenario", back_populates="component_ref")
 
 
@@ -111,6 +113,7 @@ class Scenario(Base):
         index=True,
         nullable=False,
     )
+    sort_order = Column(Integer, default=0, server_default="0", nullable=False)
     enabled = Column(Boolean, default=True)
     current_version_id = Column(Integer, nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)

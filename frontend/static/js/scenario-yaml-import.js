@@ -80,6 +80,10 @@
       existingComponents.add(slug);
     });
 
+    Object.keys(payload.components).forEach(function (slug) {
+      var parent = (payload.components[slug] || {}).parent_group;
+      if (parent && !existingComponents.has(String(parent))) throw new Error(slug + ': unknown parent_group ' + parent);
+    });
     Object.keys(payload.scenarios).forEach(function (slug) {
       if (!slugPattern.test(slug)) {
         throw new Error('invalid scenario slug: ' + slug);
@@ -134,6 +138,7 @@
     body.set('slug', slug);
     body.set('label', String(spec.label || slug));
     body.set('icon', String(spec.icon || 'ti-box'));
+    body.set('parent_group', String(spec.parent_group || ''));
     body.set('sort_order', String(spec.sort_order === undefined ? index : spec.sort_order));
     return body;
   }
@@ -168,7 +173,17 @@
   }
 
   async function applyImport(payload, mode) {
-    var components = Object.entries(payload.components);
+    // Validate and import parents before children, independent of YAML order.
+    var components = [], visiting = new Set(), visited = new Set();
+    function visit(slug) {
+      if (visiting.has(slug)) throw new Error('Cycle in parent_group: ' + slug);
+      if (visited.has(slug)) return;
+      visiting.add(slug);
+      var spec = payload.components[slug] || {};
+      if (spec.parent_group && Object.prototype.hasOwnProperty.call(payload.components, spec.parent_group)) visit(spec.parent_group);
+      visiting.delete(slug); visited.add(slug); components.push([slug, spec]);
+    }
+    Object.keys(payload.components).forEach(visit);
     var scenarios = Object.entries(payload.scenarios);
     var knownComponents = existingComponentSlugs();
     var knownScenarios = existingScenarioSlugs();
