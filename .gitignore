@@ -38,3 +38,6 @@ api/.git/
 docs/node_modules/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
+
+# Frontend tooling
+node_modules/

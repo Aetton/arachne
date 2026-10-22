@@ -87,6 +87,8 @@
     var groups = Array.from(document.querySelectorAll('.scenario-group'));
     var scenarioCards = Array.from(document.querySelectorAll('.scenario-card'));
 
+    var searchOpenState = null;
+    var search = document.getElementById('scenario-search');
     groups.forEach(function (group) {
       var key = 'arachne-component-open:' + group.dataset.component;
       try {
@@ -94,6 +96,7 @@
         if (saved !== null) group.open = saved === 'true';
       } catch (e) {}
       group.addEventListener('toggle', function () {
+        if (search.value.trim()) return;
         try { localStorage.setItem(key, String(group.open)); } catch (e) {}
       });
     });
@@ -107,6 +110,7 @@
 
     document.getElementById('scenario-search').addEventListener('input', function (event) {
       var query = event.target.value.trim().toLocaleLowerCase();
+      if (query && searchOpenState === null) searchOpenState = new Map(groups.map(g => [g, g.open]));
       groups.forEach(function (group) {
         var visible = 0;
         group.querySelectorAll('.scenario-card').forEach(function (card) {
@@ -117,7 +121,9 @@
         group.hidden = visible === 0;
         group.querySelector('.scenario-group-count').textContent = visible;
         if (query && visible) group.open = true;
+        if (!query && searchOpenState) group.open = searchOpenState.get(group);
       });
+      if (!query) searchOpenState = null;
     });
   })();
 </script>

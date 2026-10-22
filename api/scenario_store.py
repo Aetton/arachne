@@ -1,4 +1,5 @@
 """Database-backed scenario versioning, YAML bootstrap and export."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,6 +22,12 @@ def validate_definition(definition: dict) -> None:
     for field in ("label", "component", "steps"):
         if field not in definition:
             raise ValueError(f"missing required field: {field}")
+    for field in ("label", "component"):
+        if not isinstance(definition[field], str) or not definition[field].strip():
+            raise ValueError(f"{field} must be a non-empty string")
+    order = definition.get("sort_order", 0)
+    if type(order) is not int or not -(2**31) <= order < 2**31:
+        raise ValueError("sort_order must be a 32-bit integer")
     if not isinstance(definition["steps"], list) or not definition["steps"]:
         raise ValueError("steps must be a non-empty list")
     ids: set[str] = set()
@@ -28,7 +35,7 @@ def validate_definition(definition: dict) -> None:
         if not isinstance(step, dict):
             raise ValueError("each step must be a mapping")
         for field in ("id", "spider", "action"):
-            if not step.get(field):
+            if not isinstance(step.get(field), str) or not step[field].strip():
                 raise ValueError(f"step missing required field: {field}")
         family = step.get("family")
         if family is not None and str(family).strip().lower() not in _FAMILIES:
@@ -49,10 +56,29 @@ def published_definition(db: Session, scenario: Scenario) -> dict | None:
     return definition
 
 
+def editable_definition(db: Session, scenario: Scenario) -> dict | None:
+    if scenario.current_version_id:
+        return published_definition(db, scenario)
+    version = (
+        db.query(ScenarioVersion)
+        .filter(ScenarioVersion.scenario_id == scenario.id)
+        .order_by(ScenarioVersion.version.desc())
+        .first()
+    )
+    if not version:
+        return None
+    return {**version.definition, "sort_order": scenario.sort_order}
+
+
 def get_published(db: Session, slug: str) -> tuple[Scenario, ScenarioVersion] | None:
-    scenario = db.query(Scenario).filter(
-        Scenario.slug == slug, Scenario.enabled.is_(True),
-    ).first()
+    scenario = (
+        db.query(Scenario)
+        .filter(
+            Scenario.slug == slug,
+            Scenario.enabled.is_(True),
+        )
+        .first()
+    )
     if not scenario or not scenario.current_version_id:
         return None
     version = db.get(ScenarioVersion, scenario.current_version_id)
@@ -74,6 +100,8 @@ def save_draft(
     definition: dict,
     user_id: int | None,
     comment: str = "",
+    *,
+    commit: bool = True,
 ) -> ScenarioVersion:
     validate_definition(definition)
     component_slug = str(definition["component"]).strip()
@@ -110,12 +138,14 @@ def save_draft(
         comment=comment,
     )
     db.add(version)
-    db.commit()
+    db.commit() if commit else db.flush()
     db.refresh(version)
     return version
 
 
-def publish(db: Session, scenario: Scenario, version: ScenarioVersion) -> None:
+def publish(
+    db: Session, scenario: Scenario, version: ScenarioVersion, *, commit: bool = True
+) -> None:
     if version.scenario_id != scenario.id:
         raise ValueError("version does not belong to scenario")
     validate_definition(version.definition)
@@ -126,7 +156,7 @@ def publish(db: Session, scenario: Scenario, version: ScenarioVersion) -> None:
     version.status = "published"
     scenario.current_version_id = version.id
     scenario.enabled = True
-    db.commit()
+    db.commit() if commit else db.flush()
 
 
 def export_yaml(db: Session) -> str:
@@ -135,14 +165,21 @@ def export_yaml(db: Session) -> str:
         if scenario.slug not in scenarios:
             continue
         scenarios[scenario.slug]["sort_order"] = scenario.sort_order
-        rows = db.query(ScenarioACL).filter(ScenarioACL.scenario_id == scenario.id).all()
+        rows = (
+            db.query(ScenarioACL).filter(ScenarioACL.scenario_id == scenario.id).all()
+        )
         if not rows:
             continue
         access: dict = {}
         for row in rows:
-            rule = access.setdefault(row.permission, {
-                "match": row.match_mode, "roles": [], "teams": [],
-            })
+            rule = access.setdefault(
+                row.permission,
+                {
+                    "match": row.match_mode,
+                    "roles": [],
+                    "teams": [],
+                },
+            )
             rule["roles" if row.subject_type == "role" else "teams"].append(
                 row.subject_key
             )
@@ -157,7 +194,8 @@ def export_yaml(db: Session) -> str:
                     "parent_group": component.parent_group,
                 }
                 for component in db.query(Component).order_by(
-                    Component.sort_order, Component.label,
+                    Component.sort_order,
+                    Component.label,
                 )
             },
             "scenarios": scenarios,
@@ -191,12 +229,14 @@ def bootstrap_from_yaml(db: Session) -> int:
             continue
         spec = spec or {}
         imported_groups.append((slug, spec.get("parent_group") or None))
-        db.add(Component(
-            slug=slug,
-            label=spec.get("label") or slug,
-            icon=spec.get("icon") or "ti-box",
-            sort_order=int(spec.get("sort_order", index)),
-        ))
+        db.add(
+            Component(
+                slug=slug,
+                label=spec.get("label") or slug,
+                icon=spec.get("icon") or "ti-box",
+                sort_order=int(spec.get("sort_order", index)),
+            )
+        )
     db.flush()
     parents = {c.slug: c.parent_group for c in db.query(Component).all()}
     parents.update(dict(imported_groups))
@@ -218,26 +258,38 @@ def bootstrap_from_yaml(db: Session) -> int:
         for permission, rule in access.items():
             mode = rule.get("match", "all")
             for role in rule.get("roles", []):
-                entries.append({
-                    "subject_type": "role", "subject_key": str(role),
-                    "permission": permission, "effect": "allow", "match_mode": mode,
-                })
+                entries.append(
+                    {
+                        "subject_type": "role",
+                        "subject_key": str(role),
+                        "permission": permission,
+                        "effect": "allow",
+                        "match_mode": mode,
+                    }
+                )
             for team in rule.get("teams", []):
-                entries.append({
-                    "subject_type": "team", "subject_key": str(team),
-                    "permission": permission, "effect": "allow", "match_mode": mode,
-                })
+                entries.append(
+                    {
+                        "subject_type": "team",
+                        "subject_key": str(team),
+                        "permission": permission,
+                        "effect": "allow",
+                        "match_mode": mode,
+                    }
+                )
         if entries:
             replace_acl(db, scenario.id, entries)
         imported += 1
     return imported
 
 
-def replace_acl(db: Session, scenario_id: int, entries: list[dict]) -> None:
+def replace_acl(
+    db: Session, scenario_id: int, entries: list[dict], *, commit: bool = True
+) -> None:
     db.query(ScenarioACL).filter(ScenarioACL.scenario_id == scenario_id).delete()
     for entry in entries:
         db.add(ScenarioACL(scenario_id=scenario_id, **entry))
-    db.commit()
+    db.commit() if commit else db.flush()
 
 
 def move_to_group(db: Session, slug: str, target: str, user_id: int) -> None:
@@ -246,28 +298,49 @@ def move_to_group(db: Session, slug: str, target: str, user_id: int) -> None:
     groups = {c.slug for c in db.query(Component).with_for_update().all()}
     if target not in groups:
         raise ValueError("Unknown destination group")
-    scenario = db.query(Scenario).filter(Scenario.slug == slug).with_for_update().first()
+    scenario = (
+        db.query(Scenario).filter(Scenario.slug == slug).with_for_update().first()
+    )
     if not scenario:
         raise ValueError("Unknown scenario")
     if scenario.component == target:
         return
-    source = db.get(ScenarioVersion, scenario.current_version_id) if scenario.current_version_id else (
-        db.query(ScenarioVersion).filter(ScenarioVersion.scenario_id == scenario.id)
-        .order_by(ScenarioVersion.version.desc()).first()
+    source = (
+        db.get(ScenarioVersion, scenario.current_version_id)
+        if scenario.current_version_id
+        else (
+            db.query(ScenarioVersion)
+            .filter(ScenarioVersion.scenario_id == scenario.id)
+            .order_by(ScenarioVersion.version.desc())
+            .first()
+        )
     )
     if not source:
         raise ValueError("Scenario has no definition to move")
-    order = db.query(func.max(Scenario.sort_order)).filter(Scenario.component == target).scalar()
+    order = (
+        db.query(func.max(Scenario.sort_order))
+        .filter(Scenario.component == target)
+        .scalar()
+    )
     order = (order if order is not None else -1) + 1
     definition = dict(source.definition)
     definition.update(component=target, sort_order=order)
     validate_definition(definition)
-    next_version = (db.query(func.max(ScenarioVersion.version)).filter(
-        ScenarioVersion.scenario_id == scenario.id).scalar() or 0) + 1
+    next_version = (
+        db.query(func.max(ScenarioVersion.version))
+        .filter(ScenarioVersion.scenario_id == scenario.id)
+        .scalar()
+        or 0
+    ) + 1
     published = bool(scenario.current_version_id)
-    version = ScenarioVersion(scenario_id=scenario.id, version=next_version,
-        definition=definition, status="published" if published else "draft",
-        created_by=user_id, comment=f"Moved from {scenario.component} to {target}")
+    version = ScenarioVersion(
+        scenario_id=scenario.id,
+        version=next_version,
+        definition=definition,
+        status="published" if published else "draft",
+        created_by=user_id,
+        comment=f"Moved from {scenario.component} to {target}",
+    )
     db.add(version)
     db.flush()
     if published:
