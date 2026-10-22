@@ -21,6 +21,7 @@ RUN python /tmp/arachne-optional-plugins.py > /tmp/arachne-selected-plugins
 # ansible + openssh-client for playbooks that provision/deploy over SSH.
 # sshpass enables password-backed SSH credentials from Control -> Secrets.
 # git/rsync are needed by hub bootstrap tasks that publish reusable Forgejo actions.
+# Koji pulls python-gssapi: compiling it needs a C compiler and krb5-config.
 # Pin the Debian release and use the reachable mirror instead of deb.debian.org.
 RUN ARACHNE_PLUGINS="$(cat /tmp/arachne-selected-plugins)" \
     && sed -i \
@@ -31,6 +32,7 @@ RUN ARACHNE_PLUGINS="$(cat /tmp/arachne-selected-plugins)" \
     && apt-get install -y --no-install-recommends \
         curl ca-certificates bash git rsync \
     && case ",${ARACHNE_PLUGINS}," in *",ansible-local,"*) apt-get install -y --no-install-recommends ansible openssh-client sshpass ;; esac \
+    && case ",${ARACHNE_PLUGINS}," in *",koji,"*) apt-get install -y --no-install-recommends build-essential libkrb5-dev libgssapi-krb5-2 ;; esac \
     && if echo ",${ARACHNE_PLUGINS}," | grep -Eq ',tofu-(proxmox|ovirt),'; then \
        arch="$(dpkg --print-architecture)" \
     && case "$arch" in \
