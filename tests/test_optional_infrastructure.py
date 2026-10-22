@@ -271,7 +271,11 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 )
             d = spider._state_dir("vm", "o1")
             (d / "module").mkdir(parents=True)
-            (d / "terraform.tfstate").write_text("{}")
+            (d / "terraform.tfstate").write_text(json.dumps({
+                "version": 4,
+                "resources": [{"mode": "managed", "type": "ovirt_vm",
+                               "instances": [{"attributes": {"id": "existing"}}]}],
+            }))
             (d / "module/main.tf").write_text("original")
             with patch("core.tofu.shutil.which", return_value="/tofu"):
                 logs = [l.text async for l in spider.stream_logs(h)]

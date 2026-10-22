@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 from typing import AsyncIterator
 from core.lifetime import normalize_lifetime
+from core.tofu_state import ensure_provisionable_state
 from core.spider import ProvisionSpider
 from core.types import Artifact, LogLine, RunHandle, RunStatus, StepSpec
 
@@ -283,10 +284,7 @@ class TofuSpider(ProvisionSpider):
                 )
             else:
                 state_path = state_dir / "terraform.tfstate"
-                if state_path.exists():
-                    raise ValueError(
-                        "Stand state already exists; destroy it before provisioning again"
-                    )
+                ensure_provisionable_state(state_path)
                 work_dir, state_path = self._prepare_workdir(
                     name, source_dir, st.get("connection", "")
                 )
@@ -309,10 +307,7 @@ class TofuSpider(ProvisionSpider):
             else:
                 vars_ = self._vars(st)
                 if action == "provision":
-                    if state_path.exists():
-                        raise ValueError(
-                            "Stand state already exists; destroy it before provisioning again"
-                        )
+                    ensure_provisionable_state(state_path)
                     temp = manifest.with_suffix(".tmp")
                     temp.write_text(json.dumps({"vars": vars_}))
                     temp.replace(manifest)
