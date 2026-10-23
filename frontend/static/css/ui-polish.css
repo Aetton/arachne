@@ -1,0 +1,67 @@
+/* Shared layout safeguards and readable controls across all themes. */
+*, *::before, *::after { box-sizing: border-box; }
+.app-main, .app-nav-right, .app-nav-links { min-width: 0; }
+.app-nav { flex-wrap: wrap; }
+.app-nav-left { flex-wrap: wrap; }
+.app-nav-right { margin-left: auto; }
+.brand, .theme-select, .nav-control { flex-shrink: 0; }
+.nav-link { white-space: nowrap; }
+.nav-link[aria-current="page"] { background: var(--surface2); color: var(--accent); }
+.user-chip { max-width: 20ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-control-menu { width: 200px; max-height: calc(100dvh - 150px); overflow-y: auto; }
+.btn, .btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; min-height: 40px; line-height: 1.35; text-align: center; }
+.btn.hidden, .btn-ghost.hidden, .btn[hidden], .btn-ghost[hidden] { display: none; }
+button:disabled, .btn[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+:where(a, button, summary, select, input, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.check-control:has(input:focus-visible) .check-control-box { outline: 2px solid var(--accent); outline-offset: 3px; }
+input[type="checkbox"]:not(.check-control input), input[type="radio"]:not(.check-control input) {
+  width: 1.1rem; height: 1.1rem; flex: 0 0 1.1rem; padding: 0; accent-color: var(--accent); vertical-align: middle;
+}
+textarea { resize: vertical; }
+input, select, textarea { min-width: 0; max-width: 100%; }
+.page-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.page-heading > div { min-width: 0; }
+.page-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.manager-pane-head { flex-wrap: wrap; }
+.manager-pane-head > div, .manager-list, .manager-groups { min-width: 0; }
+.manager-search { min-width: min(220px, 100%); }
+.golden-card-name, .golden-card-name > div { min-width: 0; }
+.golden-card h2, .golden-slug, .golden-template-name, .golden-credential { overflow-wrap: anywhere; }
+.golden-title-icon, .golden-os-icon { flex-shrink: 0; }
+.golden-actions { flex-wrap: wrap; }
+.infrastructure-page { max-width: 1100px; margin: auto; display: grid; gap: 1rem; }
+.infrastructure-card { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: 1.25rem; border-radius: 14px; }
+.infrastructure-card > :is(div, h2, p) { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.infrastructure-card > label { display: grid; gap: .4rem; font-size: .82rem; min-width: 0; }
+.infrastructure-card > .native-check { display: flex; align-items: center; gap: .65rem; min-height: 40px; }
+.infrastructure-card > button { justify-self: start; grid-column: 1 / -1; }
+.journal-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 1rem; margin: 1.25rem 0; padding: 1.25rem; }
+.journal-filters label { display: grid; gap: .4rem; font-size: .78rem; color: var(--muted); min-width: 0; }
+.journal-filters input, .journal-filters select { min-height: 42px; }
+.journal-filters > div { flex-wrap: wrap; }
+.journal-table { overflow-x: auto; }
+.journal-table table { width: 100%; min-width: 800px; border-collapse: collapse; }
+.journal-table th, .journal-table td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.journal-table th { color: var(--muted); font-size: .75rem; background: var(--surface2); }
+.journal-table td { font-size: .85rem; max-width: 320px; overflow-wrap: anywhere; }
+.journal-table tbody tr:last-child td { border-bottom: 0; }
+.journal-table tbody tr:hover { background: color-mix(in srgb, var(--surface2) 45%, transparent); }
+.journal-table .pill { display: inline-block; white-space: nowrap; }
+.journal-actor { font-weight: 650; }
+.journal-time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.journal-pagination { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; padding: 1rem 0; }
+@media (max-width: 720px) {
+  .app-nav { position: relative; padding: .75rem; gap: .75rem; }
+  .app-nav-left { gap: .75rem; }
+  .app-nav-links { flex-wrap: wrap; overflow: visible; }
+  .nav-control-menu { left: auto; right: 0; max-width: calc(100vw - 1.5rem); }
+  .app-main { padding: .75rem; }
+  .page-actions { width: 100%; }
+  .page-actions > * { flex: 1 1 auto; }
+  .infrastructure-card { grid-template-columns: minmax(0, 1fr); padding: 1rem; }
+  .journal-filters { padding: 1rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn, .nav-link, .scenario-card, .control-icon-action { transition: none; }
+  .btn:hover, .scenario-card:hover { transform: none; }
+}

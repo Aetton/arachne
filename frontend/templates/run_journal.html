@@ -1,10 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Журнал запусков · Arachne{% endblock %}
 {% block content %}
-<style>
-.journal-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:20px 0;padding:18px}.journal-filters label{display:grid;gap:6px;font-size:12px;color:var(--muted)}.journal-filters input,.journal-filters select{width:100%;min-width:0}.journal-table{overflow:auto}.journal-table table{width:100%;border-collapse:collapse}.journal-table th,.journal-table td{padding:14px;text-align:left;border-bottom:1px solid var(--border)}.journal-table th{color:var(--muted);font-size:12px}.journal-table tr:hover{background:var(--surface2)}.journal-pagination{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:18px 0}.journal-actor{font-weight:650;white-space:nowrap}.journal-time{white-space:nowrap;font-size:12px}
-</style>
-<h1 class="text-xl font-semibold">Журнал запусков</h1>
+
+<header class="page-heading"><div><div class="eyebrow">История выполнения</div><h1 class="text-xl font-semibold">Журнал запусков</h1></div><a class="btn-ghost" href="/">К сценариям</a></header>
 <p class="muted">{{ 'Все пользователи' if admin else 'Ваши запуски' }} · найдено {{ total }}</p>
 <form class="journal-filters surface rounded-xl" method="get">
 <label>Кто запускал<select name="actor"><option value="">Все доступные пользователи</option>{% if admin %}<option value="system" {% if actor == 'system' %}selected{% endif %}>Система / расписание</option>{% endif %}{% for person in actors %}<option value="{{ person.id }}" {% if actor == person.id|string %}selected{% endif %}>{{ person.username }}{% if person.full_name %} · {{ person.full_name }}{% endif %}</option>{% endfor %}</select></label>
@@ -20,7 +18,7 @@
 </form>
 <div class="surface rounded-xl journal-table"><table><thead><tr><th>Запущен (UTC)</th><th>Кто запускал</th><th>Сценарий</th><th>Группа</th><th>Статус</th><th>Завершён (UTC)</th></tr></thead><tbody>
 {% for entry in entries %}{% set r = entry.run %}
-<tr><td class="journal-time">{{ r.created_at.strftime('%Y-%m-%d %H:%M:%S') if r.created_at else '—' }}</td><td><span class="journal-actor">{{ entry.username }}</span><div class="muted text-xs">{{ entry.full_name }}</div></td><td><a class="link" href="/journal/{{ r.id }}">{{ entry.label }}</a><div class="muted text-xs">{{ r.scenario }}</div><code class="muted text-xs">{{ r.id }}</code></td><td>{{ entry.group }}</td><td>{{ r.status }}</td><td class="journal-time">{{ r.completed_at.strftime('%Y-%m-%d %H:%M:%S') if r.completed_at else '—' }}</td></tr>
+<tr><td class="journal-time">{{ r.created_at.strftime('%Y-%m-%d %H:%M:%S') if r.created_at else '—' }}</td><td><span class="journal-actor">{{ entry.username }}</span><div class="muted text-xs">{{ entry.full_name }}</div></td><td><a class="link" href="/journal/{{ r.id }}">{{ entry.label }}</a><div class="muted text-xs">{{ r.scenario }}</div><code class="muted text-xs">{{ r.id }}</code></td><td>{{ entry.group }}</td><td><span class="pill {{ 'pill-ok' if r.status == 'success' else 'pill-fail' if r.status == 'failed' else 'pill-run' if r.status == 'running' else 'pill-pending' }}">{{ {'success':'Успешно','failed':'Ошибка','running':'Выполняется','cancelled':'Отменён'}.get(r.status, r.status) }}</span></td><td class="journal-time">{{ r.completed_at.strftime('%Y-%m-%d %H:%M:%S') if r.completed_at else '—' }}</td></tr>
 {% else %}<tr><td colspan="6" class="muted" style="text-align:center;padding:40px">Запуски не найдены. Измените фильтры.</td></tr>{% endfor %}
 </tbody></table></div>
 <div class="journal-pagination">{% if page > 1 %}<a class="btn-ghost" href="{{ page_url(page-1) }}">← Назад</a>{% else %}<span></span>{% endif %}<span class="muted">Страница {{ page }} из {{ pages }}</span>{% if page < pages %}<a class="btn-ghost" href="{{ page_url(page+1) }}">Далее →</a>{% else %}<span></span>{% endif %}</div>

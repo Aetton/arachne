@@ -244,7 +244,7 @@
 
 .control-modal-card {
   width: min(560px, 100%);
-  max-height: min(760px, calc(100vh - 2rem));
+  max-height: min(760px, calc(100dvh - 2rem));
   overflow-y: auto;
   border: 1px solid var(--web-line);
   border-radius: 16px 16px 16px 5px;
@@ -333,3 +333,7 @@
   .control-option-grid { grid-template-columns: 1fr; }
   .control-field-wide { grid-column: auto; }
 }
+
+/* Allow long labels and action groups to fit narrow panels. */
+.control-panel-head, .control-form-actions, .control-row-actions { flex-wrap: wrap; }
+.control-table td, .control-chip { overflow-wrap: anywhere; }
