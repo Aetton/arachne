@@ -30,7 +30,7 @@
   .golden-status.bad { color: var(--fail-fg); border-color: color-mix(in srgb, var(--fail-fg) 35%, var(--border)); }
   .golden-dot { width: .42rem; height: .42rem; border-radius: 50%; background: currentColor; box-shadow: 0 0 .65rem currentColor; }
 
-  .golden-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: .9rem; }
+  .golden-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr)); gap: .9rem; }
   .golden-card { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: .85rem; background: var(--surface); }
   .golden-card.unhealthy { border-color: color-mix(in srgb, var(--fail-fg) 40%, var(--border)); }
   .golden-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .8rem; padding: 1rem 1rem .75rem; }

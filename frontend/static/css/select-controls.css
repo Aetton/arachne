@@ -21,8 +21,9 @@ select:not([multiple])::-ms-expand {
 
 /* The theme picker is smaller than scenario controls, but the chevron keeps
    exactly the same inset and visual size. */
-.theme-select {
-  padding-right: 2.55rem !important;
+select.theme-select:not([multiple]) {
+  padding-right: 1.8rem !important;
+  text-indent: 0;
   background-position: right .72rem center;
   background-size: .9rem .9rem;
 }

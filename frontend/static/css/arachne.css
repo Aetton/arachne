@@ -123,8 +123,9 @@ body::before {
 .nav-control-menu a { display: block; }
 
 .theme-select {
-  width: auto;
-  min-width: 92px;
+  width: 105.8px; /* 92px + 15% */
+  min-width: 105.8px;
+  flex-shrink: 0;
   padding: .34rem 1.8rem .34rem .58rem;
   font-size: .75rem;
   border-radius: 7px;
@@ -136,11 +137,12 @@ body::before {
 /* Operator dashboard */
 .operator-shell {
   display: grid;
-  grid-template-columns: minmax(300px, 34%) minmax(0, 66%);
+  grid-template-columns: minmax(300px, 34fr) minmax(0, 66fr);
   gap: 1rem;
   align-items: start;
 }
 .operator-column {
+  min-width: 0;
   min-height: 0;
   max-height: calc(100vh - 82px);
   overflow-y: auto;
@@ -510,7 +512,7 @@ body::before {
 @media (max-width: 720px) {
   .app-nav { align-items: flex-start; flex-wrap: wrap; }
   .app-nav-left { width: 100%; justify-content: space-between; }
-  .app-nav-links { overflow-x: auto; }
+  .app-nav-links { flex-wrap: wrap; overflow: visible; }
   .app-nav-right { margin-left: auto; }
   .thread-fields { grid-template-columns: 1fr; }
   .thread-field-wide { grid-column: auto; }
