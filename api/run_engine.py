@@ -310,6 +310,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
         _append_runtime_error(run_id, f"ARACHNE ERROR: {exc}")
         status = RunStatus.FAILED
 
+    persisted = False
     try:
         await asyncio.to_thread(
             _persist_run,
@@ -318,6 +319,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
             list(_live[run_id]),
             list(_outputs[run_id]),
         )
+        persisted = True
     except Exception as exc:  # noqa: BLE001
         status = RunStatus.FAILED
         _append_runtime_error(run_id, f"ARACHNE ERROR persisting run result: {exc}")
@@ -326,10 +328,32 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
         _status[run_id] = status
         _done[run_id] = True
         _active_steps.pop(run_id, None)
+        if persisted:
+            asyncio.get_running_loop().call_later(60, _release_runtime, run_id)
+
+
+def _release_runtime(run_id: str) -> None:
+    """Evict only completed, successfully persisted runtimes (scheduled above).
+
+    Existing SSE subscribers retain their list reference until they disconnect.
+    Failed writes are deliberately retained for recovery/inspection.
+    """
+    if not _done.get(run_id):
+        return
+    for cache in (_live, _outputs, _artifact_output_indexes, _status, _done):
+        cache.pop(run_id, None)
 
 
 def live_records(run_id: str) -> list[dict]:
-    return _live.get(run_id, [])
+    if run_id in _live:
+        return _live[run_id]
+    with SessionLocal() as db:
+        raw = db.query(Run.log).filter(Run.id == run_id).scalar()
+    try:
+        records = json.loads(raw or "[]")
+        return records if isinstance(records, list) else []
+    except (ValueError, TypeError):
+        return []
 
 
 def live_lines(run_id: str) -> list[str]:
@@ -337,7 +361,10 @@ def live_lines(run_id: str) -> list[str]:
 
 
 def live_outputs(run_id: str) -> list[dict]:
-    return list(_outputs.get(run_id, []))
+    if run_id in _outputs:
+        return list(_outputs[run_id])
+    with SessionLocal() as db:
+        return db.query(Run.artifacts).filter(Run.id == run_id).scalar() or []
 
 
 def live_artifacts(run_id: str) -> list[dict]:
@@ -345,8 +372,14 @@ def live_artifacts(run_id: str) -> list[dict]:
 
 
 def get_status(run_id: str) -> RunStatus:
-    return _status.get(run_id, RunStatus.PENDING)
+    if run_id in _status:
+        return _status[run_id]
+    with SessionLocal() as db:
+        status = db.query(Run.status).filter(Run.id == run_id).scalar()
+    return RunStatus(status) if status else RunStatus.PENDING
 
 
 def is_done(run_id: str) -> bool:
-    return _done.get(run_id, False)
+    if run_id in _done:
+        return _done[run_id]
+    return get_status(run_id) in (RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED)
