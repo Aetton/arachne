@@ -14,8 +14,7 @@
   </header>
 
   <form hx-post="/scenarios/{{ key }}/run" hx-target="#workspace" hx-swap="innerHTML">
-    <div class="thread-fields">
-      {% for p in s.params %}
+    {% macro render_param(p) %}
       <div class="thread-field {% if p.type == 'boolean' %}thread-field-wide{% endif %}">
         {% if p.type == "boolean" %}
           <label class="check-control">
@@ -93,9 +92,33 @@
           {% endif %}
         {% endif %}
       </div>
-      {% endfor %}
+    {% endmacro %}
+    {% set groups = namespace(basic=[], advanced=[], source_error=false) %}
+    {% for p in s.params %}
+      {% if p.group == 'advanced' %}
+        {% set groups.advanced = groups.advanced + [p] %}
+        {% if p.source_error %}{% set groups.source_error = true %}{% endif %}
+      {% else %}
+        {% set groups.basic = groups.basic + [p] %}
+      {% endif %}
+    {% endfor %}
+    {% if groups.basic %}
+    <div class="thread-fields">
+      {% for p in groups.basic %}{{ render_param(p) }}{% endfor %}
     </div>
-
+    {% endif %}
+    {% if groups.advanced %}
+    <details class="advanced-params" data-advanced-params {% if groups.source_error %}open{% endif %}>
+      <summary>
+        <span class="advanced-params-title"><i class="ti ti-adjustments" aria-hidden="true"></i> Дополнительные настройки <span class="web-count">{{ groups.advanced|length }}</span></span>
+        <i class="ti ti-chevron-down advanced-params-chevron" aria-hidden="true"></i>
+      </summary>
+      <p class="muted advanced-params-hint">При обычном запуске можно оставить значения по умолчанию.</p>
+      <div class="thread-fields">
+        {% for p in groups.advanced %}{{ render_param(p) }}{% endfor %}
+      </div>
+    </details>
+    {% endif %}
     <div class="thread-form-actions">
       <button type="button" class="btn-ghost"
               onclick="document.getElementById('workspace').innerHTML=''">Cancel</button>

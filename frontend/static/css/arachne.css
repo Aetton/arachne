@@ -535,3 +535,14 @@ body::before {
 .output-links { align-items: center; gap: .4rem; max-width: 100%; }
 .output-meta { gap: .9rem; margin-top: .4rem; }
 .output-params { gap: .45rem; margin-top: .45rem; }
+
+/* Optional scenario inputs stay in the form when collapsed. */
+.advanced-params { margin-top: 1.25rem; border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); }
+.advanced-params > summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem; cursor: pointer; list-style: none; }
+.advanced-params > summary::-webkit-details-marker { display: none; }
+.advanced-params > summary:hover { background: var(--surface2); border-radius: .75rem; }
+.advanced-params-title { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-size: .88rem; font-weight: 650; }
+.advanced-params-chevron { flex-shrink: 0; }
+.advanced-params[open] > summary .advanced-params-chevron { transform: rotate(180deg); }
+.advanced-params-hint { padding: 0 1rem 1rem; font-size: .78rem; }
+.advanced-params > .thread-fields { padding: 0 1rem 1rem; }

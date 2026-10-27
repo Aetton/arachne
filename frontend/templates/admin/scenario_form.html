@@ -377,7 +377,7 @@
 
     var ROOT_KEYS = ["label: ", "component: ", "icon: \"ti-\"", "accent: ", "triggers:\n  - type: manual", "params:\n  - name: ", "steps:\n  - id: "];
     var STEP_KEYS = ["id: ", "spider: ", "action: ", "kind: ", "with: {}", "needs: []"];
-    var PARAM_KEYS = ["name: ", "label: ", "type: ", "required: true", "default: ", "options: []"];
+    var PARAM_KEYS = ["name: ", "label: ", "type: ", "required: true", "default: ", "options: []", "group: basic", "group: advanced"];
     var TRIGGER_KEYS = ["type: manual", "type: schedule", "type: chain"];
     var PARAM_TYPES = ["string", "choice", "boolean"];
     var SPIDERS = ["forgejo", "ansible-local", "tofu-proxmox"];
@@ -578,6 +578,7 @@
             addError(errors, "Each param must be a mapping.", line);
             return;
           }
+          if (param.group !== undefined && ["basic", "advanced"].indexOf(param.group) < 0) addError(errors, "Param group must be basic or advanced.", line);
           if (!param.name) addError(errors, "Param " + (index + 1) + " is missing: name", line);
           if (!param.type) addError(errors, "Param " + (index + 1) + " is missing: type", line);
           if (param.type && PARAM_TYPES.indexOf(param.type) < 0) addError(errors, "Unknown param type: " + param.type, line);
