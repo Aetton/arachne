@@ -30,6 +30,14 @@ def validate_definition(definition: dict) -> None:
         raise ValueError("sort_order must be a 32-bit integer")
     if not isinstance(definition["steps"], list) or not definition["steps"]:
         raise ValueError("steps must be a non-empty list")
+    params = definition.get("params", [])
+    if not isinstance(params, list):
+        raise ValueError("params must be a list")
+    for param in params:
+        if not isinstance(param, dict):
+            raise ValueError("each param must be a mapping")
+        if param.get("group", "basic") not in ("basic", "advanced"):
+            raise ValueError("param group must be one of: basic, advanced")
     ids: set[str] = set()
     for step in definition["steps"]:
         if not isinstance(step, dict):
