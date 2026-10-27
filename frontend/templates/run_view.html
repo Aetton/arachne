@@ -71,6 +71,7 @@
               <div class="log-scroll">
                 <div class="log-lines">
                   {% set ns = namespace(line_no=0) %}
+                  {% if not metadata_only %}
                   {% for task in step.tasks %}
                     {% if task.title and task.title != 'output' %}
                       {% set ns.line_no = ns.line_no + 1 %}
@@ -89,6 +90,7 @@
                       </div>
                     {% endfor %}
                   {% endfor %}
+                  {% endif %}
                 </div>
                 <button class="log-new-lines" type="button">0 new lines ↓</button>
               </div>

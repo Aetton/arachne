@@ -45,7 +45,7 @@
   }
 
   function updateCount(viewer) {
-    const total = viewer.querySelectorAll('.log-line').length;
+    const total = Math.max(0, Number(viewer.dataset.nextLine || 1) - 1);
     const target = viewer.querySelector('.log-line-count');
     if (target) target.textContent = `${total} line${total === 1 ? '' : 's'}`;
   }
@@ -173,7 +173,12 @@
 
     const scroll = viewer.querySelector('.log-scroll');
     if (viewer.dataset.follow === 'true' && scroll) {
-      requestAnimationFrame(() => { scroll.scrollTop = scroll.scrollHeight; });
+      if (!viewer._scrollFrame) {
+        viewer._scrollFrame = requestAnimationFrame(() => {
+          viewer._scrollFrame = null;
+          if (viewer.isConnected && viewer.dataset.follow === 'true') scroll.scrollTop = scroll.scrollHeight;
+        });
+      }
     } else if (viewer.classList.contains('is-live')) {
       viewer.dataset.unseen = String(Number(viewer.dataset.unseen || 0) + 1);
       updateNewLines(viewer);
@@ -211,7 +216,16 @@
     if (stage) openImplicitGroup(viewer, stage[1]);
 
     appendVisualLine(viewer, text, stream);
-    applySearch(viewer);
+    const input = viewer.querySelector('[data-log-search]');
+    if (input && input.value.trim()) {
+      // Only the appended row needs checking; typing a new query scans once.
+      const row = currentTarget(viewer).lastElementChild;
+      const hit = text.toLocaleLowerCase().includes(input.value.trim().toLocaleLowerCase());
+      row.classList.toggle('is-match', hit);
+      viewer._searchMatches = (viewer._searchMatches || 0) + Number(hit);
+      const counter = viewer.querySelector('.log-search-count');
+      if (counter) counter.textContent = `${viewer._searchMatches} hits`;
+    }
   }
 
   function applySearch(viewer) {
@@ -225,6 +239,7 @@
       line.classList.toggle('is-match', Boolean(hit));
       if (hit) matches += 1;
     });
+    viewer._searchMatches = matches;
     counter.textContent = query ? `${matches} hit${matches === 1 ? '' : 's'}` : '';
   }
 
@@ -389,12 +404,14 @@
   }
 
   async function refreshFinalMetadata(runRoot) {
-    const url = runRoot.dataset.finalViewUrl;
-    if (!url) return;
+    if (!runRoot.isConnected || !runRoot.dataset.finalViewUrl) return;
+    const url = new URL(runRoot.dataset.finalViewUrl, location.href);
+    url.searchParams.set('metadata_only', 'true');
     try {
       const response = await fetch(url, { headers: { 'HX-Request': 'true' } });
       if (!response.ok) return;
       const html = await response.text();
+      if (!runRoot.isConnected) return;
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const finalRoot = doc.querySelector(`#${escapeSelector(runRoot.id)}`) || doc.body.firstElementChild;
       const currentStatus = runRoot.querySelector('.run-status');
@@ -424,6 +441,18 @@
     }
   }
 
+  const activeStreams = new Set();
+  function closeStream(root) {
+    root._arachneEventSource?.close();
+    root._arachneEventSource = null;
+    activeStreams.delete(root);
+  }
+  // Also catches plain innerHTML replacements used by Close/Cancel buttons.
+  new MutationObserver(() => {
+    activeStreams.forEach(root => { if (!root.isConnected) closeStream(root); });
+  }).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('pagehide', () => activeStreams.forEach(closeStream));
+
   function initRun(runRoot) {
     if (!runRoot || runRoot.dataset.liveReady === 'true') return;
     runRoot.dataset.liveReady = 'true';
@@ -436,8 +465,10 @@
       || runRoot.querySelector('.log-viewer');
     const source = new EventSource(runRoot.dataset.streamUrl);
     runRoot._arachneEventSource = source;
+    activeStreams.add(runRoot);
 
     source.onmessage = event => {
+      if (!runRoot.isConnected) { closeStream(runRoot); return; }
       const text = event.data;
       const mark = text.match(STEP_MARK);
       if (mark) {
@@ -449,7 +480,7 @@
     };
 
     source.addEventListener('done', () => {
-      source.close();
+      closeStream(runRoot);
       runRoot.dataset.liveRun = 'false';
       runRoot.querySelectorAll('.log-viewer').forEach(viewer => {
         viewer.classList.remove('is-live');

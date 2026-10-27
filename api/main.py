@@ -19,7 +19,7 @@ from fastapi.responses import (
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 import database
 from database import (
@@ -306,11 +306,11 @@ async def scenario_run(
     return resp
 
 
-def _render_run(request, user, run_id) -> HTMLResponse:
+def _render_run(request, user, run_id, metadata_only=False) -> HTMLResponse:
     db = SessionLocal()
     try:
         run = _require_run_access(db, user, run_id)
-        s = config_loader.get_scenario(run.scenario) or {"label": run.scenario}
+        s = run.scenario_snapshot or {"label": run.scenario}
         records = (
             run_engine.live_records(run_id)
             if run.status == "running" and run_engine.has_runtime(run_id)
@@ -334,14 +334,15 @@ def _render_run(request, user, run_id) -> HTMLResponse:
             s=s,
             steps=steps,
             artifacts=arts,
+            metadata_only=metadata_only,
         )
     finally:
         db.close()
 
 
 @app.get("/runs/{run_id}/view", response_class=HTMLResponse)
-def run_view(run_id: str, request: Request, user=Depends(get_current_user)):
-    return _render_run(request, user, run_id)
+def run_view(run_id: str, request: Request, user=Depends(get_current_user), metadata_only: bool = False):
+    return _render_run(request, user, run_id, metadata_only=metadata_only)
 
 
 @app.post("/runs/{run_id}/cancel")
@@ -364,19 +365,19 @@ async def run_cancel(
 def runs_history(
     request: Request, user=Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    q = db.query(Run)
+    q = db.query(Run).options(load_only(Run.id, Run.user_id, Run.scenario, Run.status, Run.params, Run.created_at))
     if "admin" not in (user.roles or []):
         q = q.filter(Run.user_id == user.id)
     runs = q.order_by(Run.created_at.desc()).limit(15).all()
+    labels = dict(db.query(Scenario.slug, Scenario.label).filter(Scenario.slug.in_({r.scenario for r in runs})).all())
     rows = []
     for r in runs:
-        s = config_loader.get_scenario(r.scenario) or {}
         rows.append(
             {
                 "id": r.id,
                 "status": r.status,
                 "params": r.params or {},
-                "scenario_label": s.get("label", r.scenario),
+                "scenario_label": labels.get(r.scenario, r.scenario),
                 "when": _fmt_when(r.created_at),
             }
         )
@@ -388,10 +389,10 @@ async def run_stream(
     run_id: str, user=Depends(get_current_user), db: Session = Depends(get_db)
 ):
     run = _require_run_access(db, user, run_id)
-    persisted_records = _load_persisted_records(run)
     persisted_status = run.status
 
     if not run_engine.has_runtime(run_id):
+        persisted_records = _load_persisted_records(run)
         if persisted_status == "running":
             raise HTTPException(409, "Run runtime is unavailable")
 
@@ -402,16 +403,18 @@ async def run_stream(
 
         return StreamingResponse(persisted_gen(), media_type="text/event-stream")
 
+    # Keep a reference for slow subscribers even after the completed cache expires.
+    records = run_engine.live_records(run_id)
+
     async def gen():
         import asyncio
 
         sent = 0
         while True:
-            lines = run_engine.live_lines(run_id)
-            while sent < len(lines):
-                yield f"data: {lines[sent]}\n\n"
+            while sent < len(records):
+                yield f"data: {records[sent].get('text', '')}\n\n"
                 sent += 1
-            if run_engine.is_done(run_id):
+            if run_engine.is_done(run_id) or not run_engine.has_runtime(run_id):
                 yield "event: done\ndata: end\n\n"
                 return
             await asyncio.sleep(0.4)
