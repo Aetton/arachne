@@ -546,3 +546,5 @@ body::before {
 .advanced-params[open] > summary .advanced-params-chevron { transform: rotate(180deg); }
 .advanced-params-hint { padding: 0 1rem 1rem; font-size: .78rem; }
 .advanced-params > .thread-fields { padding: 0 1rem 1rem; }
+/* Explicitly hide grid children when closed, regardless of UA details styles. */
+.advanced-params:not([open]) > :not(summary) { display: none !important; }

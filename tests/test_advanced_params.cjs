@@ -23,3 +23,26 @@ test('HTMX-inserted advanced inputs reveal invalid fields and submit while colla
   assert.equal(new dom.window.FormData(form).get('flags'), '-trimpath');
   dom.window.close();
 });
+
+
+test('advanced grid is hidden when closed, toggles by summary, and reveals on invalid', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../frontend/static/css/arachne.css'), 'utf8');
+  const dom = new JSDOM('<style>' + css + '</style><form><details class="advanced-params" data-advanced-params><summary>Дополнительные настройки</summary><p>Help</p><div class="thread-fields"><input name="flags" required></div></details></form>', { runScripts: 'outside-only' });
+  const { document } = dom.window;
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../frontend/static/js/advanced-params.js'), 'utf8'));
+  const details = document.querySelector('details');
+  const fields = document.querySelector('.thread-fields');
+  const visible = () => dom.window.getComputedStyle(fields).display;
+  assert.equal(visible(), 'none');
+  assert.equal(dom.window.getComputedStyle(document.querySelector('p')).display, 'none');
+  document.querySelector('summary').click();
+  assert.equal(details.open, true);
+  assert.equal(visible(), 'grid');
+  document.querySelector('summary').click();
+  assert.equal(details.open, false);
+  assert.equal(visible(), 'none');
+  document.querySelector('form').checkValidity();
+  assert.equal(details.open, true);
+  assert.equal(visible(), 'grid');
+  dom.window.close();
+});
