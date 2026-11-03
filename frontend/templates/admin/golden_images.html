@@ -183,11 +183,14 @@
       </div>
       <div class="golden-dialog-grid">
         <label><span>Семейство ОС</span>
-          <select id="golden-os" name="os" required onchange="syncGoldenCredentials()">
-            <option value="redos8">RedOS 8</option>
-            <option value="redos7">RedOS 7</option>
-            <option value="windows">Windows</option>
-          </select>
+          <input id="golden-os" name="os" list="golden-os-tags" required
+                 maxlength="32" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{0,31}"
+                 placeholder="redos8, astra, ubuntu…" autocomplete="off"
+                 oninput="syncGoldenCredentials()">
+          <datalist id="golden-os-tags">
+            {% for tag in os_tags %}<option value="{{ tag }}"></option>{% endfor %}
+          </datalist>
+          <span class="golden-help">Выберите существующий тег или введите новый. Регистр нормализуется при сохранении.</span>
         </label>
         <label><span>Подключение</span><select id="golden-connection" name="connection" onchange="syncGoldenTemplates()">{% for c in connections %}<option value="{{ c.slug }}">{{ c.label }} · {{ c.backend }}</option>{% endfor %}</select></label>
         <label><span>Template</span>
@@ -237,7 +240,7 @@
   function syncGoldenCredentials(preferredValue) {
     const os = document.getElementById('golden-os').value;
     const select = document.getElementById('golden-credential');
-    const expected = os === 'windows' ? 'winrm' : 'ssh';
+    const expected = os.trim().toLowerCase().startsWith('windows') ? 'winrm' : 'ssh';
     const wanted = preferredValue === undefined ? select.value : preferredValue;
     let wantedVisible = !wanted;
     Array.from(select.options).forEach((option, index) => {
