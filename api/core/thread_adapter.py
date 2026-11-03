@@ -28,7 +28,7 @@ def _traceback_frames(exc: BaseException) -> str:
     frames = traceback.format_list(traceback.extract_tb(exc.__traceback__))
     if not frames:
         return "(no Python traceback available)"
-    return "".join(line for line in frames if line.lstrip().startswith("File ")) or "".join(frames)
+    return "\n".join(frame.splitlines()[0] for frame in frames)
 
 
 
