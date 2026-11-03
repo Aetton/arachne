@@ -65,7 +65,7 @@ SPECS = (
     SettingSpec("ANSIBLE_PLAYBOOK_CREDENTIALS_REF", "Ansible", "Bootstrap credential", "", "restart"),
     SettingSpec("BUS_BACKEND", "Core", "Транспорт шины", "inmemory", "restart",
                 "Изменение требует пересоздания соединений и перезапуска API"),
-    SettingSpec("NATS_URL", "Core", "NATS URL", "nats://127.0.0.1:4222", "restart"),
+    SettingSpec("NATS_URL", "Core", "NATS URL", "nats://nats:4222", "restart"),
     SettingSpec("ENV", "Core", "Профиль окружения", "dev", "bootstrap"),
     SettingSpec("SCENARIOS_CONFIG", "Core", "Файл первоначального импорта сценариев", "config/scenarios.yaml", "restart"),
     SettingSpec("TOFU_ROOT", "OpenTofu", "Путь к модулям OpenTofu", "/app/tofu", "restart"),

@@ -13,12 +13,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import asyncio
 
 from core.bus.base import Bus, EventHandler, ReplyHandler
 
 _logger = logging.getLogger(__name__)
 
-NATS_URL = os.getenv("NATS_URL", "nats://127.0.0.1:4222")
+NATS_URL = os.getenv("NATS_URL", "nats://nats:4222")
 
 
 class NatsBus(Bus):
@@ -30,7 +31,21 @@ class NatsBus(Bus):
 
     async def start(self) -> None:
         import nats  # imported lazily so the dep is optional
-        self._nc = await nats.connect(NATS_URL)
+        url = os.getenv("NATS_URL", "nats://nats:4222")
+        try:
+            # Fail startup promptly if NATS is unreachable, but preserve
+            # automatic reconnection after an established connection drops.
+            self._nc = await asyncio.wait_for(
+                nats.connect(url, connect_timeout=2, reconnect_time_wait=1),
+                timeout=8,
+            )
+        except (OSError, TimeoutError, asyncio.TimeoutError) as exc:
+            raise RuntimeError(
+                f"Cannot connect to NATS at {url!r}. "
+                "For Docker Compose, use NATS_URL=nats://nats:4222 "
+                "and start the nats service (docker compose up -d nats; add --profile nats for older Compose configs). "
+                "Otherwise select BUS_BACKEND=inmemory."
+            ) from exc
 
     async def stop(self) -> None:
         if self._nc:
