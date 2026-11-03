@@ -8,9 +8,18 @@
       <h1 class="text-xl font-semibold mt-1"><i class="ti ti-adjustments-horizontal mr-2"></i>Настройки Арахны</h1>
       <p class="muted text-sm mt-1">Эффективные значения, источники конфигурации и управляемые переопределения.</p>
     </div>
-    <label class="settings-search"><i class="ti ti-search"></i><input type="search" id="settings-search" placeholder="Поиск настройки…" oninput="filterSettings()"></label>
+    <div class="settings-header-actions">
+      <label class="settings-search"><i class="ti ti-search"></i><input type="search" id="settings-search" placeholder="Поиск настройки…" oninput="filterSettings()"></label>
+      <button type="button" class="btn-ghost settings-restart-button" id="settings-restart-button" onclick="restartArachne()"
+              {% if not restart_available %}disabled title="Перезапуск из интерфейса доступен в Docker Compose с ARACHNE_SELF_RESTART_ENABLED=true"{% endif %}>
+        <i class="ti ti-refresh"></i> Перезапустить Арахну
+      </button>
+    </div>
   </header>
   {% if saved %}<p role="status" class="settings-notice">Настройка сохранена. Динамические параметры применяются без перезапуска.</p>{% endif %}
+  {% if restart_pending %}<p role="status" class="settings-notice settings-pending"><i class="ti ti-clock"></i> Изменения URL или системных параметров ожидают перезапуска Арахны.</p>{% endif %}
+  {% if not restart_available %}<p class="muted text-xs">Перезапуск кнопкой недоступен для этого процесса. Включите <code>ARACHNE_SELF_RESTART_ENABLED=true</code> в Docker Compose или используйте <code>just restart</code>.</p>{% endif %}
+  <p role="status" class="settings-notice" id="settings-restart-status" hidden></p>
   {% if error %}<p role="alert" class="settings-notice settings-error">{{ error }}</p>{% endif %}
   <div class="settings-summary">
     <div><strong>{{ settings|length }}</strong><span>в каталоге</span></div>
@@ -51,7 +60,7 @@
   <section class="settings-section" id="settings-{{ group|lower }}" data-settings-section>
     <div class="settings-heading">
       <h2><i class="ti {{ 'ti-shield-lock' if group == 'Security' else 'ti-adjustments' }}"></i> {{ {'Integrations':'Сервисы и интеграции','Ansible':'Ansible','Core':'Ядро и окружение','OpenTofu':'OpenTofu','Security':'Системные секреты'}[group] }}</h2>
-      <p class="muted text-xs">Эти параметры отображаются для диагностики. Изменение производится в соответствующем разделе или конфигурации развёртывания.</p>
+      <p class="muted text-xs">Редактируемые параметры применяются после перезапуска; системные и управляемые другими разделами остаются только для просмотра.</p>
     </div>
     <div class="settings-rows">
     {% for s in settings if s.group == group and s.mode != 'live' %}
@@ -61,6 +70,34 @@
           {% if s.description %}<div class="muted text-xs mt-1">{{ s.description }}</div>{% endif %}
           <div class="settings-source">Источник: {{ 'окружение' if s.source == 'environment' else 'по умолчанию' }}</div>
         </div>
+        {% if s.editable %}
+        <div class="settings-restart-controls">
+          <form method="post" action="/admin/settings/set" class="settings-form">
+            <input type="hidden" name="key" value="{{ s.key }}">
+            <label class="sr-only" for="setting-{{ s.key }}">{{ s.label }}</label>
+            {% if s.input_kind == 'bool' %}
+              <select id="setting-{{ s.key }}" name="value">
+                <option value="true" {% if s.value == 'true' %}selected{% endif %}>Включено</option>
+                <option value="false" {% if s.value == 'false' %}selected{% endif %}>Выключено</option>
+              </select>
+            {% elif s.input_kind == 'bus' %}
+              <select id="setting-{{ s.key }}" name="value">
+                <option value="inmemory" {% if s.value == 'inmemory' %}selected{% endif %}>In-memory</option>
+                <option value="nats" {% if s.value == 'nats' %}selected{% endif %}>NATS</option>
+              </select>
+            {% else %}
+              <input id="setting-{{ s.key }}" name="value"
+                     type="{{ 'url' if s.input_kind == 'url' else 'text' }}"
+                     maxlength="256" value="{{ s.value }}" required>
+            {% endif %}
+            <button type="submit" class="btn">Сохранить</button>
+          </form>
+          <form method="post" action="/admin/settings/reset" class="settings-reset">
+            <input type="hidden" name="key" value="{{ s.key }}">
+            <button type="submit" class="btn-ghost text-xs" {% if not s.is_overridden %}disabled title="Переопределение отсутствует"{% endif %}>Сброс</button>
+          </form>
+        </div>
+        {% else %}
         <div class="settings-value">
           {% if s.secret %}
             <span class="muted"><i class="ti ti-lock"></i> Значение скрыто</span>
@@ -68,7 +105,8 @@
             <code>{{ s.value if s.value else '∅' }}</code>
           {% endif %}
         </div>
-        <span class="settings-mode">{{ {'restart':'При перезапуске','build':'При сборке','bootstrap':'Системное'}[s.mode] }}</span>
+        {% endif %}
+        <span class="settings-mode">{{ 'Нужен перезапуск' if s.restart_pending else {'restart':'При перезапуске','build':'При сборке','bootstrap':'Системное'}[s.mode] }}</span>
       </div>
     {% endfor %}
     </div>
@@ -77,6 +115,14 @@
   <p class="muted text-xs">Секреты и парольные данные не выдаются через страницу. Доступы настраиваются в <a class="link" href="/admin/secrets">Secrets</a>, подключения гипервизоров в <a class="link" href="/admin/infrastructure">Гипервизорах</a>, настройки репозитория в <a class="link" href="/admin/ansible">Ansible</a>.</p>
 </div>
 <style>
+.settings-header-actions{display:flex;gap:.65rem;flex-wrap:wrap;align-items:center;}
+.settings-restart-button{white-space:nowrap;}
+.settings-restart-button:disabled{opacity:.45;cursor:not-allowed;}
+.settings-restart-controls{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0;}
+.settings-restart-controls .settings-form{flex:1;min-width:13rem;}
+.settings-restart-controls .settings-form input{max-width:none;min-width:0;}
+.settings-restart-controls .settings-form select{min-width:9rem;}
+.settings-pending{color:var(--fg);}
 .settings-search {display:flex;align-items:center;gap:.5rem;border:1px solid var(--border);border-radius:.6rem;padding:0 .75rem;max-width:100%;width:20rem;}
 .settings-search input {border:0;background:transparent;box-shadow:none;padding:.6rem 0;min-width:0;}
 .settings-summary {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;}
@@ -96,12 +142,46 @@
 .settings-mode{font-size:.7rem;white-space:nowrap;color:var(--muted);}
 .settings-notice{padding:.75rem 1rem;border:1px solid var(--ok-fg);border-radius:.6rem;}
 .settings-error{color:var(--fail-fg);border-color:var(--fail-fg);}
-.settings-row[hidden],.settings-section[hidden]{display:none!important}
+.settings-row[hidden],.settings-section[hidden],#settings-restart-status[hidden]{display:none!important}
 @media(max-width:780px){.settings-row,.settings-readonly{grid-template-columns:1fr;gap:.6rem}.settings-summary{grid-template-columns:repeat(3,minmax(0,1fr));}.settings-summary>div{padding:.7rem}.settings-form{justify-content:flex-start}}
 </style>
 {% endblock %}
 {% block scripts %}
 <script>
+async function restartArachne() {
+  if (!confirm('Перезапустить Арахну? Активные запуски могут быть прерваны.')) return;
+  const button = document.getElementById('settings-restart-button');
+  const status = document.getElementById('settings-restart-status');
+  button.disabled = true;
+  status.hidden = false;
+  status.textContent = 'Отправляю запрос на перезапуск…';
+  try {
+    const response = await fetch('/admin/settings/restart', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || 'HTTP ' + response.status);
+    }
+    status.textContent = 'Перезапуск запрошен. Страница обновится, когда сервис вернётся.';
+    // Docker may need several seconds. Do not pretend that a 202 means
+    // a successful restart; wait for the API to respond again.
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    for (let attempt = 0; attempt < 40; attempt++) {
+      try {
+        const health = await fetch('/healthz?check=' + attempt, {cache: 'no-store'});
+        if (health.ok) { location.reload(); return; }
+      } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    status.textContent = 'Команда принята, но сервер пока не отвечает. Проверьте логи контейнера.';
+  } catch (err) {
+    status.textContent = 'Не удалось запросить перезапуск: ' + err.message;
+    button.disabled = false;
+  }
+}
+
 function filterSettings() {
   const query = document.getElementById('settings-search').value.trim().toLocaleLowerCase();
   document.querySelectorAll('.settings-row').forEach(row => {
