@@ -24,6 +24,8 @@ class EndpointTests(unittest.TestCase):
                         }
                         stub = types.ModuleType("infrastructure_connections")
                         stub.execution_env = lambda slug, backend: settings
+                        stub.get_ca_pem = lambda slug, backend: ""
+                        stub.tls_verify = lambda insecure, ca: False if insecure else True
                         with patch.dict(sys.modules, infrastructure_connections=stub):
                             with patch.dict(os.environ, settings, clear=True):
                                 with proxmox_api._client(connection) as client:
