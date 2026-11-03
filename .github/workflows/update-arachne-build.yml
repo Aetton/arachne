@@ -1,6 +1,9 @@
 name: Update Arachne build
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       deploy_dir:
@@ -15,6 +18,7 @@ on:
 permissions:
   contents: read
 
+# A second push waits rather than interrupting an image rebuild or migration.
 concurrency:
   group: arachne-remote-build
   cancel-in-progress: false
@@ -22,12 +26,13 @@ concurrency:
 jobs:
   update-build:
     name: Update build on remote runner
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.ARACHNE_AUTO_DEPLOY != 'false' }}
     runs-on:
       - self-hosted
 
     env:
-      DEPLOY_DIR: ${{ inputs.deploy_dir }}
-      DC: ${{ inputs.compose_command }}
+      DEPLOY_DIR: ${{ inputs.deploy_dir || vars.ARACHNE_DEPLOY_DIR || '/opt/arachne' }}
+      DC: ${{ inputs.compose_command || vars.ARACHNE_COMPOSE_COMMAND || 'docker compose' }}
 
     steps:
       - name: Update Arachne
@@ -35,7 +40,16 @@ jobs:
         run: |
           set -euo pipefail
           cd "${DEPLOY_DIR}"
-          command -v just >/dev/null || { echo "Install just on the self-hosted runner"; exit 1; }
+          command -v just >/dev/null || { echo "::error::just is not installed on this runner"; exit 1; }
+          branch="$(git symbolic-ref --short HEAD)"
+          if [[ "$branch" != "main" ]]; then
+            echo "::error::Deployment checkout is on '$branch', expected main"
+            exit 1
+          fi
+          if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+            echo "::error::Deployment checkout has local tracked changes; refusing auto-update"
+            exit 1
+          fi
           just update
 
       - name: Show service status
