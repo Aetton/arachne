@@ -33,10 +33,10 @@ class NatsBus(Bus):
         import nats  # imported lazily so the dep is optional
         url = os.getenv("NATS_URL", "nats://nats:4222")
         try:
-            # A failed NATS dependency must fail startup promptly, rather
-            # than spamming reconnect tracebacks indefinitely.
+            # Fail startup promptly if NATS is unreachable, but preserve
+            # automatic reconnection after an established connection drops.
             self._nc = await asyncio.wait_for(
-                nats.connect(url, allow_reconnect=False, connect_timeout=3),
+                nats.connect(url, connect_timeout=2, reconnect_time_wait=1),
                 timeout=8,
             )
         except (OSError, TimeoutError, asyncio.TimeoutError) as exc:
