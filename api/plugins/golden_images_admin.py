@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from auth.deps import get_db, require_role
-from golden_images import GoldenImageProfile, ensure_schema, validate_profile
+from golden_images import GoldenImageProfile, ensure_schema, validate_profile, list_os_tags, is_windows_os
 from main import app, render
 from infrastructure_connections import list_connections, get_connection
 from core.optional_plugins import installed_bundles
@@ -89,6 +89,7 @@ async def admin_golden_images(
         proxmox_error="; ".join(errors),
         connections=connections,
         target_credentials=_target_credentials(),
+        os_tags=list_os_tags(),
     )
 
 
@@ -140,7 +141,7 @@ async def admin_golden_images_save(
         credential = credentials.get(credentials_ref)
         if not credential:
             raise HTTPException(400, f"Target credential '{credentials_ref}' not found")
-        expected_kind = "winrm" if os_name == "windows" else "ssh"
+        expected_kind = "winrm" if is_windows_os(os_name) else "ssh"
         if credential.get("kind") != expected_kind:
             raise HTTPException(
                 400,

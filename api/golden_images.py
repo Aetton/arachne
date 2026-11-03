@@ -15,7 +15,13 @@ from database import Base, SessionLocal, engine
 
 
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-SUPPORTED_OS = {"redos7", "redos8", "windows"}
+DEFAULT_OS_TAGS = ("redos8", "redos7", "windows")
+_OS_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,31}$")
+
+
+def is_windows_os(tag: str) -> bool:
+    """Windows tags use WinRM; all other tags retain the SSH convention."""
+    return str(tag or "").strip().lower().startswith("windows")
 
 
 def utcnow():
@@ -56,8 +62,8 @@ def validate_profile(*, slug: str, label: str, os_name: str, vm_id, backend: str
         raise ValueError("Profile key must contain only lowercase letters, digits, '.', '_' or '-'")
     if not label:
         raise ValueError("Profile name is required")
-    if os_name not in SUPPORTED_OS:
-        raise ValueError(f"Unsupported OS profile: {os_name}")
+    if not _OS_TAG_RE.fullmatch(os_name):
+        raise ValueError("OS family must be a tag of 1-32 lowercase letters, digits, dots, underscores or dashes")
     if backend == "ovirt":
         from uuid import UUID
         return slug, label, os_name, str(UUID(str(vm_id)))
@@ -70,6 +76,18 @@ def validate_profile(*, slug: str, label: str, os_name: str, vm_id, backend: str
     if parsed_vm_id <= 0:
         raise ValueError("Choose a Proxmox template")
     return slug, label, os_name, parsed_vm_id
+
+
+def list_os_tags() -> list[str]:
+    """Existing OS families plus built-in suggestions, without a new tags table."""
+    ensure_schema()
+    with SessionLocal() as db:
+        existing = {
+            str(os_name).strip().lower()
+            for (os_name,) in db.query(GoldenImageProfile.os).distinct().all()
+            if os_name
+        }
+    return sorted(existing | set(DEFAULT_OS_TAGS))
 
 
 def get_profile(slug: str) -> dict | None:

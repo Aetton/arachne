@@ -438,7 +438,7 @@ class TofuSpider(ProvisionSpider):
     def _finish(self, handle: RunHandle, ip: str, vm_id: str = "") -> None:
         st = self._runs[handle.external_id]
         vm_os = st["os"]
-        conn, port = CONN_BY_OS.get(vm_os, ("ssh", 22))
+        conn, port = CONN_BY_OS.get(vm_os, CONN_BY_OS["windows"] if str(vm_os).lower().startswith("windows") else ("ssh", 22))
         requested = {
             key: value
             for key, value in {

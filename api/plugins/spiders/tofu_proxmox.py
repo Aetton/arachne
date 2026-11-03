@@ -161,10 +161,7 @@ class TofuProxmoxSpider(TofuSpider):
         if connection:
             get_connection(connection, "proxmox")
         vm_os = str(profile["os"])
-        if vm_os not in CONN_BY_OS:
-            raise ValueError(
-                f"Golden image profile {profile_key!r} has unsupported OS {vm_os!r}"
-            )
+        # OS families are user-defined tags; transport selection lives in TofuSpider.
 
         try:
             template = inspect_template(int(profile["vm_id"]), connection=connection)
