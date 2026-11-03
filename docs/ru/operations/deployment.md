@@ -41,6 +41,20 @@ docker compose exec arachne tofu version
 
 Если команда отсутствует, production provisioning нельзя считать готовым.
 
+## Автоматическое обновление из GitHub
+
+Workflow `Update Arachne build` запускается **после каждого push в `main`** на self-hosted runner и вызывает `just update` в каталоге развёртывания.
+
+- По умолчанию включено. Для отключения задайте репозиторную переменную GitHub Actions `ARACHNE_AUTO_DEPLOY=false` (**Settings → Secrets and variables → Actions → Variables**).
+- Вернуть автообновление можно, удалив переменную либо задав `ARACHNE_AUTO_DEPLOY=true`.
+- `ARACHNE_DEPLOY_DIR` (по умолчанию `/opt/arachne`) и `ARACHNE_COMPOSE_COMMAND` (по умолчанию `docker compose`) задаются там же.
+- Ручной запуск через **Actions → Update Arachne build → Run workflow** доступен даже при отключённом автодеплое.
+- На runner должны быть установлены `just`, `git` и Docker Compose. Рабочая копия должна находиться на ветке `main` и не содержать локальных изменений отслеживаемых файлов.
+
+Одновременно выполняется только один деплой. Ошибка `git pull --ff-only` останавливает сборку, чтобы не выкатывать устаревший код. Сам workflow не трогает `.env` и не выполняет `docker compose down -v`.
+
+**Важно:** GitHub Actions запускает сборку от имени пользователя self-hosted runner, которому уже предоставлен доступ к Docker. Не назначайте runner недоверенным репозиториям и pull request workflows.
+
 ## PostgreSQL как lifecycle state
 
 Кроме пользователей, сценариев и runs, PostgreSQL хранит управляемые сущности инфраструктуры:
