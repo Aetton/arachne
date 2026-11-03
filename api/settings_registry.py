@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -85,6 +86,9 @@ SPECS = (
 
 BY_KEY = {s.key: s for s in SPECS}
 LIVE_KEYS = frozenset(s.key for s in SPECS if s.mode == "live")
+# Bound polling load: one database read per key every two seconds per process.
+_VALUE_CACHE: dict[str, tuple[float, float]] = {}
+_CACHE_SECONDS = 2.0
 
 
 class SettingOverride(Base):
@@ -133,12 +137,18 @@ def get_numeric(key: str) -> float:
     spec = BY_KEY.get(key)
     if spec is None or spec.mode != "live":
         raise KeyError(key)
+    now = time.monotonic()
+    cached = _VALUE_CACHE.get(key)
+    if cached is not None and now < cached[0]:
+        return cached[1]
     raw = _environment_value(spec)
     with SessionLocal() as db:
         override = db.get(SettingOverride, key)
         if override is not None:
             raw = override.value
-    return float(raw)
+    number = float(raw)
+    _VALUE_CACHE[key] = (now + _CACHE_SECONDS, number)
+    return number
 
 
 def list_settings() -> list[dict]:
@@ -176,6 +186,7 @@ def set_override(key: str, value: str, *, actor: str) -> None:
             row.value, row.updated_at, row.updated_by = validated, now, actor
         db.add(SettingChange(key=key, old_value=old, new_value=validated,
                              changed_at=now, actor=actor))
+    _VALUE_CACHE.pop(key, None)
 
 
 def reset_override(key: str, *, actor: str) -> None:
@@ -191,3 +202,4 @@ def reset_override(key: str, *, actor: str) -> None:
         db.delete(row)
         db.add(SettingChange(key=key, old_value=old, new_value=None,
                              changed_at=now, actor=actor))
+    _VALUE_CACHE.pop(key, None)
