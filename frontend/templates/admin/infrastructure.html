@@ -8,8 +8,8 @@
   {% for c in connections %}
   <form class="surface infrastructure-card" method="post" action="/admin/infrastructure/save">
     <div class="font-semibold">{{ c.label }} · {{ c.backend }} · {{ c.slug }}</div>
-    <input type="hidden" name="slug" value="{{ c.slug }}"><input type="hidden" name="backend" value="{{ c.backend }}"><input type="hidden" name="endpoint" value="{{ c.endpoint }}">
-    <p class="muted" style="overflow-wrap:anywhere">{{ c.endpoint }}</p>
+    <input type="hidden" name="slug" value="{{ c.slug }}"><input type="hidden" name="backend" value="{{ c.backend }}">
+    <label>Адрес API <input name="endpoint" type="url" value="{{ c.endpoint }}" autocomplete="url" required></label>
     <label>Название <input name="label" value="{{ c.label }}" required></label>
     <label>Credential <select name="credential_slug" required>{% for s in credentials %}{% if (c.backend == 'proxmox' and s.kind == 'token') or (c.backend == 'ovirt' and s.kind == 'basic') %}<option value="{{ s.slug }}" {% if s.slug == c.credential_slug %}selected{% endif %}>{{ s.label }} · {{ s.slug }}</option>{% endif %}{% endfor %}</select></label>
     <label class="native-check"><input type="checkbox" name="enabled" {% if c.enabled %}checked{% endif %}> Разрешить новые ВМ</label>
