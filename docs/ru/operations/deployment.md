@@ -75,6 +75,33 @@ services:
 
 Секреты, пароль БД, master key и параметры, управляемые экранами Secrets/Ansible/Гипервизоры, остаются за пределами общего редактора.
 
+## NATS: переключение шины без потери доступа к UI
+
+В прежней Compose-конфигурации сервис `nats` был включён только в профиле `nats`, а клиент Арахны по умолчанию обращался к `127.0.0.1:4222` внутри *своего* контейнера. При выборе `BUS_BACKEND=nats` в Control → Settings это приводило к `ConnectionRefusedError` на старте.
+
+В обновлённом образцовом `docker-compose.yml.example` NATS поднимается вместе с остальными сервисами, а адрес по умолчанию `nats://nats:4222`. NATS расходует немного ресурсов и в режиме `inmemory`, но его можно включать из админки без ручной активации Compose profile. На уже развёрнутых инсталляциях пример Compose **не заменяет автоматически** локальный `docker-compose.yml`: скопируйте изменения вручную.
+
+### Восстановление старой установки
+
+```bash
+# Если прежний Compose содержит profiles: [nats]
+docker compose --profile nats up -d nats
+
+# В .env, если NATS_URL не переопределяется в БД
+NATS_URL=nats://nats:4222
+
+docker compose --profile nats up -d --force-recreate arachne
+```
+
+Если значение `NATS_URL=nats://127.0.0.1:4222` сохранено через Settings, переменная `.env` его не перебьёт. После восстановления UI сбросьте `NATS_URL` в Settings либо поменяйте на `nats://nats:4222`. Если UI недоступен, можно удалить **только** ошибочное переопределение после проверки его текущего значения:
+
+```bash
+docker compose exec db psql -U arachne -d arachne -c "SELECT key, value FROM setting_overrides WHERE key IN ('BUS_BACKEND','NATS_URL');"
+docker compose exec db psql -U arachne -d arachne -c "DELETE FROM setting_overrides WHERE key='NATS_URL' AND value='nats://127.0.0.1:4222';"
+```
+
+Если цель просто восстановить однопроцессную Арахну, задайте `BUS_BACKEND=inmemory` в `.env` и сбросьте его переопределение в БД, если оно существует.
+
 ## PostgreSQL как lifecycle state
 
 Кроме пользователей, сценариев и runs, PostgreSQL хранит управляемые сущности инфраструктуры:
