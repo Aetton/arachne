@@ -4,7 +4,7 @@ from __future__ import annotations
 from core.tofu import TofuSpider, CONN_BY_OS
 from core.registry import register_spider
 from database import ManagedMachine, SessionLocal
-from golden_images import get_profile
+from golden_images import get_profile, is_windows_os
 from proxmox_api import ProxmoxAPIError, inspect_template
 
 _RESOURCE_KEYS = {"cpu", "memory_gb", "disk_gb"}
@@ -161,10 +161,10 @@ class TofuProxmoxSpider(TofuSpider):
         if connection:
             get_connection(connection, "proxmox")
         vm_os = str(profile["os"])
+        # OS families are user-defined tags. Transport is still derived
+        # from the platform family: Windows via WinRM, others via SSH.
         if vm_os not in CONN_BY_OS:
-            raise ValueError(
-                f"Golden image profile {profile_key!r} has unsupported OS {vm_os!r}"
-            )
+            CONN_BY_OS[vm_os] = CONN_BY_OS["windows" if is_windows_os(vm_os) else "redos8"]
 
         try:
             template = inspect_template(int(profile["vm_id"]), connection=connection)
