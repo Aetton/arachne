@@ -401,6 +401,67 @@ def save_credential(*, original_slug: str = "", slug: str, label: str, kind: str
         db.close()
 
 
+
+def delete_credential(slug: str) -> dict:
+    """Delete an unused credential and unshared backing secret.
+
+    Service and infrastructure references must be removed first. A shared
+    (provider, secret_ref) value is retained for the other credentials.
+    """
+    from infrastructure_connections import InfrastructureConnection
+    from service_credentials import ServiceCredentialBinding
+
+    ensure_schema()
+    slug = _validate_slug(slug, "Credential")
+    db = SessionLocal()
+    try:
+        row = db.query(CredentialRow).filter(CredentialRow.slug == slug).with_for_update().first()
+        if row is None:
+            raise ValueError("Credential not found")
+
+        services = [
+            binding.service
+            for binding in db.query(ServiceCredentialBinding).filter(
+                ServiceCredentialBinding.credential_slug == slug
+            ).all()
+        ]
+        hypervisors = [
+            item.slug
+            for item in db.query(InfrastructureConnection).filter(
+                InfrastructureConnection.credential_slug == slug
+            ).all()
+        ]
+        if services or hypervisors:
+            uses = []
+            if services:
+                uses.append("services: " + ", ".join(sorted(services)))
+            if hypervisors:
+                uses.append("hypervisors: " + ", ".join(sorted(hypervisors)))
+            raise ValueError("Credential is in use (" + "; ".join(uses) + "). Unbind it first.")
+
+        provider = db.get(SecretProviderRow, row.provider_id)
+        if provider is None:
+            raise RuntimeError("Credential storage provider was not found")
+        shared = db.query(CredentialRow.id).filter(
+            CredentialRow.provider_id == row.provider_id,
+            CredentialRow.secret_ref == row.secret_ref,
+            CredentialRow.id != row.id,
+        ).first() is not None
+
+        if not shared:
+            # Keep the credential record when the external secret deletion fails.
+            provider_instance(provider).delete(row.secret_ref)
+        db.delete(row)
+        db.commit()
+        return {"slug": slug, "secret_deleted": not shared}
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+
 def resolve_credential(slug: str) -> ResolvedCredential:
     ensure_schema()
     db = SessionLocal()
