@@ -12,10 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 _tmp = tempfile.TemporaryDirectory()
 os.environ["DATABASE_URL"] = "sqlite:///" + _tmp.name + "/secrets-delete.db"
 
-from database import Base, SessionLocal, engine
+from database import Base, SessionLocal, engine, ManagedMachine
 import secrets_store as secrets
 from service_credentials import ServiceCredentialBinding
 from infrastructure_connections import InfrastructureConnection
+from golden_images import GoldenImageProfile
 
 Base.metadata.create_all(engine)
 
@@ -25,6 +26,8 @@ class CredentialDeletionTests(unittest.TestCase):
         with SessionLocal() as db:
             db.query(ServiceCredentialBinding).delete()
             db.query(InfrastructureConnection).delete()
+            db.query(GoldenImageProfile).delete()
+            db.query(ManagedMachine).delete()
             db.query(secrets.CredentialRow).delete()
             db.query(secrets.SecretProviderRow).delete()
             db.commit()
@@ -75,6 +78,32 @@ class CredentialDeletionTests(unittest.TestCase):
         with patch.object(secrets, "provider_instance", return_value=self.backend):
             with self.assertRaisesRegex(ValueError, "hypervisors: engine"):
                 secrets.delete_credential("ovirt")
+        self.backend.delete.assert_not_called()
+
+    def test_golden_image_prevents_deletion(self):
+        self.credential("template-ssh")
+        with SessionLocal() as db:
+            db.add(GoldenImageProfile(
+                slug="golden", label="Golden", os="redos8", vm_id=101,
+                backend="proxmox", credentials_ref="template-ssh",
+            ))
+            db.commit()
+        with patch.object(secrets, "provider_instance", return_value=self.backend):
+            with self.assertRaisesRegex(ValueError, "golden images: golden"):
+                secrets.delete_credential("template-ssh")
+        self.backend.delete.assert_not_called()
+
+    def test_active_machine_prevents_deletion(self):
+        self.credential("target-access")
+        with SessionLocal() as db:
+            db.add(ManagedMachine(
+                name="build-01", backend="tofu-proxmox",
+                credentials_ref="target-access", state="ready",
+            ))
+            db.commit()
+        with patch.object(secrets, "provider_instance", return_value=self.backend):
+            with self.assertRaisesRegex(ValueError, "active machines: build-01"):
+                secrets.delete_credential("target-access")
         self.backend.delete.assert_not_called()
 
     def test_shared_secret_is_preserved(self):
