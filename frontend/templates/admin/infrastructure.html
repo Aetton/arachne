@@ -31,7 +31,7 @@
     <label class="native-check"><input type="checkbox" name="enabled" checked> Разрешить новые ВМ</label>
     <input type="hidden" name="ca_action" value="keep">
     <textarea name="ca_pem" hidden></textarea>
-    <div class="flex items-center gap-2 flex-wrap"><button type="button" class="btn-ghost" onclick="openCaDialog(this)">CA certificate</button><span class="ca-state muted text-xs" data-initial="{{ 'configured' if c is defined and c.has_ca else 'none' }}">{{ 'Сертификат установлен' if c is defined and c.has_ca else 'Системные CA' }}</span></div>
+    <div class="flex items-center gap-2 flex-wrap"><button type="button" class="btn-ghost" onclick="openCaDialog(this)">CA certificate</button><span class="ca-state muted text-xs" data-initial="none">Системные CA</span></div>
     <label class="native-check"><input type="checkbox" name="insecure"> Отключить проверку TLS</label>
     <div class="flex gap-2 flex-wrap items-center"><button class="btn" type="submit">Добавить</button><button class="btn-ghost" type="button" onclick="testInfrastructure(this)">Test Connection</button><span class="connection-test-status muted text-xs" role="status" aria-live="polite"></span></div>
   </form>
