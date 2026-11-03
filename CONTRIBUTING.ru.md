@@ -19,14 +19,14 @@ Arachne — компактный портал для запуска CI/CD-сце
 
 ```bash
 cp .env.example .env
-make up
-make logs
+just up
+just logs
 ```
 
 Чтобы пересобрать проект после изменений:
 
 ```bash
-make update
+just update
 ```
 
 Документация находится в `docs/`. Перед отправкой изменений проверьте её так:

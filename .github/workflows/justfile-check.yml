@@ -1,0 +1,30 @@
+name: Justfile checks
+
+on:
+  push:
+    paths:
+      - justfile
+      - .github/workflows/justfile-check.yml
+  pull_request:
+    paths:
+      - justfile
+      - .github/workflows/justfile-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  recipes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: '1.46.0'
+      - name: Parse recipes and dry-run operators
+        run: |
+          set -euo pipefail
+          just --list
+          for recipe in up update rebuild down ps logs shell restart up-pg up-nats up-full bootstrap-init-pwsh bootstrap-init-pwsh-local bootstrap-init-bash bootstrap-init-bash-local config reset; do
+            just --dry-run "$recipe" > /dev/null
+          done

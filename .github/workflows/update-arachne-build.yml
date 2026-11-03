@@ -35,7 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           cd "${DEPLOY_DIR}"
-          make update DC="${DC}"
+          command -v just >/dev/null || { echo "Install just on the self-hosted runner"; exit 1; }
+          just update
 
       - name: Show service status
         if: always()
@@ -43,4 +44,4 @@ jobs:
         run: |
           set +e
           cd "${DEPLOY_DIR}"
-          make ps DC="${DC}"
+          just ps

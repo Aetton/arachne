@@ -3,13 +3,13 @@
 ## Application logs
 
 ```bash
-make logs
+just logs
 ```
 
 ## Container status
 
 ```bash
-make ps
+just ps
 docker compose config
 ```
 

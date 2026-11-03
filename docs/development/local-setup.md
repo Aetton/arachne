@@ -2,8 +2,8 @@
 
 ```bash
 cp .env.example .env
-make up
-make logs
+just up
+just logs
 ```
 
 Documentation is isolated in this directory:

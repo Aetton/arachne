@@ -27,8 +27,8 @@ core code.
 
 ```bash
 cp .env.example .env
-make up
-make logs
+just up
+just logs
 ```
 
 Open the portal on:
@@ -42,12 +42,12 @@ Use the seeded `admin` user with the password configured in `.env`.
 ## Common commands
 
 ```bash
-make up        # start Arachne
-make update    # pull, rebuild, restart
-make logs      # follow portal logs
-make restart   # restart portal only
-make down      # stop containers
-make ps        # show containers
+just up        # start Arachne
+just update    # pull, rebuild, restart
+just logs      # follow portal logs
+just restart   # restart portal only
+just down      # stop containers
+just ps        # show containers
 ```
 
 ## Configuration
@@ -140,7 +140,7 @@ config/               scenario examples
 playbooks/            Ansible and workflow callback examples
 tofu/                 OpenTofu examples
 docker-compose.yml    local runtime profiles
-Makefile              operator commands
+justfile              operator commands (requires just)
 ```
 
 ## Production notes

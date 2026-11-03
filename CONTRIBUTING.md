@@ -16,14 +16,14 @@ Arachne is a lightweight orchestration portal for CI/CD workflows, infrastructur
 
 ```bash
 cp .env.example .env
-make up
-make logs
+just up
+just logs
 ```
 
 For a rebuild after changes:
 
 ```bash
-make update
+just update
 ```
 
 ## Pull requests

@@ -3,7 +3,7 @@
 ## Requirements
 
 - Docker with Compose
-- GNU Make
+- [just](https://just.systems/) (command runner)
 
 ## Start locally
 
@@ -11,8 +11,8 @@
 git clone https://github.com/Aetton/arachne.git
 cd arachne
 cp .env.example .env
-make up
-make logs
+just up
+just logs
 ```
 
 Open `http://localhost:8080`. Before production use, replace every placeholder
