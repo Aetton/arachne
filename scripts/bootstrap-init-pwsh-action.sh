@@ -26,7 +26,7 @@ FORGEJO_VERIFY_TLS="${FORGEJO_VERIFY_TLS:-true}"
 usage() {
   cat <<'EOF'
 Usage:
-  make bootstrap-init-pwsh
+  just bootstrap-init-pwsh
 
 Environment:
   ACTION_REPO             Target Forgejo git remote.
