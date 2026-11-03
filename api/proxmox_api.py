@@ -19,7 +19,7 @@ class ProxmoxAPIError(RuntimeError):
 
 
 def _settings(connection: str = "") -> tuple[str, str, bool | str]:
-    from infrastructure_connections import execution_env
+    from infrastructure_connections import execution_env, get_ca_pem, tls_verify
     settings = {**os.environ, **execution_env(connection, "proxmox")} if connection else os.environ
     endpoint = settings.get("PROXMOX_VE_ENDPOINT", "").strip().rstrip("/")
     # Accept both the server URL and a complete JSON API endpoint.
@@ -34,8 +34,10 @@ def _settings(connection: str = "") -> tuple[str, str, bool | str]:
     insecure = settings.get("PROXMOX_VE_INSECURE", "false").strip().lower() in {
         "1", "true", "yes", "on",
     }
-    if insecure:
-        verify: bool | str = False
+    if connection:
+        verify = tls_verify(insecure, get_ca_pem(connection, "proxmox"))
+    elif insecure:
+        verify = False
     else:
         ca_file = settings.get("SSL_CERT_FILE", "").strip()
         verify = ca_file if ca_file and Path(ca_file).is_file() else True
