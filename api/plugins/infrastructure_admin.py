@@ -2,6 +2,11 @@
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+import asyncio
+import logging
+from connection_tests import hypervisor
+
+_logger = logging.getLogger(__name__)
 from auth.deps import require_role
 from main import app, render
 from core.optional_plugins import installed_bundles
@@ -43,3 +48,23 @@ async def infrastructure_save(request: Request, user=Depends(require_role("admin
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse("/admin/infrastructure", status_code=303)
+
+
+@app.post("/api/admin/infrastructure/test")
+async def infrastructure_test(request: Request, user=Depends(require_role("admin"))):
+    form = await request.form()
+    try:
+        result = await asyncio.to_thread(
+            hypervisor,
+            str(form.get("backend") or ""),
+            str(form.get("endpoint") or ""),
+            str(form.get("credential_slug") or ""),
+            "insecure" in form,
+        )
+        return result
+    except (ValueError, RuntimeError) as exc:
+        _logger.exception("Hypervisor connection test failed: backend=%s", form.get("backend"))
+        return {"ok": False, "stage": "config", "detail": f"{type(exc).__name__}: verify endpoint and credential"}
+    except Exception as exc:
+        _logger.exception("Unexpected hypervisor connection test failure")
+        return {"ok": False, "stage": "internal", "detail": f"Probe failed: {type(exc).__name__}; check API logs"}
