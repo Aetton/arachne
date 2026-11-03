@@ -97,6 +97,52 @@ class ThreadCancelTests(unittest.IsolatedAsyncioTestCase):
         spider.cancel.assert_called_once_with(handle)
         self.assertTrue(any(text == "thread cancelled" for text, *_ in logs))
 
+    async def test_dispatch_error_writes_traceback_and_failed_result(self):
+        def failing_dispatch(*args):
+            raise ConnectionError("connection refused")
+
+        spider = SimpleNamespace(dispatch=failing_dispatch)
+        step = SimpleNamespace(id="deploy", spider="forgejo")
+        logs = []
+
+        async def emit_log(text, stream, seq, step_id):
+            logs.append((text, stream, seq, step_id))
+
+        result = await thread_adapter._execute(
+            spider, step, "run-1", emit_log, {}
+        )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["error"]["type"], "DispatchError")
+        self.assertTrue(any("connection refused" in row[0] for row in logs))
+        self.assertTrue(any("failing_dispatch" in row[0] for row in logs))
+        self.assertTrue(all(row[1] == "stderr" for row in logs))
+
+    async def test_stream_error_writes_traceback_and_failed_result(self):
+        async def failing_stream(handle):
+            raise TimeoutError("backend unreachable")
+            yield  # pragma: no cover
+
+        spider = SimpleNamespace(
+            dispatch=Mock(return_value=SimpleNamespace(metadata={})),
+            stream_logs=failing_stream,
+        )
+        step = SimpleNamespace(id="build", spider="forgejo")
+        logs = []
+
+        async def emit_log(text, stream, seq, step_id):
+            logs.append((text, stream, seq, step_id))
+
+        with patch.object(thread_adapter.wire_codec, "handle_to_dict", return_value={"id": "handle"}):
+            result = await thread_adapter._execute(
+                spider, step, "run-2", emit_log, {}
+            )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["error"]["type"], "ExecutionError")
+        self.assertEqual(result["handle"], {"id": "handle"})
+        self.assertTrue(any("failing_stream" in row[0] for row in logs))
+
     async def test_cancel_handler_rejects_unknown_step(self):
         result = await thread_adapter._cancel_handler({
             "run_id": "missing",
