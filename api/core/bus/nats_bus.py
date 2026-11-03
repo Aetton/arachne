@@ -43,7 +43,7 @@ class NatsBus(Bus):
             raise RuntimeError(
                 f"Cannot connect to NATS at {url!r}. "
                 "For Docker Compose, use NATS_URL=nats://nats:4222 "
-                "and start the nats service (docker compose --profile nats up -d nats). "
+                "and start the nats service (docker compose up -d nats; add --profile nats for older Compose configs). "
                 "Otherwise select BUS_BACKEND=inmemory."
             ) from exc
 
