@@ -86,4 +86,4 @@ ENV PYTHONUNBUFFERED=1 \
 EXPOSE 8000
 
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
-CMD ["sh", "-c", "alembic -c ../alembic.ini upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "alembic -c ../alembic.ini upgrade head && exec python -m serve"]

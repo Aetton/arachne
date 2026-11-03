@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import os
 import time
+import re
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -86,6 +88,94 @@ SPECS = (
 
 BY_KEY = {s.key: s for s in SPECS}
 LIVE_KEYS = frozenset(s.key for s in SPECS if s.mode == "live")
+# Only settings consumed at process startup may be overridden here.
+# Settings owned by separate admin pages, paths and bootstrap secrets stay
+# read-only until their own migration/validation contracts exist.
+RESTART_TYPES = {
+    "FORGEJO_URL": "url", "FORGEJO_OWNER": "identifier",
+    "FORGEJO_VERIFY_TLS": "bool",
+    "GITLAB_URL": "url", "GITLAB_VERIFY_TLS": "bool",
+    "NEXUS_URL": "url", "KOJI_PROFILE": "identifier",
+    "ARACHNE_URL": "url",
+    "PROXMOX_VE_ENDPOINT": "url", "PROXMOX_VE_INSECURE": "bool",
+    "BUS_BACKEND": "bus", "NATS_URL": "nats_url",
+}
+_RESTART_BASE_ENV: dict[str, str | None] = {}
+_APPLIED_RESTART_VALUES: dict[str, str] = {}
+
+
+def _validated_restart(spec: SettingSpec, value: str) -> str:
+    kind = RESTART_TYPES.get(spec.key)
+    if kind is None or spec.mode != "restart" or spec.secret:
+        raise ValueError("This setting is managed elsewhere or requires deployment configuration")
+    value = str(value).strip()
+    if not value or len(value) > 256 or any(ord(c) < 32 for c in value):
+        raise ValueError("Value must be nonempty, at most 256 characters and contain no control characters")
+    if kind in ("url", "nats_url"):
+        parsed = urlsplit(value)
+        schemes = ("nats", "tls", "ws", "wss") if kind == "nats_url" else ("http", "https")
+        if parsed.scheme not in schemes or not parsed.hostname or parsed.username or parsed.password:
+            raise ValueError("Enter an absolute URL with an allowed protocol and no embedded credentials")
+        if any(c.isspace() for c in value) or parsed.fragment:
+            raise ValueError("URLs cannot contain spaces or fragments")
+        try:
+            _ = parsed.port
+        except ValueError as exc:
+            raise ValueError("Invalid URL port") from exc
+        return value.rstrip("/")
+    if kind == "bool":
+        if value.lower() not in ("true", "false"):
+            raise ValueError("Expected true or false")
+        return value.lower()
+    if kind == "bus":
+        if value.lower() not in ("inmemory", "nats"):
+            raise ValueError("Expected inmemory or nats")
+        return value.lower()
+    if kind == "identifier":
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", value):
+            raise ValueError("Use letters, digits, dots, dashes or underscores")
+        return value
+    raise ValueError("Unsupported setting")
+
+
+def apply_startup_overrides() -> None:
+    """Call before importing application plugins, after Alembic migrations."""
+    with SessionLocal() as db:
+        overrides = {
+            row.key: row.value for row in db.query(SettingOverride)
+            .filter(SettingOverride.key.in_(list(RESTART_TYPES))).all()
+        }
+    for key in RESTART_TYPES:
+        spec = BY_KEY[key]
+        _RESTART_BASE_ENV[key] = os.environ.get(key)
+        selected = overrides.get(key)
+        if selected is not None:
+            selected = _validated_restart(spec, selected)
+            os.environ[key] = selected
+        _APPLIED_RESTART_VALUES[key] = os.getenv(key, spec.default)
+
+
+def restart_is_pending() -> bool:
+    """True when desired restart settings differ from the boot snapshot."""
+    if not _APPLIED_RESTART_VALUES:
+        return False
+    with SessionLocal() as db:
+        overrides = {row.key: row.value for row in db.query(SettingOverride)
+                     .filter(SettingOverride.key.in_(list(RESTART_TYPES))).all()}
+    return any(
+        overrides.get(key, _RESTART_BASE_ENV[key] if _RESTART_BASE_ENV[key] is not None else BY_KEY[key].default)
+        != _APPLIED_RESTART_VALUES[key]
+        for key in RESTART_TYPES
+    )
+
+
+def is_self_restart_available() -> bool:
+    # The official Docker deployment runs a single Uvicorn worker as PID 1,
+    # with restart: unless-stopped. Other deployment types need orchestration.
+    return (os.getenv("ARACHNE_SELF_RESTART_ENABLED", "").lower() == "true"
+            and os.getpid() == 1)
+
+
 # Bound polling load: one database read per key every two seconds per process.
 _VALUE_CACHE: dict[str, tuple[float, float]] = {}
 _CACHE_SECONDS = 2.0
@@ -126,6 +216,8 @@ def _validated_numeric(spec: SettingSpec, value: str) -> str:
 
 
 def _environment_value(spec: SettingSpec) -> str:
+    if spec.key in _RESTART_BASE_ENV:
+        return _RESTART_BASE_ENV[spec.key] if _RESTART_BASE_ENV[spec.key] is not None else spec.default
     return os.getenv(spec.key, spec.default)
 
 
@@ -166,6 +258,10 @@ def list_settings() -> list[dict]:
             "is_overridden": spec.key in overrides,
             "secret": spec.secret,
             "minimum": spec.minimum, "maximum": spec.maximum,
+            "editable": spec.mode == "live" or spec.key in RESTART_TYPES,
+            "input_kind": RESTART_TYPES.get(spec.key, "number"),
+            "restart_pending": (spec.key in _APPLIED_RESTART_VALUES and
+                value != _APPLIED_RESTART_VALUES[spec.key]),
         })
     return result
 
@@ -174,7 +270,8 @@ def set_override(key: str, value: str, *, actor: str) -> None:
     spec = BY_KEY.get(key)
     if spec is None:
         raise ValueError("Unknown setting")
-    validated = _validated_numeric(spec, value)
+    validated = (_validated_numeric(spec, value) if spec.mode == "live"
+                 else _validated_restart(spec, value))
     now = datetime.now(timezone.utc)
     with SessionLocal.begin() as db:
         row = db.get(SettingOverride, key)
@@ -191,8 +288,8 @@ def set_override(key: str, value: str, *, actor: str) -> None:
 
 def reset_override(key: str, *, actor: str) -> None:
     spec = BY_KEY.get(key)
-    if spec is None or spec.mode != "live":
-        raise ValueError("Unknown or non-dynamic setting")
+    if spec is None or (spec.mode != "live" and key not in RESTART_TYPES):
+        raise ValueError("Unknown or non-editable setting")
     now = datetime.now(timezone.utc)
     with SessionLocal.begin() as db:
         row = db.get(SettingOverride, key)

@@ -39,9 +39,48 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(log[1].new_value, None)
 
     def test_reject_non_live_secrets_and_unknown_keys(self):
-        for key in ("JWT_SECRET", "DATABASE_URL", "BUS_BACKEND", "ARACHNE_PLUGINS", "SOMETHING_NEW"):
+        for key in ("JWT_SECRET", "DATABASE_URL", "ARACHNE_PLUGINS", "TOFU_STATE_ROOT", "SOMETHING_NEW"):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 settings.set_override(key, "123", actor="admin")
+
+    def test_restart_scoped_urls_and_boolean_overrides(self):
+        settings.set_override("FORGEJO_URL", "https://git.internal:3000/", actor="admin")
+        settings.set_override("FORGEJO_VERIFY_TLS", "FALSE", actor="admin")
+        settings.set_override("BUS_BACKEND", "nats", actor="admin")
+        rows = {item["key"]: item for item in settings.list_settings()}
+        self.assertEqual(rows["FORGEJO_URL"]["value"], "https://git.internal:3000")
+        self.assertEqual(rows["FORGEJO_VERIFY_TLS"]["value"], "false")
+        self.assertTrue(rows["FORGEJO_URL"]["editable"])
+        self.assertEqual(rows["BUS_BACKEND"]["input_kind"], "bus")
+        settings.reset_override("FORGEJO_URL", actor="admin")
+        rows = {item["key"]: item for item in settings.list_settings()}
+        self.assertFalse(rows["FORGEJO_URL"]["is_overridden"])
+
+    def test_bad_restart_url_and_invalid_selection_are_rejected(self):
+        for key, value in (
+            ("FORGEJO_URL", "file:///etc/passwd"),
+            ("NEXUS_URL", "https://user:pass@internal"),
+            ("ARACHNE_URL", "javascript:alert(1)"),
+            ("GITLAB_URL", "https://some host/"),
+            ("NATS_URL", "https://nats.internal:4222"),
+            ("BUS_BACKEND", "rabbitmq"),
+            ("FORGEJO_VERIFY_TLS", "sometimes"),
+        ):
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                settings.set_override(key, value, actor="admin")
+
+    def test_startup_overrides_applied_before_imports(self):
+        settings.set_override("GITLAB_URL", "https://gitlab.internal", actor="admin")
+        with patch.dict(os.environ, {"GITLAB_URL": "https://old.example"}, clear=False):
+            settings.apply_startup_overrides()
+            self.assertEqual(os.environ["GITLAB_URL"], "https://gitlab.internal")
+            self.assertFalse(settings.restart_is_pending())
+            settings.set_override("GITLAB_URL", "https://new.internal", actor="admin")
+            self.assertTrue(settings.restart_is_pending())
+            settings.reset_override("GITLAB_URL", actor="admin")
+            self.assertTrue(settings.restart_is_pending())
+        settings._APPLIED_RESTART_VALUES.clear()
+        settings._RESTART_BASE_ENV.clear()
 
     def test_numeric_input_validation(self):
         for value in ("nan", "inf", "-3", "999999", "not-a-number"):
