@@ -33,17 +33,14 @@ def list_connections():
     with SessionLocal() as db:
         return [
             {
-                k: getattr(r, k)
-                for k in (
-                    "slug",
-                    "label",
-                    "backend",
-                    "endpoint",
-                    "credential_slug",
-                    "insecure",
-                    "enabled",
-                )
-                **{"has_ca": bool(r.ca_pem)},
+                **{
+                    k: getattr(r, k)
+                    for k in (
+                        "slug", "label", "backend", "endpoint",
+                        "credential_slug", "insecure", "enabled",
+                    )
+                },
+                "has_ca": bool(r.ca_pem),
             }
             for r in db.query(InfrastructureConnection)
             .order_by(InfrastructureConnection.slug)
