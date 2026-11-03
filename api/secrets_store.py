@@ -410,6 +410,8 @@ def delete_credential(slug: str) -> dict:
     """
     from infrastructure_connections import InfrastructureConnection
     from service_credentials import ServiceCredentialBinding
+    from golden_images import GoldenImageProfile
+    from database import ManagedMachine
 
     ensure_schema()
     slug = _validate_slug(slug, "Credential")
@@ -431,12 +433,29 @@ def delete_credential(slug: str) -> dict:
                 InfrastructureConnection.credential_slug == slug
             ).all()
         ]
-        if services or hypervisors:
+        golden_images = [
+            item.slug
+            for item in db.query(GoldenImageProfile).filter(
+                GoldenImageProfile.credentials_ref == slug
+            ).all()
+        ]
+        active_machines = [
+            item.name
+            for item in db.query(ManagedMachine).filter(
+                ManagedMachine.credentials_ref == slug,
+                ManagedMachine.state.in_(("running", "ready", "destroying", "reap_failed")),
+            ).all()
+        ]
+        if services or hypervisors or golden_images or active_machines:
             uses = []
             if services:
                 uses.append("services: " + ", ".join(sorted(services)))
             if hypervisors:
                 uses.append("hypervisors: " + ", ".join(sorted(hypervisors)))
+            if golden_images:
+                uses.append("golden images: " + ", ".join(sorted(golden_images)))
+            if active_machines:
+                uses.append("active machines: " + ", ".join(sorted(active_machines)))
             raise ValueError("Credential is in use (" + "; ".join(uses) + "). Unbind it first.")
 
         provider = db.get(SecretProviderRow, row.provider_id)
