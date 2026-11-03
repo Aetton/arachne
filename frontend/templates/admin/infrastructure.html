@@ -83,6 +83,7 @@ function applyCaDialog() {
   }
   currentCaForm.elements.namedItem('ca_action').value = 'replace';
   currentCaForm.elements.namedItem('ca_pem').value = pem;
+  currentCaForm.elements.namedItem('insecure').checked = false;
   currentCaForm.querySelector('.ca-state').textContent = 'Новый CA (не сохранён)';
   document.getElementById('hypervisor-ca-dialog').close();
 }
