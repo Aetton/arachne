@@ -12,6 +12,7 @@ from typing import AsyncIterator
 from urllib.parse import quote, unquote
 
 import httpx
+from settings_registry import get_numeric
 
 from core.registry import register_spider
 from core.spider import BuildSpider
@@ -268,7 +269,7 @@ class GitLabSpider(BuildSpider):
             f"(GitLab pipeline_id={pipeline_id})",
             "system",
         )
-        deadline = time.monotonic() + GITLAB_DEADLINE
+        deadline = time.monotonic() + get_numeric("GITLAB_DEADLINE")
         while True:
             try:
                 async for line in self._stream_job_updates(state):
@@ -299,10 +300,10 @@ class GitLabSpider(BuildSpider):
 
             if time.monotonic() > deadline:
                 state["status"] = RunStatus.FAILED
-                state["error"] = f"GitLab pipeline deadline exceeded ({GITLAB_DEADLINE:.0f}s)"
+                state["error"] = "GitLab pipeline deadline exceeded"
                 yield LogLine(state["error"], "stderr")
                 return
-            await asyncio.sleep(GITLAB_POLL_INTERVAL)
+            await asyncio.sleep(get_numeric("GITLAB_POLL_INTERVAL"))
 
     def _fetch_jobs_sync(self, state: dict) -> list[dict]:
         response = httpx.get(
