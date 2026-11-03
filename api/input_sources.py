@@ -7,6 +7,7 @@ import os
 import time
 
 import httpx
+from settings_registry import get_numeric
 
 FORGEJO_URL = os.getenv("FORGEJO_URL", "https://forgejo.example.internal").rstrip("/")
 FORGEJO_TOKEN = os.getenv("FORGEJO_TOKEN", "")
@@ -65,7 +66,7 @@ def _git_branches(owner: str, repo: str) -> list[str]:
     cache_key = (owner, repo)
     cached = _BRANCH_CACHE.get(cache_key)
     now = time.monotonic()
-    if cached and now - cached[0] < CACHE_TTL:
+    if cached and now - cached[0] < get_numeric("INPUT_SOURCE_CACHE_TTL"):
         return list(cached[1])
 
     url = f"{FORGEJO_URL}/api/v1/repos/{owner}/{repo}/branches"
