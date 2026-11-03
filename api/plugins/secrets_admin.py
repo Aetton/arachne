@@ -2,6 +2,11 @@
 from __future__ import annotations
 
 import os
+import asyncio
+import logging
+from connection_tests import provider as probe_provider, service as probe_service
+
+_logger = logging.getLogger(__name__)
 from urllib.parse import quote
 
 from fastapi import Depends, HTTPException, Request
@@ -271,3 +276,38 @@ async def admin_secret_bindings_save(request: Request, user=Depends(require_admi
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse("/admin/secrets?saved=bindings", status_code=303)
+
+
+@app.post("/api/admin/secrets/provider/test")
+async def admin_draft_provider_test(request: Request, user=Depends(require_administrator)):
+    f = await request.form()
+    kind = str(f.get("kind") or "")
+    config = {
+        "address": str(f.get("address") or ""),
+        "namespace": str(f.get("namespace") or ""),
+        "mount": str(f.get("mount") or "secret"),
+        "base_path": str(f.get("base_path") or "arachne"),
+        "verify_tls": _checked(f, "verify_tls"),
+        "auth_method": str(f.get("auth_method") or "token"),
+        "token_source": str(f.get("token_source") or "env"),
+        "token_ref": str(f.get("token_ref") or "VAULT_TOKEN"),
+        "role_id": str(f.get("role_id") or ""),
+        "secret_id_source": str(f.get("secret_id_source") or "env"),
+        "secret_id_ref": str(f.get("secret_id_ref") or "VAULT_SECRET_ID"),
+    }
+    try:
+        return await asyncio.to_thread(probe_provider, kind, config)
+    except Exception as exc:
+        _logger.exception("Draft secret provider test failed: kind=%s", kind)
+        return {"ok": False, "stage": "connection", "detail": f"Probe failed: {type(exc).__name__}; check API logs"}
+
+
+@app.post("/api/admin/secrets/service/test")
+async def admin_service_connection_test(request: Request, user=Depends(require_administrator)):
+    f = await request.form()
+    service = str(f.get("service") or "")
+    try:
+        return await asyncio.to_thread(probe_service, service, str(f.get("credential_slug") or ""))
+    except Exception as exc:
+        _logger.exception("Service connection test failed: service=%s", service)
+        return {"ok": False, "stage": "connection", "detail": f"Probe failed: {type(exc).__name__}; check endpoint and API logs"}

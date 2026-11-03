@@ -14,7 +14,7 @@
     <label>Credential <select name="credential_slug" required>{% for s in credentials %}{% if (c.backend == 'proxmox' and s.kind == 'token') or (c.backend == 'ovirt' and s.kind == 'basic') %}<option value="{{ s.slug }}" {% if s.slug == c.credential_slug %}selected{% endif %}>{{ s.label }} · {{ s.slug }}</option>{% endif %}{% endfor %}</select></label>
     <label class="native-check"><input type="checkbox" name="enabled" {% if c.enabled %}checked{% endif %}> Разрешить новые ВМ</label>
     <label class="native-check"><input type="checkbox" name="insecure" {% if c.insecure %}checked{% endif %}> Отключить проверку TLS</label>
-    <button class="btn" type="submit">Сохранить</button>
+    <div class="flex gap-2 flex-wrap items-center"><button class="btn" type="submit">Сохранить</button><button class="btn-ghost" type="button" onclick="testInfrastructure(this)">Test Connection</button><span class="connection-test-status muted text-xs" role="status" aria-live="polite"></span></div>
   </form>
   {% endfor %}
   {% if backends %}
@@ -27,7 +27,7 @@
     <label>Credential <select name="credential_slug" id="connection-credential" required><option value="">Выбрать…</option>{% for s in credentials %}<option value="{{ s.slug }}" data-kind="{{ s.kind }}">{{ s.label }} · {{ s.kind }}</option>{% endfor %}</select></label>
     <label class="native-check"><input type="checkbox" name="enabled" checked> Разрешить новые ВМ</label>
     <label class="native-check"><input type="checkbox" name="insecure"> Отключить проверку TLS</label>
-    <button class="btn" type="submit">Добавить</button>
+    <div class="flex gap-2 flex-wrap items-center"><button class="btn" type="submit">Добавить</button><button class="btn-ghost" type="button" onclick="testInfrastructure(this)">Test Connection</button><span class="connection-test-status muted text-xs" role="status" aria-live="polite"></span></div>
   </form>
   {% endif %}
 </div>
@@ -43,4 +43,22 @@ function filterCredentials() {
   if (select.selectedOptions[0]?.disabled) select.value = '';
 }
 filterCredentials();
+async function testInfrastructure(button) {
+  const form = button.closest('form');
+  const status = form.querySelector('.connection-test-status');
+  button.disabled = true;
+  status.textContent = 'Проверяем…';
+  try {
+    const response = await fetch('/api/admin/infrastructure/test', {
+      method: 'POST', body: new FormData(form), credentials: 'same-origin'
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const result = await response.json();
+    status.textContent = (result.ok ? '✓ ' : '✗ ') + (result.detail || result.stage);
+    status.style.color = result.ok ? 'var(--ok-fg)' : 'var(--fail-fg)';
+  } catch (error) {
+    status.textContent = '✗ Ошибка запроса: ' + error.message;
+    status.style.color = 'var(--fail-fg)';
+  } finally { button.disabled = false; }
+}
 </script>{% endblock %}
