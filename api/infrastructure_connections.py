@@ -117,7 +117,8 @@ def get_connection(slug, backend, *, require_enabled=True):
 
 
 def save_connection(
-    *, slug, label, backend, endpoint, credential_slug, insecure=False, enabled=True,\n    ca_action="keep", ca_pem=""
+    *, slug, label, backend, endpoint, credential_slug, insecure=False, enabled=True,
+    ca_action="keep", ca_pem=""
 ):
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", slug or ""):
         raise ValueError("Invalid connection key")
