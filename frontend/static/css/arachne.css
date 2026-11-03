@@ -77,23 +77,21 @@ body::before {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: .6rem;
+  flex: 0 0 auto;
   color: var(--fg);
-  font-weight: 760;
   text-decoration: none;
-  letter-spacing: .04em;
+  line-height: 1;
 }
-.brand-mark {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--web-line);
-  border-radius: 50%;
-  color: var(--web-node);
-  box-shadow: 0 0 0 5px var(--web-glow);
+.brand-wordmark {
+  display: block;
+  width: clamp(126px, 13vw, 156px);
+  height: auto;
+  max-height: 24px;
+  object-fit: contain;
+  transition: filter .15s ease;
 }
-.brand-word { font-size: .92rem; }
+.brand:hover .brand-wordmark { filter: brightness(1.17); }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 3px; }
 
 .nav-link, .nav-control summary {
   color: var(--muted);
