@@ -127,4 +127,4 @@ docker compose exec db \
 
 Затем откройте **Control -> Golden Images** и убедитесь, что сохранённые profiles по-прежнему проходят live discovery.
 
-`make update` выполняет примерно тот же цикл, но Makefile предполагает, что рабочий `docker-compose.yml` уже существует.
+`just update` выполняет примерно тот же цикл, но justfile предполагает, что рабочий `docker-compose.yml` уже существует.
