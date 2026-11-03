@@ -11,9 +11,12 @@ in-memory path — only the backend swaps.
 from __future__ import annotations
 
 import json
+import logging
 import os
 
 from core.bus.base import Bus, EventHandler, ReplyHandler
+
+_logger = logging.getLogger(__name__)
 
 NATS_URL = os.getenv("NATS_URL", "nats://127.0.0.1:4222")
 
@@ -64,6 +67,7 @@ class NatsBus(Bus):
                 subject, json.dumps(payload).encode(), timeout=timeout)
             return json.loads(msg.data.decode() or "{}")
         except Exception as exc:  # noqa: BLE001  (nats.errors.NoRespondersError etc.)
+            _logger.exception("NATS request failed: subject=%s", subject)
             return {"error": str(exc), "subject": subject}
 
     async def reply(self, subject: str, handler: ReplyHandler):

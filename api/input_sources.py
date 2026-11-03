@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 import os
 import time
 
@@ -12,6 +13,7 @@ FORGEJO_TOKEN = os.getenv("FORGEJO_TOKEN", "")
 FORGEJO_OWNER = os.getenv("FORGEJO_OWNER", "example")
 VERIFY_TLS = os.getenv("FORGEJO_VERIFY_TLS", "true").lower() != "false"
 CACHE_TTL = float(os.getenv("INPUT_SOURCE_CACHE_TTL", "30"))
+_logger = logging.getLogger(__name__)
 
 _BRANCH_CACHE: dict[tuple[str, str], tuple[float, list[str]]] = {}
 
@@ -137,9 +139,11 @@ def enrich_scenario_inputs(scenario: dict) -> dict:
         try:
             param["options"] = resolve_options(result, param)
         except InputSourceError as exc:
+            _logger.exception("Dynamic input lookup failed: parameter=%s", param.get("name"))
             param["options"] = []
             param["source_error"] = str(exc)
         except Exception as exc:  # noqa: BLE001
+            _logger.exception("Unexpected dynamic input lookup failure: parameter=%s", param.get("name"))
             param["options"] = []
             param["source_error"] = f"dynamic input lookup failed: {exc}"
 
