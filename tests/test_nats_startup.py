@@ -22,13 +22,13 @@ class NatsStartupTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "docker compose up -d nats"):
                 asyncio.run(NatsBus().start())
 
-    def test_connect_uses_configured_address_and_disables_retries(self):
+    def test_connect_uses_configured_address_and_keeps_reconnects(self):
         mock_connect = AsyncMock(return_value=object())
         stub = SimpleNamespace(connect=mock_connect)
         with patch.dict(sys.modules, {"nats": stub}), patch.dict(os.environ, {"NATS_URL": "nats://nats:4222"}):
             asyncio.run(NatsBus().start())
         mock_connect.assert_awaited_once_with(
-            "nats://nats:4222", allow_reconnect=False, connect_timeout=3
+            "nats://nats:4222", connect_timeout=2, reconnect_time_wait=1
         )
 
 
