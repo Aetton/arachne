@@ -44,6 +44,8 @@ async def infrastructure_save(request: Request, user=Depends(require_role("admin
             credential_slug=str(f.get("credential_slug") or ""),
             insecure="insecure" in f,
             enabled="enabled" in f,
+            ca_action=str(f.get("ca_action") or "keep"),
+            ca_pem=str(f.get("ca_pem") or ""),
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -60,6 +62,9 @@ async def infrastructure_test(request: Request, user=Depends(require_role("admin
             str(form.get("endpoint") or ""),
             str(form.get("credential_slug") or ""),
             "insecure" in form,
+            slug=str(form.get("slug") or ""),
+            ca_action=str(form.get("ca_action") or "keep"),
+            ca_pem=str(form.get("ca_pem") or ""),
         )
         return result
     except (ValueError, RuntimeError) as exc:
