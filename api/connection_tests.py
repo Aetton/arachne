@@ -70,7 +70,8 @@ def _probe(url: str, *, headers=None, auth=None, verify=True) -> dict:
         return {"ok": False, "stage": "http", "detail": f"HTTP client error: {type(exc).__name__}"}
 
 
-def hypervisor(backend: str, endpoint: str, credential_slug: str, insecure: bool, *,\n               slug: str = "", ca_action: str = "keep", ca_pem: str = "") -> dict:
+def hypervisor(backend: str, endpoint: str, credential_slug: str, insecure: bool, *,
+               slug: str = "", ca_action: str = "keep", ca_pem: str = "") -> dict:
     url = _endpoint(endpoint)
     secret = resolve_credential(credential_slug)
     if ca_action == "replace":
