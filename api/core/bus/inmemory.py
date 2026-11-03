@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 
 from core.bus.base import Bus, EventHandler, ReplyHandler
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -57,8 +60,8 @@ class InMemoryBus(Bus):
                 for h in list(handlers):
                     try:
                         await _maybe_await(h(payload))
-                    except Exception as exc:  # noqa: BLE001
-                        print(f"[bus] subscriber error on {subject}: {exc}")
+                    except Exception:  # noqa: BLE001
+                        _logger.exception("Bus subscriber failed: subject=%s", subject)
 
     async def subscribe(self, subject: str, handler: EventHandler) -> InMemorySubscription:
         self._subs[subject].append(handler)
