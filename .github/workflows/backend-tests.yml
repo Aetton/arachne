@@ -49,6 +49,7 @@ jobs:
           for test_file in tests/test_*.py; do
             echo "::group::$(basename "$test_file")"
             test_dir="$(mktemp -d)"
+            PYTHONPATH="$GITHUB_WORKSPACE/api:$GITHUB_WORKSPACE/tests" \
             DATABASE_URL="sqlite:///$test_dir/test.db" \
               python -m unittest discover -s tests -p "$(basename "$test_file")" -v
             result=$?
