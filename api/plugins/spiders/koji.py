@@ -13,6 +13,7 @@ import asyncio
 import os
 import time
 from typing import AsyncIterator
+from settings_registry import get_numeric
 
 from core.registry import register_spider
 from core.spider import BuildSpider
@@ -318,7 +319,7 @@ class KojiSpider(BuildSpider):
                         yield LogLine(state["error"], "stderr")
                 return
 
-            await asyncio.sleep(KOJI_POLL_INTERVAL)
+            await asyncio.sleep(get_numeric("KOJI_POLL_INTERVAL"))
 
     def get_status(self, handle: RunHandle) -> RunStatus:
         return self._runs[handle.external_id]["status"]

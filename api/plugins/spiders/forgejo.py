@@ -24,6 +24,7 @@ from urllib.parse import quote, unquote
 import zipfile
 
 import httpx
+from settings_registry import get_numeric
 
 from core.spider import BuildSpider
 from core.registry import register_spider
@@ -712,7 +713,7 @@ class ForgejoSpider(BuildSpider):
         )
 
         log_cursor: dict = {}
-        deadline = time.monotonic() + FORGEJO_DEADLINE
+        deadline = time.monotonic() + get_numeric("FORGEJO_DEADLINE")
 
         while True:
             text = await self._fetch_log_text(state)
@@ -749,11 +750,11 @@ class ForgejoSpider(BuildSpider):
 
             if time.monotonic() > deadline:
                 state["status"] = RunStatus.FAILED
-                state["error"] = f"Forgejo run deadline exceeded ({FORGEJO_DEADLINE:.0f}s)"
+                state["error"] = "Forgejo run deadline exceeded"
                 yield LogLine(state["error"], "stderr")
                 return
 
-            await asyncio.sleep(FORGEJO_POLL_INTERVAL)
+            await asyncio.sleep(get_numeric("FORGEJO_POLL_INTERVAL"))
 
     @staticmethod
     def _clean_artifact_path(value: str) -> str:
