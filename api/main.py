@@ -316,7 +316,7 @@ def _render_run(request, user, run_id, metadata_only=False) -> HTMLResponse:
             if run.status == "running" and run_engine.has_runtime(run_id)
             else _load_persisted_records(run)
         )
-        steps = runview.build(records, run.status)
+        steps = runview.build(records, run.status, include_lines=not metadata_only)
         arts = [
             {
                 "name": a.get("name", "artifact"),

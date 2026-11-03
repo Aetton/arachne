@@ -18,8 +18,8 @@ def _failed(text: str) -> bool:
     return s.startswith(("fatal:", "failed:", "ARACHNE ERROR", "PORTAL ERROR", "error ["))
 
 
-def build(records: list[dict], run_status: str) -> list[dict]:
-    """Return [{id, spider, status, tasks:[{title, lines, status}], artifacts}]."""
+def build(records: list[dict], run_status: str, *, include_lines: bool = True) -> list[dict]:
+    """Return step/task summaries; optionally omit line payloads for metadata-only views."""
     steps: list[dict] = []
     by_id: dict[str, dict] = {}
 
@@ -70,7 +70,8 @@ def build(records: list[dict], run_status: str) -> list[dict]:
         # body line — append to current task (create a default one if none yet)
         if not st["tasks"]:
             st["tasks"].append({"title": "output", "lines": [], "status": "passed"})
-        st["tasks"][-1]["lines"].append(text)
+        if include_lines:
+            st["tasks"][-1]["lines"].append(text)
         if _failed(text) or stream == "stderr":
             st["tasks"][-1]["status"] = "failed"
             st["_failed"] = True
