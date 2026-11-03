@@ -6,6 +6,8 @@ credentials or URLs with query parameters in results or logs.
 from __future__ import annotations
 
 import logging
+import ssl
+import socket
 import os
 from urllib.parse import urlsplit
 
@@ -40,7 +42,16 @@ def _probe(url: str, *, headers=None, auth=None, verify=True) -> dict:
     except httpx.ConnectTimeout:
         return {"ok": False, "stage": "tcp", "detail": "Connection timeout"}
     except httpx.ConnectError as exc:
-        return {"ok": False, "stage": "network", "detail": f"Connect error ({type(exc.__cause__).__name__ if exc.__cause__ else type(exc).__name__}); check DNS, TCP and TLS"}
+        cause = exc
+        while getattr(cause, "__cause__", None) is not None:
+            cause = cause.__cause__
+        if isinstance(cause, socket.gaierror):
+            return {"ok": False, "stage": "dns", "detail": "DNS resolution failed"}
+        if isinstance(cause, (ssl.SSLError, ssl.SSLCertVerificationError)):
+            return {"ok": False, "stage": "tls", "detail": "TLS handshake or certificate validation failed"}
+        if isinstance(cause, ConnectionRefusedError):
+            return {"ok": False, "stage": "tcp", "detail": "Connection refused"}
+        return {"ok": False, "stage": "network", "detail": "Unable to connect; check DNS, TCP and TLS"}
     except httpx.TimeoutException:
         return {"ok": False, "stage": "timeout", "detail": "API request timed out"}
     except httpx.HTTPError as exc:
@@ -90,7 +101,7 @@ def service(service: str, credential_slug: str) -> dict:
                       headers={"Authorization": "PVEAPIToken=" + str(secret.values.get("token", ""))},
                       verify=os.getenv("PROXMOX_VE_INSECURE", "false").lower() != "true")
     url = _endpoint(os.getenv("NEXUS_URL", ""))
-    return _probe(url + "/service/rest/v1/status",
+    return _probe(url + "/service/rest/v1/repositories",
                   auth=(secret.username, str(secret.values.get("password", ""))))
 
 
@@ -103,5 +114,8 @@ def provider(kind: str, config: dict) -> dict:
     config = dict(config)
     config["address"] = _endpoint(config.get("address", ""))
     vault = VaultSecretProvider(config)
-    result = vault.test()
-    return {"ok": bool(result.get("ok")), "stage": "api", "detail": str(result.get("detail", ""))}
+    # Vault health is often intentionally public; a successful health response
+    # does not prove the bootstrap credentials. Verify the authenticated token.
+    headers = vault._headers()
+    return _probe(config["address"] + "/v1/auth/token/lookup-self",
+                  headers=headers, verify=config.get("verify_tls", True))
