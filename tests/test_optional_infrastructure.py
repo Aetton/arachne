@@ -69,13 +69,23 @@ class ConnectionsTests(unittest.TestCase):
             c = connections.execution_env("o1", "ovirt")
             self.assertNotEqual(a["PROXMOX_VE_API_TOKEN"], b["PROXMOX_VE_API_TOKEN"])
             self.assertEqual(c["TF_VAR_ovirt_password"], "o1-password")
+            connections.save_connection(
+                slug="p1",
+                label="Updated Proxmox",
+                backend="proxmox",
+                endpoint="https://new-proxmox.example:8006/api2/json",
+                credential_slug="p1",
+            )
+            changed = connections.get_connection("p1", "proxmox")
+            self.assertEqual(changed["endpoint"], "https://new-proxmox.example:8006/api2/json")
+            self.assertEqual(changed["slug"], "p1")
             with self.assertRaisesRegex(ValueError, "immutable"):
                 connections.save_connection(
                     slug="p1",
-                    label="p1",
-                    backend="proxmox",
-                    endpoint="https://other",
-                    credential_slug="p1",
+                    label="cannot change backend",
+                    backend="ovirt",
+                    endpoint="https://new-proxmox.example/api",
+                    credential_slug="o1",
                 )
         self.assertEqual(before, dict(os.environ))
         self.assertNotIn("p1-secret", json.dumps(connections.list_connections()))
