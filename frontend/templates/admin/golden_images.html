@@ -62,7 +62,31 @@
   .golden-dialog-head { padding: 1rem 1.1rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
   .golden-dialog-body { padding: 1rem 1.1rem; display: grid; gap: .8rem; }
   .golden-dialog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
-  .golden-dialog label > span { display: block; color: var(--muted); font-size: .68rem; margin-bottom: .3rem; }
+  .golden-dialog label:not(.check-control) > span,
+  .golden-dialog .golden-field-label { display: block; color: var(--muted); font-size: .68rem; margin-bottom: .3rem; }
+  .golden-os-field { min-width: 0; }
+  .golden-os-combobox { position: relative; display: flex; min-width: 0; }
+  .golden-os-combobox input { padding-right: 2.7rem; }
+  .golden-os-toggle { position: absolute; right: 0; top: 0; bottom: 0; width: 2.5rem;
+    display: grid; place-items: center; color: var(--muted); border-radius: 0 .5rem .5rem 0; }
+  .golden-os-toggle:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .golden-os-options { position: absolute; z-index: 20; top: calc(100% + .25rem); left: 0; right: 0;
+    max-height: 13rem; overflow-y: auto; padding: .3rem;
+    border: 1px solid var(--border); border-radius: .55rem;
+    background: var(--surface2); box-shadow: 0 .65rem 1.6rem rgba(0,0,0,.36); }
+  .golden-os-options[hidden], .golden-os-option[hidden], .golden-os-empty[hidden] { display: none !important; }
+  .golden-os-option { display: block; width: 100%; padding: .45rem .65rem; border-radius: .35rem;
+    text-align: left; color: var(--fg); font-size: .82rem; }
+  .golden-os-option:hover, .golden-os-option[aria-selected="true"] {
+    background: color-mix(in srgb, var(--accent) 18%, var(--surface2)); }
+  .golden-os-empty { padding: .5rem .65rem; font-size: .72rem; color: var(--muted); }
+  .golden-os-hint { margin-top: .35rem; }
+  .golden-dialog .golden-enabled-check { display: flex; align-items: center; justify-content: flex-start;
+    gap: .7rem; min-height: 2.3rem; margin: 0; padding: .25rem 0; }
+  .golden-dialog .golden-enabled-check > .check-control-box { display: grid; flex: 0 0 1.15rem;
+    width: 1.15rem; height: 1.15rem; margin: 0; }
+  .golden-dialog .golden-enabled-check > .golden-enabled-label { display: inline; margin: 0;
+    font-size: .82rem; color: var(--fg); }
   .golden-dialog-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: .9rem 1.1rem; border-top: 1px solid var(--border); }
   .golden-help { font-size: .7rem; color: var(--muted); line-height: 1.45; }
   @media (max-width: 680px) {
@@ -182,16 +206,30 @@
         <label><span>Ключ профиля</span><input id="golden-slug" name="slug" required placeholder="redos8" pattern="[a-z0-9][a-z0-9._-]{0,63}"></label>
       </div>
       <div class="golden-dialog-grid">
-        <label><span>Семейство ОС</span>
-          <input id="golden-os" name="os" list="golden-os-tags" required
-                 maxlength="32" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{0,31}"
-                 placeholder="redos8, astra, ubuntu…" autocomplete="off"
-                 oninput="syncGoldenCredentials()">
-          <datalist id="golden-os-tags">
-            {% for tag in os_tags %}<option value="{{ tag }}"></option>{% endfor %}
-          </datalist>
-          <span class="golden-help">Выберите существующий тег или введите новый. Регистр нормализуется при сохранении.</span>
-        </label>
+        <div class="golden-os-field">
+          <label for="golden-os" class="golden-field-label">Семейство ОС</label>
+          <div class="golden-os-combobox" id="golden-os-combobox">
+            <input id="golden-os" name="os" type="text" required
+                   maxlength="32" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]{0,31}"
+                   placeholder="redos8, astra, ubuntu…" autocomplete="off"
+                   role="combobox" aria-autocomplete="list" aria-expanded="false"
+                   aria-controls="golden-os-options" aria-haspopup="listbox"
+                   oninput="filterGoldenOsOptions(true)"
+                   onkeydown="handleGoldenOsKeydown(event)">
+            <button type="button" class="golden-os-toggle" aria-label="Показать семейства ОС"
+                    aria-controls="golden-os-options" aria-expanded="false"
+                    onclick="toggleGoldenOsOptions()"><i class="ti ti-chevron-down"></i></button>
+            <div id="golden-os-options" class="golden-os-options" role="listbox" hidden>
+              {% for tag in os_tags %}
+              <button type="button" class="golden-os-option" role="option"
+                      id="golden-os-option-{{ loop.index }}" data-value="{{ tag }}"
+                      aria-selected="false" onclick="chooseGoldenOs(this.dataset.value)">{{ tag }}</button>
+              {% endfor %}
+              <div id="golden-os-empty" class="golden-os-empty" hidden>Новый тег будет сохранён вместе с профилем</div>
+            </div>
+          </div>
+          <p class="golden-help golden-os-hint">Выбери тег из списка или введи новый.</p>
+        </div>
         <label><span>Подключение</span><select id="golden-connection" name="connection" onchange="syncGoldenTemplates()">{% for c in connections %}<option value="{{ c.slug }}">{{ c.label }} · {{ c.backend }}</option>{% endfor %}</select></label>
         <label><span>Template</span>
           <select id="golden-vmid" name="vm_id" required {% if not templates_available %}disabled{% endif %}>
@@ -211,10 +249,10 @@
         </select>
       </label>
       <div id="golden-credential-help" class="golden-help"></div>
-      <label class="check-control">
+      <label class="check-control golden-enabled-check">
         <input id="golden-enabled" type="checkbox" name="enabled" checked>
-        <span class="check-control-box"></span>
-        <span>Профиль доступен для provision</span>
+        <span class="check-control-box" aria-hidden="true"></span>
+        <span class="golden-enabled-label">Профиль доступен для provision</span>
       </label>
       <div class="golden-help"><i class="ti ti-info-circle mr-1"></i>Node, datastore, disk interface, размер системного диска, CPU и RAM не сохраняются. Они всегда берутся из выбранного template в момент запуска.</div>
     </div>
@@ -228,6 +266,77 @@
 
 {% block scripts %}
 <script>
+  function setGoldenOsOptionsOpen(open) {
+    const popup = document.getElementById('golden-os-options');
+    const input = document.getElementById('golden-os');
+    const toggle = document.querySelector('#golden-os-combobox .golden-os-toggle');
+    popup.hidden = !open;
+    input.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-expanded', String(open));
+  }
+
+  function filterGoldenOsOptions(open = false) {
+    const value = document.getElementById('golden-os').value.trim().toLowerCase();
+    let visible = 0;
+    document.querySelectorAll('.golden-os-option').forEach(option => {
+      const matches = option.dataset.value.toLowerCase().includes(value);
+      option.hidden = !matches;
+      option.setAttribute('aria-selected', String(matches && option.dataset.value.toLowerCase() === value));
+      if (matches) visible++;
+    });
+    const empty = document.getElementById('golden-os-empty');
+    empty.hidden = !value || visible > 0;
+    syncGoldenCredentials();
+    if (open) setGoldenOsOptionsOpen(true);
+  }
+
+  function toggleGoldenOsOptions() {
+    const popup = document.getElementById('golden-os-options');
+    const open = popup.hidden;
+    if (open) filterGoldenOsOptions(false);
+    setGoldenOsOptionsOpen(open);
+    if (open) document.getElementById('golden-os').focus();
+  }
+
+  function chooseGoldenOs(tag) {
+    document.getElementById('golden-os').value = tag;
+    setGoldenOsOptionsOpen(false);
+    syncGoldenCredentials();
+    document.getElementById('golden-os').focus();
+  }
+
+  function handleGoldenOsKeydown(event) {
+    if (event.key === 'Escape') {
+      setGoldenOsOptionsOpen(false);
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      filterGoldenOsOptions(true);
+      const first = Array.from(document.querySelectorAll('.golden-os-option')).find(o => !o.hidden);
+      if (first) first.focus();
+    } else if (event.key === 'Enter' && !document.getElementById('golden-os-options').hidden) {
+      // Accept manually typed tags; form submit stays in the Save button.
+      event.preventDefault();
+      setGoldenOsOptionsOpen(false);
+    }
+  }
+
+  document.getElementById('golden-os-options').addEventListener('keydown', (event) => {
+    const options = Array.from(document.querySelectorAll('.golden-os-option')).filter(o => !o.hidden);
+    const current = options.indexOf(document.activeElement);
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setGoldenOsOptionsOpen(false);
+      document.getElementById('golden-os').focus();
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (options.length) options[(current + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length].focus();
+    }
+  });
+
+  document.getElementById('golden-dialog').addEventListener('click', event => {
+    if (!event.target.closest('#golden-os-combobox')) setGoldenOsOptionsOpen(false);
+  });
+
   function syncGoldenTemplates(wanted = '') {
     const connection = document.getElementById('golden-connection').value;
     const select = document.getElementById('golden-vmid');
@@ -264,6 +373,7 @@
     document.getElementById('golden-label').value = '';
     document.getElementById('golden-slug').value = '';
     document.getElementById('golden-os').value = 'redos8';
+    setGoldenOsOptionsOpen(false);
     document.getElementById('golden-vmid').value = '';
     document.getElementById('golden-credential').value = '';
     document.getElementById('golden-enabled').checked = true;
@@ -279,6 +389,7 @@
     document.getElementById('golden-label').value = button.dataset.label;
     document.getElementById('golden-slug').value = button.dataset.slug;
     document.getElementById('golden-os').value = button.dataset.os;
+    setGoldenOsOptionsOpen(false);
     document.getElementById('golden-connection').value = button.dataset.connection;
     syncGoldenTemplates(button.dataset.vmid);
     document.getElementById('golden-enabled').checked = button.dataset.enabled === '1';
