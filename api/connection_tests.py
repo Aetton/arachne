@@ -9,6 +9,7 @@ import logging
 import ssl
 import socket
 import os
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
@@ -29,7 +30,7 @@ def _endpoint(value: str) -> str:
 
 def _probe(url: str, *, headers=None, auth=None, verify=True) -> dict:
     try:
-        with httpx.Client(timeout=8, verify=verify, follow_redirects=False, trust_env=False) as client:
+        with httpx.Client(timeout=15, verify=verify, follow_redirects=False) as client:
             response = client.get(url, headers=headers, auth=auth)
         status = response.status_code
         if status in (401, 403):
@@ -42,16 +43,25 @@ def _probe(url: str, *, headers=None, auth=None, verify=True) -> dict:
     except httpx.ConnectTimeout:
         return {"ok": False, "stage": "tcp", "detail": "Connection timeout"}
     except httpx.ConnectError as exc:
+        _logger.exception("Connection probe transport failed")
         cause = exc
-        while getattr(cause, "__cause__", None) is not None:
-            cause = cause.__cause__
-        if isinstance(cause, socket.gaierror):
+        seen = set()
+        chain = []
+        while cause is not None and id(cause) not in seen:
+            seen.add(id(cause))
+            chain.append(cause)
+            cause = cause.__cause__ or cause.__context__
+        description = " ".join(str(item).lower() for item in chain)
+        if any(isinstance(item, socket.gaierror) for item in chain) or "name resolution" in description or "getaddrinfo" in description:
             return {"ok": False, "stage": "dns", "detail": "DNS resolution failed"}
-        if isinstance(cause, (ssl.SSLError, ssl.SSLCertVerificationError)):
-            return {"ok": False, "stage": "tls", "detail": "TLS handshake or certificate validation failed"}
-        if isinstance(cause, ConnectionRefusedError):
+        if any(isinstance(item, ssl.SSLError) for item in chain) or any(
+            term in description for term in ("certificate verify failed", "ssl:", "tlsv1", "self-signed certificate")
+        ):
+            return {"ok": False, "stage": "tls", "detail": "TLS verification/handshake failed; check internal CA"}
+        if any(isinstance(item, ConnectionRefusedError) for item in chain) or "connection refused" in description:
             return {"ok": False, "stage": "tcp", "detail": "Connection refused"}
-        return {"ok": False, "stage": "network", "detail": "Unable to connect; check DNS, TCP and TLS"}
+        # Do not echo the raw exception text: it can contain an authenticated URL.
+        return {"ok": False, "stage": "network", "detail": f"Connection failed ({type(chain[-1]).__name__}); see API logs"}
     except httpx.TimeoutException:
         return {"ok": False, "stage": "timeout", "detail": "API request timed out"}
     except httpx.HTTPError as exc:
@@ -66,16 +76,21 @@ def hypervisor(backend: str, endpoint: str, credential_slug: str, insecure: bool
         if secret.kind != "token" or not secret.values.get("token"):
             raise ValueError("Proxmox requires a token credential")
         base = url.removesuffix("/api2/json")
+        ca_file = os.getenv("SSL_CERT_FILE", "").strip()
+        verify = False if insecure else (ca_file if ca_file and Path(ca_file).is_file() else True)
         return _probe(base + "/api2/json/cluster/resources?type=vm",
                       headers={"Authorization": "PVEAPIToken=" + str(secret.values["token"])},
-                      verify=not insecure)
+                      verify=verify)
     if backend == "ovirt":
         if secret.kind != "basic" or not secret.username or not secret.values.get("password"):
             raise ValueError("oVirt requires a username and password")
+        verify = False if insecure else ssl.create_default_context(
+            cafile=os.getenv("SSL_CERT_FILE", "").strip() or None
+        )
         return _probe(url.rstrip("/") + "/templates",
                       headers={"Accept": "application/json"},
                       auth=(secret.username, str(secret.values["password"])),
-                      verify=not insecure)
+                      verify=verify)
     raise ValueError("Unsupported hypervisor backend")
 
 
