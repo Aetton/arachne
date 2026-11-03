@@ -9,10 +9,13 @@
   <form class="surface infrastructure-card" method="post" action="/admin/infrastructure/save">
     <div class="font-semibold">{{ c.label }} · {{ c.backend }} · {{ c.slug }}</div>
     <input type="hidden" name="slug" value="{{ c.slug }}"><input type="hidden" name="backend" value="{{ c.backend }}">
-    <label>Адрес API <input name="endpoint" type="url" value="{{ c.endpoint }}" autocomplete="url" required></label>
+    <label>Адрес API <input name="endpoint" type="url" value="{{ c.endpoint }}" required></label>
     <label>Название <input name="label" value="{{ c.label }}" required></label>
     <label>Credential <select name="credential_slug" required>{% for s in credentials %}{% if (c.backend == 'proxmox' and s.kind == 'token') or (c.backend == 'ovirt' and s.kind == 'basic') %}<option value="{{ s.slug }}" {% if s.slug == c.credential_slug %}selected{% endif %}>{{ s.label }} · {{ s.slug }}</option>{% endif %}{% endfor %}</select></label>
     <label class="native-check"><input type="checkbox" name="enabled" {% if c.enabled %}checked{% endif %}> Разрешить новые ВМ</label>
+    <input type="hidden" name="ca_action" value="keep">
+    <textarea name="ca_pem" hidden></textarea>
+    <div class="flex items-center gap-2 flex-wrap"><button type="button" class="btn-ghost" onclick="openCaDialog(this)">CA certificate</button><span class="ca-state muted text-xs" data-initial="{{ 'configured' if c is defined and c.has_ca else 'none' }}">{{ 'Сертификат установлен' if c is defined and c.has_ca else 'Системные CA' }}</span></div>
     <label class="native-check"><input type="checkbox" name="insecure" {% if c.insecure %}checked{% endif %}> Отключить проверку TLS</label>
     <div class="flex gap-2 flex-wrap items-center"><button class="btn" type="submit">Сохранить</button><button class="btn-ghost" type="button" onclick="testInfrastructure(this)">Test Connection</button><span class="connection-test-status muted text-xs" role="status" aria-live="polite"></span></div>
   </form>
@@ -26,13 +29,70 @@
     <label>Адрес API <input name="endpoint" type="url" placeholder="https://engine/ovirt-engine/api" required></label>
     <label>Credential <select name="credential_slug" id="connection-credential" required><option value="">Выбрать…</option>{% for s in credentials %}<option value="{{ s.slug }}" data-kind="{{ s.kind }}">{{ s.label }} · {{ s.kind }}</option>{% endfor %}</select></label>
     <label class="native-check"><input type="checkbox" name="enabled" checked> Разрешить новые ВМ</label>
+    <input type="hidden" name="ca_action" value="keep">
+    <textarea name="ca_pem" hidden></textarea>
+    <div class="flex items-center gap-2 flex-wrap"><button type="button" class="btn-ghost" onclick="openCaDialog(this)">CA certificate</button><span class="ca-state muted text-xs" data-initial="none">Системные CA</span></div>
     <label class="native-check"><input type="checkbox" name="insecure"> Отключить проверку TLS</label>
     <div class="flex gap-2 flex-wrap items-center"><button class="btn" type="submit">Добавить</button><button class="btn-ghost" type="button" onclick="testInfrastructure(this)">Test Connection</button><span class="connection-test-status muted text-xs" role="status" aria-live="polite"></span></div>
   </form>
   {% endif %}
 </div>
+<dialog id="hypervisor-ca-dialog" style="width:min(42rem,calc(100vw - 32px));max-height:80vh;border:1px solid var(--border);border-radius:12px;padding:1.25rem;background:var(--surface);color:var(--text)">
+  <h2 class="font-semibold mb-2">CA-сертификат подключения</h2>
+  <p class="muted text-sm mb-3">Добавьте PEM сертификат корневого или промежуточного CA. Можно выбрать .pem/.crt/.cer либо вставить текст. Приватные ключи не принимаются. Изменение вступит в силу после «Сохранить».</p>
+  <label class="grid gap-1 mb-3">Файл CA <input type="file" id="ca-file" accept=".pem,.crt,.cer,text/plain,application/x-pem-file"></label>
+  <label class="grid gap-1">PEM bundle <textarea id="ca-editor" rows="9" style="width:100%;font-family:monospace" placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+  <p class="muted text-xs my-2" id="ca-help"></p>
+  <div class="flex flex-wrap gap-2 mt-3">
+    <button type="button" class="btn" onclick="applyCaDialog()">Применить PEM</button>
+    <button type="button" class="btn-ghost" onclick="clearCaDialog()">Удалить CA</button>
+    <button type="button" class="btn-ghost" onclick="document.getElementById('hypervisor-ca-dialog').close()">Отмена</button>
+  </div>
+</dialog>
 {% endblock %}
 {% block scripts %}<script>
+let currentCaForm = null;
+function openCaDialog(button) {
+  currentCaForm = button.closest('form');
+  const action = currentCaForm.elements.namedItem('ca_action').value;
+  const pem = currentCaForm.elements.namedItem('ca_pem').value;
+  document.getElementById('ca-editor').value = action === 'replace' ? pem : '';
+  document.getElementById('ca-file').value = '';
+  document.getElementById('ca-help').textContent =
+    action === 'replace' ? 'Выбран новый CA, но он ещё не сохранён.' :
+    currentCaForm.querySelector('.ca-state').dataset.initial === 'configured' ?
+      'Сохранённый CA уже привязан к подключению. Для замены выберите новый файл.' :
+      'Сейчас используется системное хранилище доверия.';
+  document.getElementById('hypervisor-ca-dialog').showModal();
+}
+document.getElementById('ca-file').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  if (file.size > 131072) {
+    document.getElementById('ca-help').textContent = 'Файл больше 128 KiB';
+    return;
+  }
+  document.getElementById('ca-editor').value = await file.text();
+  document.getElementById('ca-help').textContent = file.name + ' загружен в форму';
+});
+function applyCaDialog() {
+  const pem = document.getElementById('ca-editor').value.trim();
+  if (!pem.includes('-----BEGIN CERTIFICATE-----') || pem.includes('PRIVATE KEY')) {
+    document.getElementById('ca-help').textContent = 'Нужен PEM сертификат без приватного ключа';
+    return;
+  }
+  currentCaForm.elements.namedItem('ca_action').value = 'replace';
+  currentCaForm.elements.namedItem('ca_pem').value = pem;
+  currentCaForm.elements.namedItem('insecure').checked = false;
+  currentCaForm.querySelector('.ca-state').textContent = 'Новый CA (не сохранён)';
+  document.getElementById('hypervisor-ca-dialog').close();
+}
+function clearCaDialog() {
+  currentCaForm.elements.namedItem('ca_action').value = 'clear';
+  currentCaForm.elements.namedItem('ca_pem').value = '';
+  currentCaForm.querySelector('.ca-state').textContent = 'CA будет удалён при сохранении';
+  document.getElementById('hypervisor-ca-dialog').close();
+}
 function filterCredentials() {
   const backend = document.getElementById('connection-backend');
   if (!backend) return;

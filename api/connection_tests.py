@@ -16,6 +16,7 @@ import httpx
 
 from secrets_store import resolve_credential, VaultSecretProvider, DatabaseSecretProvider
 from service_credentials import SERVICE_SPECS
+from infrastructure_connections import get_ca_pem, tls_verify, _validate_ca_pem
 
 _logger = logging.getLogger(__name__)
 
@@ -69,24 +70,32 @@ def _probe(url: str, *, headers=None, auth=None, verify=True) -> dict:
         return {"ok": False, "stage": "http", "detail": f"HTTP client error: {type(exc).__name__}"}
 
 
-def hypervisor(backend: str, endpoint: str, credential_slug: str, insecure: bool) -> dict:
+def hypervisor(backend: str, endpoint: str, credential_slug: str, insecure: bool, *,\n               slug: str = "", ca_action: str = "keep", ca_pem: str = "") -> dict:
     url = _endpoint(endpoint)
     secret = resolve_credential(credential_slug)
+    if ca_action == "replace":
+        ca = _validate_ca_pem(ca_pem)
+    elif ca_action == "clear":
+        ca = ""
+    elif ca_action == "keep":
+        try:
+            ca = get_ca_pem(slug, backend) if slug else ""
+        except ValueError:
+            ca = ""  # Unsaved connection: use system trust
+    else:
+        raise ValueError("Invalid CA action")
     if backend == "proxmox":
         if secret.kind != "token" or not secret.values.get("token"):
             raise ValueError("Proxmox requires a token credential")
         base = url.removesuffix("/api2/json")
-        ca_file = os.getenv("SSL_CERT_FILE", "").strip()
-        verify = False if insecure else (ca_file if ca_file and Path(ca_file).is_file() else True)
+        verify = tls_verify(insecure, ca)
         return _probe(base + "/api2/json/cluster/resources?type=vm",
                       headers={"Authorization": "PVEAPIToken=" + str(secret.values["token"])},
                       verify=verify)
     if backend == "ovirt":
         if secret.kind != "basic" or not secret.username or not secret.values.get("password"):
             raise ValueError("oVirt requires a username and password")
-        verify = False if insecure else ssl.create_default_context(
-            cafile=os.getenv("SSL_CERT_FILE", "").strip() or None
-        )
+        verify = tls_verify(insecure, ca, ovirt=True)
         return _probe(url.rstrip("/") + "/templates",
                       headers={"Accept": "application/json"},
                       auth=(secret.username, str(secret.values["password"])),

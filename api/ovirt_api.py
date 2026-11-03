@@ -5,15 +5,15 @@ import ipaddress
 import ssl
 from uuid import UUID
 import httpx
-from infrastructure_connections import execution_env
+from infrastructure_connections import execution_env, get_ca_pem, tls_verify
 
 
 def _client(connection):
     env = execution_env(connection, "ovirt")
-    verify = (
-        False
-        if env["TF_VAR_ovirt_insecure"] == "true"
-        else ssl.create_default_context(cafile=env["TF_VAR_ovirt_ca_file"] or None)
+    verify = tls_verify(
+        env["TF_VAR_ovirt_insecure"] == "true",
+        get_ca_pem(connection, "ovirt"),
+        ovirt=True,
     )
     return httpx.Client(
         base_url=env["TF_VAR_ovirt_url"].rstrip("/") + "/",

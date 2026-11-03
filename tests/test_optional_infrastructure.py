@@ -71,24 +71,48 @@ class ConnectionsTests(unittest.TestCase):
             self.assertEqual(c["TF_VAR_ovirt_password"], "o1-password")
             connections.save_connection(
                 slug="p1",
-                label="Updated Proxmox",
+                label="p1 edited",
                 backend="proxmox",
-                endpoint="https://new-proxmox.example:8006/api2/json",
+                endpoint="https://other:8006/api2/json",
                 credential_slug="p1",
             )
-            changed = connections.get_connection("p1", "proxmox")
-            self.assertEqual(changed["endpoint"], "https://new-proxmox.example:8006/api2/json")
-            self.assertEqual(changed["slug"], "p1")
+            self.assertEqual(
+                connections.get_connection("p1", "proxmox")["endpoint"],
+                "https://other:8006/api2/json",
+            )
             with self.assertRaisesRegex(ValueError, "immutable"):
                 connections.save_connection(
                     slug="p1",
-                    label="cannot change backend",
+                    label="p1",
                     backend="ovirt",
-                    endpoint="https://new-proxmox.example/api",
+                    endpoint="https://other",
                     credential_slug="o1",
                 )
         self.assertEqual(before, dict(os.environ))
         self.assertNotIn("p1-secret", json.dumps(connections.list_connections()))
+
+    def test_ca_bundle_is_saved_and_not_exposed(self):
+        sample = """-----BEGIN CERTIFICATE-----
+MIIB
+-----END CERTIFICATE-----"""
+        self.save("p1")
+        with patch.object(connections, "resolve_credential", side_effect=token):
+            with patch.object(connections, "_validate_ca_pem", return_value=sample):
+                connections.save_connection(
+                    slug="p1", label="p1", backend="proxmox",
+                    endpoint="https://p1.example/api",
+                    credential_slug="p1", ca_action="replace", ca_pem=sample,
+                )
+            self.assertEqual(connections.get_ca_pem("p1", "proxmox"), sample)
+            data = connections.list_connections()[0]
+            self.assertTrue(data["has_ca"])
+            self.assertNotIn("ca_pem", data)
+            connections.save_connection(
+                slug="p1", label="p1", backend="proxmox",
+                endpoint="https://p1.example/api",
+                credential_slug="p1", ca_action="clear",
+            )
+            self.assertFalse(connections.get_ca_pem("p1", "proxmox"))
 
     def test_disabled_connection_still_allows_cleanup(self):
         self.save("p1", enabled=False)
