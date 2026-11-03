@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Arachne{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg?v=1">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
@@ -11,7 +12,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/nord.min.css">
   <link rel="stylesheet" href="/static/css/themes.css">
   <link rel="stylesheet" href="/static/css/monospace.css">
-  <link rel="stylesheet" href="/static/css/arachne.css?v=8">
+  <link rel="stylesheet" href="/static/css/arachne.css?v=9">
   <link rel="stylesheet" href="/static/css/typography.css?v=1">
   <link rel="stylesheet" href="/static/css/organic-web.css?v=1">
   <link rel="stylesheet" href="/static/css/log-viewer.css?v=2">
@@ -60,7 +61,7 @@
   {% if user %}
   <nav class="app-nav">
     <div class="app-nav-left">
-      <a href="/" class="brand" aria-label="Arachne dashboard"><span class="brand-mark"><i class="ti ti-spider"></i></span><span class="brand-word">ARACHNE</span></a>
+      <a href="/" class="brand" aria-label="Arachne dashboard"><img class="brand-wordmark" src="/static/img/arachne-wordmark.svg?v=1" alt="ARACHNE" width="156" height="16"></a>
       <div class="app-nav-links">
         <a href="/" class="nav-link" {% if request.url.path == "/" %}aria-current="page"{% endif %}>Web</a>
         <a href="/journal" class="nav-link" {% if request.url.path.startswith("/journal") %}aria-current="page"{% endif %}>Журнал запусков</a>
