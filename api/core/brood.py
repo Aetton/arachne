@@ -44,7 +44,7 @@ def build_brood_target_metadata(
             "ref": credentials_ref,
         }
 
-    family = "windows" if os_name == "windows" else "linux"
+    family = "windows" if str(os_name).lower().startswith("windows") else "linux"
     return {
         "contract": BROOD_TARGET_CONTRACT,
         "identity": {
