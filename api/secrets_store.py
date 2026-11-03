@@ -380,6 +380,17 @@ def save_credential(*, original_slug: str = "", slug: str, label: str, kind: str
         row = None
         if original_slug:
             row = db.query(CredentialRow).filter(CredentialRow.slug == original_slug).first()
+            if row is None:
+                raise ValueError(f"Credential '{original_slug}' no longer exists")
+            # Binding references are slug-based; the provider/ref identifies the
+            # actual secret. Reassigning any of these without a migration would
+            # strand credentials or point a binding at missing secret material.
+            if (slug != row.slug or provider.id != row.provider_id
+                    or secret_ref != row.secret_ref or kind != row.kind):
+                raise ValueError(
+                    "Credential key, type and storage location cannot be changed in place. "
+                    "Create a new credential and rebind consumers."
+                )
         conflict = db.query(CredentialRow).filter(CredentialRow.slug == slug).first()
         if conflict and (row is None or conflict.id != row.id):
             raise ValueError(f"Credential '{slug}' already exists")
