@@ -44,7 +44,7 @@ class TestConnectionProbes(unittest.TestCase):
         args, kwargs = probe.call_args
         self.assertEqual(args[0], "https://engine/ovirt-engine/api/templates")
         self.assertEqual(kwargs["auth"], ("admin@internal", "private"))
-        self.assertTrue(kwargs["verify"])
+        self.assertIsInstance(kwargs["verify"], __import__("ssl").SSLContext)
 
     @patch.object(probes, "_probe")
     @patch.object(probes, "resolve_credential")
@@ -54,6 +54,24 @@ class TestConnectionProbes(unittest.TestCase):
             probes.service("forgejo", "forgejo-cred")
         self.assertEqual(probe.call_args.args[0], "https://git.example/api/v1/user")
         self.assertEqual(probe.call_args.kwargs["headers"]["Authorization"], "token secret")
+
+    @patch.object(probes, "resolve_credential")
+    @patch.object(probes, "_probe")
+    def test_proxmox_respects_internal_ca(self, probe, resolve):
+        resolve.return_value = SimpleNamespace(
+            kind="token", username="", values={"token": "secret-token"}
+        )
+        with patch.dict(os.environ, {"SSL_CERT_FILE": __file__}):
+            probes.hypervisor("proxmox", "https://pve:8006", "cred", False)
+        self.assertEqual(probe.call_args.kwargs["verify"], __file__)
+
+    @patch.object(probes.httpx, "Client")
+    def test_probe_preserves_httpx_environment(self, client):
+        response = SimpleNamespace(status_code=200)
+        client.return_value.__enter__.return_value.get.return_value = response
+        result = probes._probe("https://example.internal/api")
+        self.assertTrue(result["ok"])
+        self.assertNotIn("trust_env", client.call_args.kwargs)
 
     @patch.object(probes, "_probe")
     @patch.object(probes, "VaultSecretProvider")
