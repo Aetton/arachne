@@ -73,6 +73,38 @@ class TestConnectionProbes(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertNotIn("trust_env", client.call_args.kwargs)
 
+    @patch.object(probes, "resolve_credential")
+    @patch.object(probes, "_probe")
+    @patch.object(probes, "_validate_ca_pem", return_value="validated PEM")
+    @patch.object(probes, "tls_verify", return_value="custom-context")
+    def test_unsaved_ca_used_in_probe(self, verify, validate, probe, resolve):
+        resolve.return_value = SimpleNamespace(
+            kind="token", username="", values={"token": "secret"}
+        )
+        probes.hypervisor(
+            "proxmox", "https://pve:8006", "cred", False,
+            slug="new", ca_action="replace", ca_pem="PEM",
+        )
+        validate.assert_called_once_with("PEM")
+        verify.assert_called_once_with(False, "validated PEM")
+        self.assertEqual(probe.call_args.kwargs["verify"], "custom-context")
+
+    @patch.object(probes, "resolve_credential")
+    @patch.object(probes, "_probe")
+    @patch.object(probes, "get_ca_pem", return_value="saved PEM")
+    @patch.object(probes, "tls_verify", return_value="saved-context")
+    def test_saved_ca_used_in_probe(self, verify, stored, probe, resolve):
+        resolve.return_value = SimpleNamespace(
+            kind="basic", username="admin@internal", values={"password": "secret"}
+        )
+        probes.hypervisor(
+            "ovirt", "https://engine/ovirt-engine/api", "cred", False,
+            slug="engine", ca_action="keep",
+        )
+        stored.assert_called_once_with("engine", "ovirt")
+        verify.assert_called_once_with(False, "saved PEM", ovirt=True)
+        self.assertEqual(probe.call_args.kwargs["verify"], "saved-context")
+
     @patch.object(probes, "_probe")
     @patch.object(probes, "VaultSecretProvider")
     def test_vault_checks_token_auth_not_public_health(self, vault, probe):
