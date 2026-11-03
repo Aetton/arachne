@@ -20,6 +20,7 @@ services:
     environment:
       DATABASE_URL: "postgresql+psycopg://arachne:${POSTGRES_PASSWORD}@db:5432/arachne"
       JWT_SECRET: "${JWT_SECRET}"
+      NATS_URL: "${NATS_URL:-nats://nats:4222}"
       # Enables admin-triggered restart of this single-worker container.
       # Requires Docker restart: unless-stopped and Python as PID 1.
       ARACHNE_SELF_RESTART_ENABLED: "true"
@@ -44,6 +45,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      nats:
+        condition: service_started
 
   db:
     image: postgres:16-alpine
@@ -65,7 +68,6 @@ services:
   nats:
     image: nats:2-alpine
     container_name: arachne-nats
-    profiles: ["nats"]
     restart: unless-stopped
     command: ["-js"]
     ports:
