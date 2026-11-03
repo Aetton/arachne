@@ -103,7 +103,7 @@ def _create_run(run_id: str, scenario_key: str, scenario: dict, params: dict) ->
     db = SessionLocal()
     try:
         stored = scenario_store.get_published(db, scenario_key)
-        db.add(Run(id=run_id, user_id=params.get("__user_id__", 0),
+        db.add(Run(id=run_id, user_id=params.get("__user_id__"),
                    scenario=scenario_key,
                    scenario_version_id=stored[1].id if stored else None,
                    scenario_snapshot=scenario,
