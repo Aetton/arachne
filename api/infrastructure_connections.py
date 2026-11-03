@@ -87,19 +87,26 @@ def tls_verify(insecure: bool, ca_pem: str = "", *, ovirt: bool = False):
     return ca_file if ca_file and Path(ca_file).is_file() else True
 
 
-def _ca_file(slug: str, ca_pem: str) -> str:
+def _ca_file(slug: str, ca_pem: str, *, include_system: bool = False) -> str:
     """Provide an on-demand CA file for OpenTofu without touching system CA."""
     import hashlib
     directory = Path(tempfile.gettempdir()) / f"arachne-ca-{os.getuid()}"
     directory.mkdir(mode=0o700, exist_ok=True)
     directory.chmod(0o700)
-    filename = hashlib.sha256(slug.encode("utf-8")).hexdigest() + ".pem"
+    filename = hashlib.sha256((slug + ("-system" if include_system else "")).encode("utf-8")).hexdigest() + ".pem"
     target = directory / filename
     import secrets
     temp = directory / (filename + "." + secrets.token_hex(8) + ".tmp")
     try:
         with temp.open("x", encoding="utf-8") as handle:
             os.chmod(temp, 0o600)
+            if include_system:
+                system_ca = os.getenv("SSL_CERT_FILE", "").strip()
+                if not system_ca or not Path(system_ca).is_file():
+                    system_ca = ssl.get_default_verify_paths().cafile or ""
+                if system_ca and Path(system_ca).is_file():
+                    handle.write(Path(system_ca).read_text(encoding="utf-8"))
+                    handle.write("\n")
             handle.write(ca_pem)
         os.replace(temp, target)
     finally:
@@ -177,7 +184,8 @@ def execution_env(slug, backend):
         return {}  # Legacy endpoint/token compatibility.
     c = get_connection(slug, backend, require_enabled=False)
     ca_pem = get_ca_pem(slug, backend)
-    ca_file = _ca_file(slug, ca_pem) if ca_pem else os.getenv("SSL_CERT_FILE", "")
+    ca_file = (_ca_file(slug, ca_pem, include_system=backend == "proxmox")
+               if ca_pem else os.getenv("SSL_CERT_FILE", ""))
     secret = resolve_credential(c["credential_slug"])
     if backend == "proxmox":
         if secret.kind != "token" or not secret.values.get("token"):
