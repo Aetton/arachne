@@ -78,7 +78,10 @@ def hypervisor(backend: str, endpoint: str, credential_slug: str, insecure: bool
     elif ca_action == "clear":
         ca = ""
     elif ca_action == "keep":
-        ca = get_ca_pem(slug, backend) if slug else ""
+        try:
+            ca = get_ca_pem(slug, backend) if slug else ""
+        except ValueError:
+            ca = ""  # Unsaved connection: use system trust
     else:
         raise ValueError("Invalid CA action")
     if backend == "proxmox":
