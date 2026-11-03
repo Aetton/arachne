@@ -13,6 +13,7 @@ import asyncio
 import os
 import time
 from typing import AsyncIterator
+from settings_registry import get_numeric
 
 from core.registry import register_spider
 from core.spider import BuildSpider
