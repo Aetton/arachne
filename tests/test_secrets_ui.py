@@ -18,6 +18,7 @@ class SecretsTemplateTests(unittest.TestCase):
     def test_required_forms_keep_existing_backend_contract(self):
         for route in (
             "/admin/secrets/credentials/save",
+            "/admin/secrets/credentials/{{ c.slug }}/delete",
             "/admin/secrets/providers/save",
             "/admin/secrets/bindings/save",
             "/api/admin/secrets/service/test",
