@@ -3,6 +3,13 @@
 {% block content %}
 
 <header class="page-heading"><div><div class="eyebrow">История выполнения</div><h1 class="text-xl font-semibold">Журнал запусков</h1></div><a class="btn-ghost" href="/">К сценариям</a></header>
+<div class="journal-layout">
+  <aside class="journal-rail surface rounded-xl" aria-label="Активные и недавние запуски">
+    <div hx-get="/runs/history" hx-trigger="load, every 3s, runStarted from:body delay:300ms" hx-swap="innerHTML">
+      <p class="muted text-sm">Загружаю запуски…</p>
+    </div>
+  </aside>
+  <section id="workspace" class="journal-main" aria-label="Журнал и подробности запуска">
 <p class="muted">{{ 'Все пользователи' if admin else 'Ваши запуски' }} · найдено {{ total }}</p>
 <form class="journal-filters surface rounded-xl" method="get">
 <label>Кто запускал<select name="actor"><option value="">Все доступные пользователи</option>{% if admin %}<option value="system" {% if actor == 'system' %}selected{% endif %}>Система / расписание</option>{% endif %}{% for person in actors %}<option value="{{ person.id }}" {% if actor == person.id|string %}selected{% endif %}>{{ person.username }}{% if person.full_name %} · {{ person.full_name }}{% endif %}</option>{% endfor %}</select></label>
@@ -23,4 +30,7 @@
 </tbody></table></div>
 <div class="journal-pagination">{% if page > 1 %}<a class="btn-ghost" href="{{ page_url(page-1) }}">← Назад</a>{% else %}<span></span>{% endif %}<span class="muted">Страница {{ page }} из {{ pages }}</span>{% if page < pages %}<a class="btn-ghost" href="{{ page_url(page+1) }}">Далее →</a>{% else %}<span></span>{% endif %}</div>
 <p class="muted text-xs">Группа берётся из снимка сценария на момент запуска; путь подгрупп — из текущего дерева. Для старых запусков без снимка используется текущая группа сценария.</p>
+  </section>
+</div>
 {% endblock %}
+

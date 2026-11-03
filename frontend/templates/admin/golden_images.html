@@ -94,6 +94,16 @@
     .golden-facts { grid-template-columns: 1fr 1fr; }
     .golden-dialog-grid { grid-template-columns: 1fr; }
   }
+
+  .golden-connection-head{display:flex;align-items:center;gap:12px;padding:7px 3px 17px;cursor:pointer;list-style:none}
+  .golden-connection-head::-webkit-details-marker{display:none}
+  .golden-group-chevron{color:var(--muted);transition:transform .15s}
+  .golden-connection-group[open] .golden-group-chevron{transform:rotate(90deg)}
+  .golden-connection-icon{display:grid;place-items:center;width:36px;height:36px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--accent)}
+  .golden-connection-name{display:block;font-size:.94rem;font-weight:600}
+  .golden-connection-meta{display:block;font-size:.7rem;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
+  .golden-connection-count{margin-left:auto;font-size:.7rem;color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:5px 10px;white-space:nowrap}
+  .golden-connection-empty{padding:25px;border:1px dashed var(--border);border-radius:12px;color:var(--muted);text-align:center;font-size:.8rem}
 </style>
 
 <div class="golden-shell">
@@ -124,9 +134,7 @@
   </div>
   {% endif %}
 
-  {% if profiles %}
-  <section class="golden-grid">
-    {% for profile in profiles %}
+{% macro profile_card(profile) %}
     <article class="golden-card {% if not profile.healthy %}unhealthy{% endif %}">
       <div class="golden-card-head">
         <div class="golden-card-name">
@@ -179,8 +187,31 @@
           onclick="editGoldenDialog(this)"><i class="ti ti-settings mr-1"></i> Настроить</button>
       </div>
     </article>
-    {% endfor %}
-  </section>
+{% endmacro %}
+  {% if profiles %}
+  {% set connection_slugs = connections|map(attribute='slug')|list %}
+  {% macro profile_group(group_profiles, label, backend='', endpoint='') %}
+  <details class="golden-connection-group" open>
+    <summary class="golden-connection-head">
+      <i class="ti ti-chevron-right golden-group-chevron" aria-hidden="true"></i>
+      <span class="golden-connection-icon"><i class="ti ti-server"></i></span>
+      <span><span class="golden-connection-name">{{ label }}</span><span class="golden-connection-meta">{{ backend }}{% if endpoint %} · {{ endpoint }}{% endif %}</span></span>
+      <span class="golden-connection-count">Профилей: {{ group_profiles|length }}</span>
+    </summary>
+    <div class="golden-grid">{% for profile in group_profiles %}{{ profile_card(profile) }}{% endfor %}</div>
+    {% if not group_profiles %}<div class="golden-connection-empty">Для этого гипервизора пока нет профилей.</div>{% endif %}
+  </details>
+  {% endmacro %}
+  {% for connection in connections %}
+    {{ profile_group(profiles|selectattr('connection', 'equalto', connection.slug)|list, connection.label, connection.backend, connection.endpoint) }}
+  {% endfor %}
+  {% set unresolved = namespace(keys=[]) %}
+  {% for profile in profiles if profile.connection not in connection_slugs %}
+    {% if profile.connection not in unresolved.keys %}{% set unresolved.keys = unresolved.keys + [profile.connection] %}{% endif %}
+  {% endfor %}
+  {% for key in unresolved.keys %}
+    {{ profile_group(profiles|selectattr('connection', 'equalto', key)|list, 'Недоступное подключение: ' ~ key if key else 'Без гипервизора') }}
+  {% endfor %}
   {% else %}
   <section class="golden-empty">
     <i class="ti ti-diamond-off"></i>

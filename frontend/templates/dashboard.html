@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Web · Arachne{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/css/orb-web.css?v=3">
+<link rel="stylesheet" href="/static/css/orb-web.css?v=4">
 <link rel="stylesheet" href="/static/css/dashboard-split.css?v=2">
 <div class="operator-shell">
   <aside class="operator-column operator-nav">
@@ -10,13 +10,13 @@
         <section class="web-section">
           <div class="web-section-head">
             <div>
-              <div class="eyebrow">Scenario web</div>
+              <div class="eyebrow">Сценарии</div>
             </div>
             <span class="web-count">{{ scenario_groups | map(attribute='count') | sum }}</span>
           </div>
           <div class="scenario-search-shell">
             <i class="ti ti-search"></i>
-            <input id="scenario-search" type="search" placeholder="Search the web…" aria-label="Search scenarios">
+            <input id="scenario-search" type="search" placeholder="Найти сценарий…" aria-label="Найти сценарий">
           </div>
 
           {% macro render_group(group) %}
@@ -52,7 +52,7 @@
           {% endmacro %}
           {% for group in scenario_groups %}{{ render_group(group) }}
           {% else %}
-          <div class="run-empty">No scenarios are available.</div>
+          <div class="run-empty">Доступных сценариев пока нет.</div>
           {% endfor %}
         </section>
       </div>
@@ -73,8 +73,8 @@
         <div class="web-sigil-node">
           <span class="arachne-spider" role="img" aria-label="Arachne"></span>
         </div>
-        <h2>No thread selected</h2>
-        <p>Pick a scenario to spin a new thread.</p>
+        <h2>Сценарий не выбран</h2>
+        <p>Выберите сценарий в списке слева.</p>
       </div>
     </div>
   </section>
@@ -127,5 +127,6 @@
     });
   })();
 </script>
-<script src="/static/js/orb-web.js?v=2"></script>
+<script src="/static/js/orb-web.js?v=3"></script>
 {% endblock %}
+

@@ -274,3 +274,17 @@
   }
   .orb-web-event-impulse { display: none; }
 }
+
+
+/* Match the sigil to the real SVG hub, including after a resize. */
+body .operator-workspace .workspace-orb-web{opacity:1;border-radius:20px}
+body .operator-workspace .workspace-orb-web svg{height:100%;min-height:0;transform:none}
+body .operator-workspace .workspace-empty{position:relative;height:calc(100dvh - 126px);min-height:540px;display:block;background:color-mix(in srgb,var(--surface) 74%,transparent)}
+body .operator-workspace .workspace-empty .web-sigil{position:absolute;inset:0;width:100%;height:100%;max-width:none;margin:0;padding:0;display:block;transform:none}
+body .operator-workspace .workspace-empty .web-sigil-node{position:absolute;left:var(--orb-hub-x);top:var(--orb-hub-y);width:160px;height:182px;margin:0;aspect-ratio:auto;transform:translate(-50%,-50%)}
+body .operator-workspace .workspace-empty h2{position:absolute;left:0;right:0;top:calc(var(--orb-hub-y) + 119px);margin:0;text-align:center;font-size:22px;font-weight:500}
+body .operator-workspace .workspace-empty p{position:absolute;left:15px;right:15px;top:calc(var(--orb-hub-y) + 160px);margin:0;text-align:center;font-size:12px}
+/* Opacity belongs to the surface; text and form controls stay fully opaque. */
+body .operator-workspace .workspace-frame.thread-form{background:color-mix(in srgb,var(--surface) 64%,transparent)}
+body .operator-workspace .thread-field input,body .operator-workspace .thread-field select{background:color-mix(in srgb,var(--bg) 94%,transparent)}
+@media(max-width:680px){body .operator-workspace .workspace-empty{height:540px}body .operator-workspace .workspace-empty .web-sigil-node{width:130px;height:148px}body .operator-workspace .workspace-empty h2{top:calc(var(--orb-hub-y) + 98px);font-size:20px}body .operator-workspace .workspace-empty p{top:calc(var(--orb-hub-y) + 137px)}}

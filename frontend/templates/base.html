@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dracula">
+<html lang="ru" data-theme="dracula">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -56,36 +56,37 @@
     @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
   </style>
   <link rel="stylesheet" href="/static/css/ui-polish.css?v=1">
+  <link rel="stylesheet" href="/static/css/design-refresh.css?v=1">
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen{% if request.url.path.startswith('/admin') %} control-design{% endif %}">
   {% if user %}
   <nav class="app-nav">
     <div class="app-nav-left">
       <a href="/" class="brand" aria-label="Arachne dashboard"><img class="brand-wordmark" src="/static/img/arachne-wordmark.svg?v=2" alt="ARACHNE" width="156" height="16"></a>
       <div class="app-nav-links">
-        <a href="/" class="nav-link" {% if request.url.path == "/" %}aria-current="page"{% endif %}>Web</a>
+        <a href="/" class="nav-link" {% if request.url.path == "/" %}aria-current="page"{% endif %}>Паутина</a>
         <a href="/journal" class="nav-link" {% if request.url.path.startswith("/journal") %}aria-current="page"{% endif %}>Журнал запусков</a>
-        <a href="/wiki/" class="nav-link">Docs</a>
+        <a href="/wiki/" class="nav-link">Документация</a>
         {% if "admin" in (user.roles or []) %}
         <details class="nav-control">
           <summary>Control <i class="ti ti-chevron-down text-xs"></i></summary>
           <div class="nav-control-menu">
-            <a href="/admin/settings" class="nav-link">Settings</a>
-            <a href="/admin/users" class="nav-link">Users</a>
-            <a href="/admin/scenarios" class="nav-link">Scenarios</a>
+            <a href="/admin/settings" class="nav-link">Настройки</a>
+            <a href="/admin/users" class="nav-link">Пользователи</a>
+            <a href="/admin/scenarios" class="nav-link">Сценарии</a>
             <a href="/admin/infrastructure" class="nav-link">Гипервизоры</a>
             <a href="/admin/golden-images" class="nav-link">Golden Images</a>
             <a href="/admin/ansible" class="nav-link">Ansible</a>
-            <a href="/admin/secrets" class="nav-link">Secrets</a>
-            <a href="/admin/secrets/import" class="nav-link">Import dotenv</a>
-            <a href="/admin/rbac" class="nav-link">Access</a>
+            <a href="/admin/secrets" class="nav-link">Секреты</a>
+            <a href="/admin/secrets/import" class="nav-link">Импорт .env</a>
+            <a href="/admin/rbac" class="nav-link">Права доступа</a>
           </div>
         </details>
         {% endif %}
       </div>
     </div>
     <div class="app-nav-right">
-      <select id="theme-select" onchange="setTheme(this.value)" class="theme-select" aria-label="Theme"><option value="dracula">Dracula</option><option value="nord">Nord</option><option value="white">White</option></select>
+      <select id="theme-select" onchange="setTheme(this.value)" class="theme-select" aria-label="Тема оформления"><option value="dracula">Dracula</option><option value="nord">Nord</option><option value="white">Светлая</option></select>
       <span class="user-chip">{{ user.full_name or user.username }}</span>
       <a href="/logout" class="nav-link" title="Logout" aria-label="Выйти"><i class="ti ti-logout"></i></a>
     </div>
