@@ -6,7 +6,9 @@ both machine-consumable Artifacts and user-visible RunOutputs.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
+import traceback
 
 from core.bus import get_bus
 from core import subjects, wire_codec
@@ -14,6 +16,20 @@ from core.types import RunStatus, RunError, RunOutput
 from core.registry import all_spiders, get_spider
 
 _active: dict[str, dict] = {}
+_logger = logging.getLogger(__name__)
+
+
+def _traceback_frames(exc: BaseException) -> str:
+    """Format traceback locations without locals or source lines.
+
+    User-visible logs get frames plus a separate error summary. We avoid
+    rendering exception arguments here because remote URLs can contain secrets.
+    """
+    frames = traceback.format_list(traceback.extract_tb(exc.__traceback__))
+    if not frames:
+        return "(no Python traceback available)"
+    return "".join(line for line in frames if line.lstrip().startswith("File ")) or "".join(frames)
+
 
 
 def _run_key(run_id: str, step_id: str) -> str:
@@ -29,7 +45,9 @@ async def _cancelled_result(spider, handle, log) -> dict:
         try:
             await asyncio.to_thread(spider.cancel, handle)
         except Exception as exc:  # noqa: BLE001
+            _logger.exception("Cancel cleanup failed")
             await log(f"cancel cleanup error: {exc}", "stderr")
+            await log(_traceback_frames(exc), "stderr")
     artifacts, outputs = [], []
     if handle is not None and getattr(spider, "PRESERVE_CANCEL_ARTIFACTS", False):
         artifacts = [wire_codec.artifact_to_dict(a) for a in spider.get_artifacts(handle)]
@@ -59,7 +77,9 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
         try:
             handle = await asyncio.to_thread(spider.dispatch, step, context)
         except Exception as exc:  # noqa: BLE001
+            _logger.exception("Spider dispatch failed: spider=%s step=%s run=%s", step.spider, step.id, run_id)
             await log(f"PORTAL ERROR dispatching {step.id}: {exc}", "stderr")
+            await log(_traceback_frames(exc), "stderr")
             return {
                 "status": RunStatus.FAILED.value,
                 "handle": None,
@@ -110,6 +130,19 @@ async def _execute(spider, step, run_id: str, emit_log, context: dict) -> dict:
         return result
     except asyncio.CancelledError:
         return await _cancelled_result(spider, handle, log)
+    except Exception as exc:  # noqa: BLE001
+        _logger.exception("Spider execution failed: spider=%s step=%s run=%s", step.spider, step.id, run_id)
+        await log(f"PORTAL ERROR executing {step.id}: {exc}", "stderr")
+        await log(_traceback_frames(exc), "stderr")
+        return {
+            "status": RunStatus.FAILED.value,
+            "handle": wire_codec.handle_to_dict(handle) if handle is not None else None,
+            "artifacts": [],
+            "outputs": [],
+            "error": RunError(
+                "ExecutionError", str(exc), {"step": step.id, "spider": step.spider}
+            ).to_dict(),
+        }
 
 
 def _make_run_responder(expected_kind: str):
