@@ -12,10 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
 _tmp = tempfile.TemporaryDirectory()
 os.environ["DATABASE_URL"] = "sqlite:///" + _tmp.name + "/secrets-delete.db"
 
-from database import Base, SessionLocal, engine
+from database import Base, SessionLocal, engine, ManagedMachine
 import secrets_store as secrets
 from service_credentials import ServiceCredentialBinding
 from infrastructure_connections import InfrastructureConnection
+from golden_images import GoldenImageProfile
 
 Base.metadata.create_all(engine)
 
@@ -25,6 +26,8 @@ class CredentialDeletionTests(unittest.TestCase):
         with SessionLocal() as db:
             db.query(ServiceCredentialBinding).delete()
             db.query(InfrastructureConnection).delete()
+            db.query(GoldenImageProfile).delete()
+            db.query(ManagedMachine).delete()
             db.query(secrets.CredentialRow).delete()
             db.query(secrets.SecretProviderRow).delete()
             db.commit()
@@ -43,6 +46,33 @@ class CredentialDeletionTests(unittest.TestCase):
                 provider_id=self.provider_id, secret_ref=ref, metadata_json="{}",
             ))
             db.commit()
+
+    def test_edit_cannot_silently_repoint_secret_or_break_bindings(self):
+        self.credential("ovirt-admin")
+        base = dict(
+            original_slug="ovirt-admin", slug="ovirt-admin",
+            label="Updated login", kind="basic", username="admin@internal",
+            provider_slug="local", secret_ref="credentials/shared",
+            metadata={}, secret_updates={"password": "new-secret"},
+        )
+        cases = (
+            {"slug": "renamed"},
+            {"secret_ref": "credentials/new"},
+            {"kind": "token"},
+        )
+        with patch.object(secrets, "provider_instance", return_value=self.backend):
+            for modification in cases:
+                with self.subTest(modification=modification), self.assertRaisesRegex(ValueError, "cannot be changed in place"):
+                    secrets.save_credential(**(base | modification))
+            with self.assertRaisesRegex(ValueError, "no longer exists"):
+                secrets.save_credential(**(base | {"original_slug": "not-here"}))
+            # Editing ordinary details and replacing secret material still works.
+            self.backend.get.return_value = {"password": "old"}
+            updated = secrets.save_credential(**base)
+        self.assertEqual(updated["slug"], "ovirt-admin")
+        self.backend.put.assert_called_once_with(
+            "credentials/shared", {"password": "new-secret"}
+        )
 
     def test_unused_credential_deletes_record_and_secret(self):
         self.credential("unused")
@@ -75,6 +105,32 @@ class CredentialDeletionTests(unittest.TestCase):
         with patch.object(secrets, "provider_instance", return_value=self.backend):
             with self.assertRaisesRegex(ValueError, "hypervisors: engine"):
                 secrets.delete_credential("ovirt")
+        self.backend.delete.assert_not_called()
+
+    def test_golden_image_prevents_deletion(self):
+        self.credential("template-ssh")
+        with SessionLocal() as db:
+            db.add(GoldenImageProfile(
+                slug="golden", label="Golden", os="redos8", vm_id=101,
+                backend="proxmox", credentials_ref="template-ssh",
+            ))
+            db.commit()
+        with patch.object(secrets, "provider_instance", return_value=self.backend):
+            with self.assertRaisesRegex(ValueError, "golden images: golden"):
+                secrets.delete_credential("template-ssh")
+        self.backend.delete.assert_not_called()
+
+    def test_active_machine_prevents_deletion(self):
+        self.credential("target-access")
+        with SessionLocal() as db:
+            db.add(ManagedMachine(
+                name="build-01", backend="tofu-proxmox",
+                credentials_ref="target-access", state="ready",
+            ))
+            db.commit()
+        with patch.object(secrets, "provider_instance", return_value=self.backend):
+            with self.assertRaisesRegex(ValueError, "active machines: build-01"):
+                secrets.delete_credential("target-access")
         self.backend.delete.assert_not_called()
 
     def test_shared_secret_is_preserved(self):

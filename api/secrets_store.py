@@ -380,6 +380,17 @@ def save_credential(*, original_slug: str = "", slug: str, label: str, kind: str
         row = None
         if original_slug:
             row = db.query(CredentialRow).filter(CredentialRow.slug == original_slug).first()
+            if row is None:
+                raise ValueError(f"Credential '{original_slug}' no longer exists")
+            # Binding references are slug-based; the provider/ref identifies the
+            # actual secret. Reassigning any of these without a migration would
+            # strand credentials or point a binding at missing secret material.
+            if (slug != row.slug or provider.id != row.provider_id
+                    or secret_ref != row.secret_ref or kind != row.kind):
+                raise ValueError(
+                    "Credential key, type and storage location cannot be changed in place. "
+                    "Create a new credential and rebind consumers."
+                )
         conflict = db.query(CredentialRow).filter(CredentialRow.slug == slug).first()
         if conflict and (row is None or conflict.id != row.id):
             raise ValueError(f"Credential '{slug}' already exists")
@@ -410,6 +421,8 @@ def delete_credential(slug: str) -> dict:
     """
     from infrastructure_connections import InfrastructureConnection
     from service_credentials import ServiceCredentialBinding
+    from golden_images import GoldenImageProfile
+    from database import ManagedMachine
 
     ensure_schema()
     slug = _validate_slug(slug, "Credential")
@@ -431,12 +444,29 @@ def delete_credential(slug: str) -> dict:
                 InfrastructureConnection.credential_slug == slug
             ).all()
         ]
-        if services or hypervisors:
+        golden_images = [
+            item.slug
+            for item in db.query(GoldenImageProfile).filter(
+                GoldenImageProfile.credentials_ref == slug
+            ).all()
+        ]
+        active_machines = [
+            item.name
+            for item in db.query(ManagedMachine).filter(
+                ManagedMachine.credentials_ref == slug,
+                ManagedMachine.state.in_(("running", "ready", "destroying", "reap_failed")),
+            ).all()
+        ]
+        if services or hypervisors or golden_images or active_machines:
             uses = []
             if services:
                 uses.append("services: " + ", ".join(sorted(services)))
             if hypervisors:
                 uses.append("hypervisors: " + ", ".join(sorted(hypervisors)))
+            if golden_images:
+                uses.append("golden images: " + ", ".join(sorted(golden_images)))
+            if active_machines:
+                uses.append("active machines: " + ", ".join(sorted(active_machines)))
             raise ValueError("Credential is in use (" + "; ".join(uses) + "). Unbind it first.")
 
         provider = db.get(SecretProviderRow, row.provider_id)

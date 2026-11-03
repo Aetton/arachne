@@ -22,6 +22,14 @@ class RunPerformanceTests(unittest.TestCase):
             run_engine._done[key] = True
             run_engine._release_runtime(key)
 
+    def test_automated_run_has_no_fabricated_user(self):
+        with patch.object(run_engine.scenario_store, "get_published", return_value=None):
+            run_engine._create_run("scheduled-run", "demo", {"label": "Demo"}, {})
+        self.fixture.db.expire_all()
+        scheduled = self.fixture.db.get(Run, "scheduled-run")
+        self.assertIsNotNone(scheduled)
+        self.assertIsNone(scheduled.user_id)
+
     def test_history_does_not_load_logs_or_resolve_inputs(self):
         statements = []
 

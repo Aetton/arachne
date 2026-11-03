@@ -83,7 +83,8 @@ class TofuSpider(ProvisionSpider):
     ) -> tuple[Path, Path]:
         state_dir = self._state_dir(name, connection)
         work_dir = state_dir / "module"
-        work_dir.mkdir(parents=True, exist_ok=True)
+        work_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        work_dir.chmod(0o700)
         # A previously destroyed stand may have used a different module revision.
         for pattern in ("*.tf", "*.tf.json"):
             for old in work_dir.glob(pattern):
@@ -269,7 +270,8 @@ class TofuSpider(ProvisionSpider):
         operation_started = False
         try:
             state_dir = self._state_dir(name, st.get("connection", ""))
-            state_dir.mkdir(parents=True, exist_ok=True)
+            state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            state_dir.chmod(0o700)
             lock = (state_dir / ".arachne.lock").open("a")
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
