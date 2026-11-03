@@ -18,7 +18,7 @@ class BrandAssetTests(unittest.TestCase):
 
     def test_navigation_uses_wordmark_not_icon_font(self):
         template = BASE.read_text(encoding="utf-8")
-        self.assertIn('/static/img/arachne-wordmark.svg?v=1', template)
+        self.assertIn('/static/img/arachne-wordmark.svg?v=2', template)
         self.assertIn('/static/img/favicon.svg?v=1', template)
         self.assertNotIn('<i class="ti ti-spider"></i>', template)
 
