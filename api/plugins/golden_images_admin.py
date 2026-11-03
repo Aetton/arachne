@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -26,6 +27,8 @@ def _adapter(backend):
     raise ValueError("Unknown backend")
 from secrets_store import list_credentials
 
+
+_logger = logging.getLogger(__name__)
 
 ensure_schema()
 
@@ -57,8 +60,16 @@ async def admin_golden_images(
         try:
             items = await asyncio.to_thread(_adapter(c["backend"]).list_templates, c["slug"])
             templates.extend({**t, "connection": c["slug"], "backend": c["backend"]} for t in items)
-        except (ValueError, RuntimeError) as exc:
-            errors.append(f"{c['label']}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            _logger.exception(
+                "Golden Image template discovery failed: backend=%s connection=%s",
+                c["backend"], c["slug"],
+            )
+            # Never echo internal URLs or credentials in the browser error.
+            errors.append(
+                f"{c['label']}: не удалось получить шаблоны "
+                f"({type(exc).__name__}); подробности в логах API"
+            )
     template_by_id = {(t["connection"], str(t["vm_id"])): t for t in templates}
     cards = []
     for row in _profiles(db):
@@ -111,7 +122,17 @@ async def admin_golden_images_save(
         )
         await asyncio.to_thread(_adapter(backend).inspect_template, vm_id, connection)
     except (ValueError, RuntimeError) as exc:
+        _logger.exception(
+            "Golden Image template validation failed: backend=%s connection=%s",
+            backend, connection,
+        )
         raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        _logger.exception(
+            "Unexpected Golden Image template validation failure: backend=%s connection=%s",
+            backend, connection,
+        )
+        raise HTTPException(502, "Hypervisor template lookup failed; see API logs") from exc
 
     credentials_ref = str(form.get("credentials_ref") or "").strip().lower()
     credentials = {row["slug"]: row for row in _target_credentials()}
