@@ -21,6 +21,7 @@ from secrets_store import (
     list_credentials,
     list_providers,
     save_credential,
+    delete_credential,
     save_provider,
     test_provider,
 )
@@ -261,6 +262,27 @@ async def admin_credential_save(request: Request, user=Depends(require_administr
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse(f"/admin/secrets?saved={quote('credential:' + result['slug'])}", status_code=303)
+
+
+@app.post("/admin/secrets/credentials/{slug}/delete")
+def admin_credential_delete(slug: str, user=Depends(require_administrator)):
+    try:
+        result = delete_credential(slug)
+    except ValueError as exc:
+        return RedirectResponse(
+            f"/admin/secrets?error={quote(str(exc))}#credentials",
+            status_code=303,
+        )
+    except Exception:
+        _logger.exception("Credential deletion failed: slug=%s", slug)
+        return RedirectResponse(
+            "/admin/secrets?error=Could%20not%20delete%20credential%3B%20see%20API%20logs#credentials",
+            status_code=303,
+        )
+    return RedirectResponse(
+        f"/admin/secrets?saved={quote('deleted:' + result['slug'])}#credentials",
+        status_code=303,
+    )
 
 
 @app.post("/admin/secrets/bindings/save")
