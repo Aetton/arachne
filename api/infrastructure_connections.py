@@ -198,5 +198,5 @@ def execution_env(slug, backend):
         "TF_VAR_ovirt_username": secret.username,
         "TF_VAR_ovirt_password": str(secret.values["password"]),
         "TF_VAR_ovirt_insecure": str(c["insecure"]).lower(),
-        "TF_VAR_ovirt_ca_file": os.getenv("SSL_CERT_FILE", ""),
+        "TF_VAR_ovirt_ca_file": ca_file,
     }
