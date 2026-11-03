@@ -47,6 +47,33 @@ class CredentialDeletionTests(unittest.TestCase):
             ))
             db.commit()
 
+    def test_edit_cannot_silently_repoint_secret_or_break_bindings(self):
+        self.credential("ovirt-admin")
+        base = dict(
+            original_slug="ovirt-admin", slug="ovirt-admin",
+            label="Updated login", kind="basic", username="admin@internal",
+            provider_slug="local", secret_ref="credentials/shared",
+            metadata={}, secret_updates={"password": "new-secret"},
+        )
+        cases = (
+            {"slug": "renamed"},
+            {"secret_ref": "credentials/new"},
+            {"kind": "token"},
+        )
+        with patch.object(secrets, "provider_instance", return_value=self.backend):
+            for modification in cases:
+                with self.subTest(modification=modification), self.assertRaisesRegex(ValueError, "cannot be changed in place"):
+                    secrets.save_credential(**(base | modification))
+            with self.assertRaisesRegex(ValueError, "no longer exists"):
+                secrets.save_credential(**(base | {"original_slug": "not-here"}))
+            # Editing ordinary details and replacing secret material still works.
+            self.backend.get.return_value = {"password": "old"}
+            updated = secrets.save_credential(**base)
+        self.assertEqual(updated["slug"], "ovirt-admin")
+        self.backend.put.assert_called_once_with(
+            "credentials/shared", {"password": "new-secret"}
+        )
+
     def test_unused_credential_deletes_record_and_secret(self):
         self.credential("unused")
         with patch.object(secrets, "provider_instance", return_value=self.backend):
