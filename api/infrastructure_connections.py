@@ -81,11 +81,9 @@ def save_connection(
     ensure_schema()
     with SessionLocal() as db:
         row = db.get(InfrastructureConnection, slug)
-        if row and (
-            row.endpoint.rstrip("/") != endpoint.rstrip("/") or row.backend != backend
-        ):
+        if row and row.backend != backend:
             raise ValueError(
-                "Endpoint and backend are immutable; create a new connection key"
+                "Connection backend is immutable; create a new connection key"
             )
         if not row:
             row = InfrastructureConnection(slug=slug)
