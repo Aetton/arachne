@@ -1,0 +1,141 @@
+[data-theme="dracula"]{--bg:#272735;--surface:#2d2c3c;--surface2:#373648;--border:#48465d;--fg:#f2eff8;--muted:#aaa6be;--accent:#c3a4f5;--ok-fg:#90d7b5;--ok-bg:#2e443e;--fail-fg:#f3a2ae;--fail-bg:#49343e;--run-fg:#e6ce8e;--run-bg:#484337;--bg-on-accent:#292037;color-scheme:dark}
+[data-theme="nord"]{--muted:#a3b0c5;color-scheme:dark}
+[data-theme="white"]{--bg:#f5f3f9;--surface:#fff;--surface2:#f0ecf7;--border:#dfd8eb;--fg:#30283d;--muted:#7b718c;--accent:#8056b9;color-scheme:light}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body::before{opacity:.09;animation:none}
+.app-nav{min-height:76px;padding:14px 30px;background:color-mix(in srgb,var(--surface) 92%,transparent);border-bottom:1px solid var(--border)}
+.app-nav-left{gap:35px}
+.brand-wordmark{width:150px;max-height:28px}
+.nav-link,.nav-control summary{font-size:13px;padding:10px 14px;font-weight:500;color:var(--muted)}
+.nav-link[aria-current="page"]{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent)}
+.user-chip{font-size:11px;color:var(--muted)}
+.theme-select{border-color:var(--border);min-height:34px}
+.app-main{max-width:1800px;padding:25px 28px}
+.operator-shell{grid-template-columns:minmax(300px,330px) minmax(0,1fr);gap:28px}
+.operator-nav{height:calc(100dvh - 126px);max-height:calc(100dvh - 126px);grid-template-rows:minmax(0,62fr) minmax(180px,38fr);gap:22px;padding:0}
+.operator-workspace{top:101px;max-height:calc(100dvh - 126px)}
+.dashboard-scenario-scroll{padding-right:12px}
+.web-section-head{margin-bottom:12px;padding:0 5px}
+.eyebrow{font-size:12px;text-transform:none;letter-spacing:0;font-weight:600;color:var(--fg)}
+.web-count{border:0;background:var(--surface2);color:var(--muted);font-size:10px}
+.rail-intro{font-size:11px;line-height:1.6;color:var(--muted);margin:0 5px 14px}
+.scenario-search-shell{background:color-mix(in srgb,var(--surface) 85%,transparent);border:1px solid var(--border);border-radius:10px;margin-bottom:17px;min-height:43px}
+.scenario-search-shell input{font-size:12px}
+.scenario-group{margin-bottom:5px}
+.scenario-group summary{min-height:42px;padding:8px;font-size:12px;border-radius:8px}
+.scenario-group summary:hover{background:var(--surface2)}
+.group-label{font-weight:550;color:var(--fg)}
+.group-icon{color:var(--accent)}
+.scenario-list{gap:5px;margin-bottom:9px}
+.scenario-card{padding:11px 12px;min-height:48px;border-radius:9px}
+.scenario-title{font-size:12px;line-height:1.5;font-weight:450}
+.scenario-component{font-size:9px;opacity:.7;line-height:1.9}
+.scenario-card:hover,.scenario-card.is-selected{transform:none;box-shadow:none;background:color-mix(in srgb,var(--accent) 10%,transparent);border-color:color-mix(in srgb,var(--accent) 25%,transparent)}
+.workspace-frame{border:1px solid var(--border);border-radius:20px;box-shadow:0 12px 50px #10101b13;min-height:calc(100dvh - 126px)}
+.workspace-empty{min-height:calc(100dvh - 126px);background:color-mix(in srgb,var(--surface) 55%,transparent)}
+.workspace-orb-web{border-radius:20px;opacity:.65}
+.workspace-orb-web svg{min-height:calc(100dvh - 126px)}
+.web-sigil{gap:13px;padding:35px;max-width:600px;margin:auto}
+.web-sigil-node{width:150px;aspect-ratio:1;filter:drop-shadow(0 0 25px #b997f522);margin-bottom:5px}
+.web-sigil h2{font-size:32px;font-weight:550;letter-spacing:-1px;margin:0}
+.web-sigil p{font-size:13px;color:var(--muted);line-height:1.9;margin:0}
+.btn,.btn-ghost{font-size:12px;min-height:43px;border-radius:9px;padding:10px 17px;font-weight:550}
+.btn{color:var(--bg-on-accent)}
+.btn span{margin-left:10px}
+.workspace-frame:has(.friendly-form),.workspace-frame:has(.thread-content){background:var(--surface)}
+@media(min-width:1650px){.operator-shell{grid-template-columns:390px minmax(0,1fr)}
+.app-main{padding:28px 40px}}
+@media(max-width:980px){.app-nav{padding:12px 18px}
+.app-nav-left{gap:15px}
+.app-main{padding:18px}
+.operator-shell{grid-template-columns:280px minmax(0,1fr);gap:18px}
+.operator-nav{display:grid;height:calc(100dvh - 130px);max-height:calc(100dvh - 130px)}
+.dashboard-scenario-scroll,.dashboard-runs-pane{overflow-y:auto}
+.operator-workspace{position:sticky;top:100px}
+.user-chip{display:none}}
+@media(max-width:680px){.app-nav-links{gap:0}
+.nav-link,.nav-control summary{padding:8px;font-size:11px}
+.brand-wordmark{width:112px}
+.app-nav-left{gap:12px}
+.app-nav-right{width:100%;justify-content:flex-end}
+.app-nav{gap:8px}
+.theme-select{min-height:30px}
+.operator-shell{display:flex;flex-direction:column}
+.operator-nav{width:100%;height:auto;max-height:none;display:block}
+.dashboard-scenario-scroll{max-height:260px}
+.dashboard-runs-pane{display:none}
+.operator-workspace{position:relative;top:0;width:100%;max-height:none}
+.workspace-frame,.workspace-empty{min-height:540px}
+.web-sigil{padding:28px 15px}
+.web-sigil h2{font-size:27px}
+.web-sigil-node{width:120px}
+.app-main{padding:15px}
+.operator-column{max-height:none}
+.workspace-orb-web svg{min-height:540px}}
+.workspace-empty .web-sigil{position:relative;inset:auto;transform:none;display:grid;align-content:center;justify-items:center;width:100%;height:100%;padding:45px 25px;max-width:640px}
+.workspace-empty .web-sigil-node{position:relative;inset:auto;transform:none;width:150px;height:150px;margin:0 0 12px}
+.workspace-empty .web-sigil h2{font-size:32px;line-height:1.3;font-weight:550;margin:0}
+.workspace-empty .web-sigil p{font-size:13px;max-width:460px;line-height:1.9}
+.scenario-search-shell input{background:transparent!important;border:0!important;box-shadow:none!important;min-height:40px;text-indent:0!important}
+.scenario-title{white-space:normal!important;overflow:visible;text-overflow:clip}
+.user-chip{max-width:none}
+.workspace-empty{display:flex;align-items:center;justify-content:center}
+.web-sigil-node:before{opacity:.4}
+/* Common Control surfaces follow the Secrets page, without changing form contracts. */
+.control-design .app-main{max-width:1500px}
+.control-design .control-page,.control-design .infrastructure-page{max-width:1152px;margin:0 auto}
+.control-design .control-header{border:0;align-items:center;padding:8px 0 18px;min-height:0}
+.control-design .control-title{font-size:22px;font-weight:600;line-height:1.4}
+.control-design .control-subtitle{font-size:12px;line-height:1.7}
+.control-design .control-panel,.control-design .settings-section,.control-design .infrastructure-card{border:1px solid var(--border);border-radius:15px;background:var(--surface);box-shadow:none}
+.control-design .control-panel-head{padding:20px 22px}
+.control-design .control-table th,.control-design .control-table td{padding:16px;font-size:12px}
+.control-design .control-chip{border-radius:6px;font-size:10px;line-height:1.6}
+.control-design .control-field-label{font-size:12px}
+.control-design .control-field input,.control-design .control-field select{min-height:42px}
+.control-design .rbac-editor,.control-design .rbac-record{border-radius:10px}
+.control-design .settings-row{gap:18px;padding:18px}
+.control-design .settings-heading{padding:20px 22px}
+.control-design .settings-description{font-size:13px}
+.control-design .infrastructure-card{padding:23px;gap:20px}
+.control-design .infrastructure-card label{gap:9px;font-size:12px}
+.control-design .infrastructure-card input,.control-design .infrastructure-card select{min-height:42px}
+.control-design .infrastructure-card input[type=checkbox]{min-height:0}
+.control-design .secrets-workspace{max-width:1152px}
+.control-design .secrets-panel{padding:23px}
+.control-design .secret-credential{padding:16px;gap:15px}
+.control-design .secrets-search input{font-size:12px}
+.control-design .secret-dialog,.control-design .golden-dialog{border-radius:15px}
+.control-design .secret-dialog label,.control-design .golden-dialog label{font-size:12px}
+.control-design .manager-list,.control-design .manager-groups{border-radius:12px}
+.control-design .scenario-manager input,.control-design .scenario-manager select{font-size:12px}
+.control-design .scenario-manager table{font-size:12px}
+.control-design .scenario-manager code{font-size:10px}
+.control-design .manager-table-wrap{max-height:74vh}
+.control-design .manager-list thead th{position:sticky;top:0;z-index:1}
+.control-design .manager-groups{max-height:80vh;overflow:auto}
+body .thread-form{padding:26px 30px}
+body .thread-form-header{padding-bottom:22px;margin-bottom:24px}
+body .thread-form-title{font-size:22px;line-height:1.4}
+body .thread-fields{gap:23px}
+body .thread-field label{font-size:12px;font-weight:500;margin-bottom:9px}
+body .thread-field input,body .thread-field select{min-height:43px;padding:11px;font-size:12px}
+body .thread-form-actions{padding-top:23px;margin-top:25px}
+body .thread-field-advanced,body details.advanced-params{border-radius:9px}
+@media(max-width:980px){.operator-nav{grid-template-rows:minmax(0,62fr) minmax(180px,38fr)}}
+@media(max-width:680px){.operator-shell{display:grid;grid-template-columns:minmax(0,1fr)}.operator-nav{height:auto;max-height:none;display:grid;grid-template-rows:auto auto}.dashboard-scenario-scroll{max-height:280px;overflow:auto}.dashboard-runs-pane{display:block;max-height:240px;overflow:auto}.operator-workspace{position:static}.control-design .manager-groups{max-height:50vh}.thread-form{padding:20px!important}}
+
+/* The live rail reuses the existing authorized /runs/history fragment. */
+.journal-layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:24px;align-items:start;margin-top:22px}
+.journal-rail{position:sticky;top:100px;max-height:calc(100dvh - 130px);overflow:auto;padding:18px}
+.journal-main{min-width:0}
+.journal-main>.muted{font-size:12px;margin-bottom:16px}
+.journal-filters{grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;padding:20px;margin:0 0 22px;border-radius:12px}
+.journal-filters label{font-size:11px;line-height:1.6}
+.journal-filters input,.journal-filters select{font-size:12px;min-height:40px;margin-top:7px}
+.journal-table{overflow:auto;border-radius:12px}
+.journal-table th,.journal-table td{padding:16px;font-size:12px}
+.journal-pagination{font-size:12px}
+@media(max-width:1100px){.journal-layout{grid-template-columns:230px minmax(0,1fr)}.journal-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:800px){.journal-layout{grid-template-columns:minmax(0,1fr)}.journal-rail{position:static;max-height:260px}}
+@media(max-width:520px){.journal-filters{grid-template-columns:minmax(0,1fr)}}

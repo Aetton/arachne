@@ -237,48 +237,54 @@
   }
 </style>
 
-<form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-6">
+<link rel="stylesheet" href="/static/css/scenario-editor.css?v=1">
+<form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-6 scenario-editor-page">
   <input type="hidden" name="original_slug" value="{{ scenario.slug if scenario else '' }}">
   <div class="scenario-form-header flex items-center justify-between">
     <div>
-      <h1 class="text-xl font-semibold">{{ "Edit " ~ scenario.slug if scenario else "New scenario" }}</h1>
-      <p class="muted text-sm">Saving validates the DSL, creates a version and publishes it atomically.</p>
+      <h1 class="text-xl font-semibold">{{ "Редактирование сценария" if scenario else "Новый сценарий" }}</h1>
+      <p class="muted text-sm">Проверка DSL, создание версии и публикация выполняются атомарно.</p>
     </div>
-    <button id="scenario-save-button" class="btn" type="submit"><i class="ti ti-device-floppy"></i> Validate & publish</button>
+    <button id="scenario-save-button" class="btn" type="submit"><i class="ti ti-device-floppy"></i> Проверить и опубликовать</button>
   </div>
-  <div class="scenario-form-grid grid md:grid-cols-3">
-    <section class="scenario-form-panel surface rounded-xl md:col-span-2">
+  <div class="scenario-form-grid">
+    <section class="scenario-form-panel surface rounded-xl scenario-code-panel">
       <label class="scenario-field-label text-sm muted">Slug</label>
       <input name="slug" required maxlength="64"
              pattern="[a-z0-9][a-z0-9._-]{0,63}"
              title="Lowercase letters, digits, dots, underscores, and hyphens"
              value="{{ scenario.slug if scenario else '' }}">
-      <label for="scenario-definition" class="scenario-field-label text-sm muted">Scenario YAML</label>
+      <div class="scenario-yaml-heading"><span class="yaml-badge">YAML</span><strong>Определение сценария</strong><div class="code-tools"><button type="button" data-editor-command="format">Форматировать</button><button type="button" data-editor-command="wrap" aria-pressed="false">↵ Перенос</button><button type="button" data-editor-command="find" aria-label="Найти в коде">⌕</button><button type="button" data-editor-command="fullscreen" aria-label="Развернуть редактор">⛶</button></div></div>
       <p class="muted text-xs mb-2">
-        Component must be one of:
+        Доступные группы:
         {% for component in components %}
           <code>{{ component.slug }}</code>{% if not loop.last %}, {% endif %}
         {% endfor %}
       </p>
       <div class="scenario-editor-shell">
         <textarea id="scenario-definition" name="definition" required>{{ yaml_text }}</textarea>
-        <div id="scenario-editor" aria-label="Scenario YAML editor"></div>
+        <div id="scenario-editor" aria-label="Редактор YAML сценария"></div>
       </div>
       <div class="scenario-editor-help">
         <span><kbd>Tab</kbd> indent</span>
         <span><kbd>Shift</kbd> + <kbd>Tab</kbd> outdent</span>
-        <span><kbd>Ctrl</kbd> + <kbd>Space</kbd> DSL completion</span>
-        <span><kbd>Ctrl</kbd> + <kbd>S</kbd> validate & publish</span>
+        <span><kbd>Ctrl</kbd> + <kbd>Space</kbd> подсказки DSL</span>
+        <span><kbd>Ctrl</kbd> + <kbd>S</kbd> проверить и опубликовать</span>
       </div>
       <div id="scenario-editor-status" class="scenario-editor-status" aria-live="polite">
-        <span class="dot"></span><span>Checking DSL…</span>
+        <span class="dot"></span><span>Проверяю YAML и DSL…</span>
       </div>
       <div id="scenario-save-status" class="scenario-save-status" role="alert"></div>
-      <label class="scenario-field-label text-sm muted">Version comment</label>
-      <input name="comment" placeholder="What changed">
+      <label class="scenario-field-label text-sm muted">Комментарий к версии</label>
+      <input name="comment" placeholder="Что изменилось">
     </section>
-    <aside class="scenario-form-panel surface rounded-xl">
-      <div class="dsl-reference">
+    <aside class="scenario-form-panel editor-side">
+      <nav class="editor-side-tabs" aria-label="Инструменты редактора">
+        <button type="button" data-editor-tab="help" class="active" aria-selected="true">Справка DSL</button>
+        <button type="button" data-editor-tab="outline" aria-selected="false">Структура</button>
+        <button type="button" data-editor-tab="acl" aria-selected="false">Доступы</button>
+      </nav>
+      <div class="editor-side-body" id="editor-side-help">      <div class="dsl-reference">
         <h2 class="font-semibold">DSL quick reference</h2>
         <ul>
           <li>Required root keys: <code>label</code>, <code>component</code>, <code>steps</code></li>
@@ -288,50 +294,53 @@
           <li>Trigger types: <code>manual</code>, <code>schedule</code>, <code>chain</code></li>
         </ul>
       </div>
-    </aside>
-  </div>
-  <section class="scenario-acl surface rounded-xl">
+</div>
+      <div class="editor-side-body" id="editor-side-outline" hidden><h2>Структура сценария</h2><p class="muted text-xs">Загружаю редактор…</p></div>
+      <div class="editor-side-body" id="editor-side-acl" hidden>  <section class="acl-editor">
     <div class="scenario-acl-header">
-        <h2 class="font-semibold">ACL matching</h2>
-        <p class="muted text-xs">Choose how roles and teams combine for every action.</p>
+        <h2 class="font-semibold">Правила доступа · ACL</h2>
+        <label class="acl-match">Условие доступа
         <select name="match_mode" class="mt-2">
-          <option value="all" {% if not acl or acl[0].match_mode == "all" %}selected{% endif %}>role AND team</option>
-          <option value="any" {% if acl and acl[0].match_mode == "any" %}selected{% endif %}>role OR team</option>
-        </select>
+          <option value="all" {% if not acl or acl[0].match_mode == "all" %}selected{% endif %}>Роль И команда</option>
+          <option value="any" {% if acl and acl[0].match_mode == "any" %}selected{% endif %}>Роль ИЛИ команда</option>
+        </select><span id="acl-match-help" class="acl-match-help"></span></label>
       </div>
-    <div class="scenario-acl-actions">
+    <div class="acl-actions">
       {% for action in ["view", "run", "edit", "manage"] %}
-      <div class="scenario-acl-action">
-        <h3 class="text-sm font-semibold uppercase">{{ action }}</h3>
-        <div class="scenario-acl-group">
-          <p class="scenario-acl-group-title muted text-xs">Roles</p>
+      <details class="acl-permission" open>
+        <summary><span class="acl-chevron" aria-hidden="true">›</span><span>{{ {"view":"Просмотр", "run":"Запуск", "edit":"Редактирование", "manage":"Управление"}[action] }}</span><span class="acl-selection-count"></span></summary><div class="acl-permission-body">
+        <fieldset class="acl-option-group">
+          <legend>Роли</legend><div class="acl-options acl-roles">
           {% for role in roles %}
-          <label class="scenario-check text-sm">
+          <label class="acl-option">
             <input type="checkbox" name="{{ action }}_roles" value="{{ role.slug }}"
               {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "role")|selectattr("subject_key", "equalto", role.slug)|list or (not scenario and role.slug in default_acl_roles) %}checked{% endif %}>
-            <span class="scenario-check-box" aria-hidden="true"></span>
-            <span>{{ role.name }}</span>
+
+            <span class="acl-option-label">{{ role.name }}</span>
           </label>
           {% endfor %}
-        </div>
-        <div class="scenario-acl-group">
-          <p class="scenario-acl-group-title muted text-xs">Teams</p>
+        </div></fieldset>
+        <fieldset class="acl-option-group">
+          <legend>Команды</legend><div class="acl-options acl-teams">
           {% for team in teams %}
-          <label class="scenario-check text-sm">
+          <label class="acl-option">
             <input type="checkbox" name="{{ action }}_teams" value="{{ team.id }}"
               {% if acl|selectattr("permission", "equalto", action)|selectattr("subject_type", "equalto", "team")|selectattr("subject_key", "equalto", team.id|string)|list or (not scenario and team.id in default_acl_teams) %}checked{% endif %}>
-            <span class="scenario-check-box" aria-hidden="true"></span>
-            <span>{{ team.name }}</span>
+
+            <span class="acl-option-label">{{ team.name }}</span>
           </label>
-          {% else %}<p class="muted text-xs">Create teams in Access first.</p>{% endfor %}
-        </div>
-      </div>
+          {% else %}<p class="muted text-xs">Сначала создайте команды в разделе «Права доступа».</p>{% endfor %}
+        </div></fieldset>
+      </div></details>
       {% endfor %}
     </div>
   </section>
+</div>
+    </aside>
+  </div>
   {% if versions %}
   <section class="scenario-versions surface rounded-xl">
-    <h2 class="font-semibold mb-2">Version history</h2>
+    <h2 class="font-semibold mb-2">История версий</h2>
     <div class="scenario-version-list">
       {% for version in versions %}
       <div class="scenario-version-row">
@@ -341,7 +350,7 @@
         {% if version.id != scenario.current_version_id %}
         <button class="scenario-version-restore btn-ghost text-xs" type="submit"
                 formaction="/admin/scenarios/{{ scenario.slug }}/versions/{{ version.id }}/restore">
-          Restore
+          Восстановить
         </button>
         {% endif %}
       </div>
@@ -353,6 +362,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/scenario-editor-ui.js?v=1"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inconsolata@5.2.6/index.css">
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
 <script>
@@ -460,12 +470,12 @@
       var editor = monaco.editor.create(container, {
         model: model,
         theme: "arachne-dracula",
-        fontFamily: "Inconsolata, monospace",
-        fontSize: 16,
+        fontFamily: "Consolas, \"Liberation Mono\", monospace",
+        fontSize: 13,
         fontWeight: "normal",
         fontLigatures: false,
-        letterSpacing: 0.6,
-        lineHeight: 0,
+        letterSpacing: 0,
+        lineHeight: 22,
         lineNumbers: "on",
         minimap: { enabled: false },
         wordWrap: "off",
@@ -474,13 +484,15 @@
         detectIndentation: false,
         automaticLayout: true,
         scrollBeyondLastLine: false,
-        renderWhitespace: "all",
+        renderWhitespace: "selection",
         bracketPairColorization: { enabled: true },
         guides: { bracketPairs: true, indentation: true },
         suggest: { showWords: false },
         quickSuggestions: { other: true, comments: false, strings: true },
-        padding: { top: 12, bottom: 12 }
+        padding: { top: 17, bottom: 20 }
       });
+
+      window.dispatchEvent(new CustomEvent("arachne:scenarioEditorReady", { detail: { editor: editor, model: model } }));
 
       function currentSection(lineNumber) {
         for (var i = lineNumber; i >= 1; i--) {
@@ -625,6 +637,7 @@
         editorStatus.querySelector("span:last-child").textContent = errors.length ?
           errors.length + " DSL error" + (errors.length === 1 ? "" : "s") + ": " + errors[0].message :
           "Valid YAML and Arachne DSL · " + model.getLineCount() + " lines";
+        window.dispatchEvent(new CustomEvent("arachne:scenarioDiagnostics", { detail: { errors: errors } }));
         return errors;
       }
 
@@ -694,3 +707,4 @@
   })();
 </script>
 {% endblock %}
+

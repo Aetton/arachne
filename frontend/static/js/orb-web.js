@@ -17,8 +17,8 @@
   var geometry = {
     width: 1000,
     height: 760,
-    hub: { x: 515, y: 310 },
-    bounds: { left: 80, top: 34, right: 930, bottom: 610 },
+    hub: { x: 500, y: 380 },
+    bounds: { left: 50, top: 30, right: 950, bottom: 730 },
     angles: [-168, -140, -112, -83, -36, -6, 26, 63, 106, 145],
     rings: [0.14, 0.24, 0.35, 0.47, 0.60, 0.74, 0.88]
   };
@@ -400,3 +400,4 @@
     renderRoutes();
   });
 })();
+
