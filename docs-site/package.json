@@ -6,7 +6,7 @@
   "scripts": {
     "sync": "node scripts/sync-docs.mjs",
     "dev": "npm run sync && next dev",
-    "build": "npm run sync && next build",
+    "build": "npm run sync && next build && node scripts/legacy-redirects.mjs",
     "start": "next start",
     "check:links": "node scripts/check-links.mjs"
   },
