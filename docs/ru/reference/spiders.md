@@ -2,12 +2,14 @@
 
 Паук исполняет один шаг: запускает работу, отдаёт логи, сообщает статус, возвращает артефакты и, если умеет, отменяет работу.
 
+В новых сценариях используйте `action: weave`, `action: brood` или `action: command` по семейству паука. Старые `build`, `provision`, `deploy` и `run` сохраняются как совместимые названия там, где их принимает реализация. `destroy` остаётся отдельным lifecycle-действием. См. [семейства пауков](/ru/reference/spider-families).
+
 ## `forgejo`
 
 ```yaml
 - id: build
   spider: forgejo
-  action: build
+  action: weave
   with:
     owner: platform
     repo: backend
@@ -72,7 +74,7 @@ KOJI_PROFILE=redsoft-koji
 ```yaml
 - id: deploy
   spider: ansible-local
-  action: deploy
+  action: command
   with:
     playbook: update-stage.yml
     target: "${vm.ip}"
@@ -94,7 +96,7 @@ KOJI_PROFILE=redsoft-koji
 ```yaml
 - id: vm
   spider: tofu-proxmox
-  action: provision
+  action: brood
   with:
     name: arachne-test-001
     os: redos8

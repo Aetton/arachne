@@ -12,12 +12,14 @@ component: backend
 steps:
   - id: build
     spider: forgejo
-    action: build
+    action: weave
     with: {}
 ```
 
 Сервер требует `label`, `component`, непустой `steps`, а у каждого шага — `id`,
 `spider`, `action` и уникальный ID. Slug хранится отдельно и задаётся формой.
+
+Канонические названия действий: `weave`, `brood`, `command`; legacy `build`, `provision`, `deploy`, `run` могут сохраняться ради совместимости. Подробнее: [семейства пауков](/ru/reference/spider-families).
 
 ## Параметры формы
 
