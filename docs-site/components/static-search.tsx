@@ -9,7 +9,7 @@ import {
 } from 'fumadocs-ui/components/dialog/search';
 
 export function StaticSearchDialog(props: SharedProps) {
-  const { search, setSearch, query } = useDocsSearch({ client: staticClient() });
+  const { search, setSearch, query } = useDocsSearch({ client: staticClient({ from: `${process.env.NEXT_PUBLIC_DOCS_BASE_PATH || ''}/api/search` }) });
 
   return (
     <SearchDialog search={search} onSearchChange={setSearch} isLoading={query.isLoading} {...props}>
