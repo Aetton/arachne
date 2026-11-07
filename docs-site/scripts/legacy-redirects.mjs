@@ -3,7 +3,7 @@ import { join, resolve, relative } from 'node:path';
 
 const root = resolve(import.meta.dirname, '../../docs');
 const out = resolve(import.meta.dirname, '../out');
-const basePath = (process.env.DOCS_BASE_PATH || '').replace(/\\/$/, '');
+const basePath = (process.env.DOCS_BASE_PATH || '').replace(/\/$/, '');
 
 async function walk(path) {
   for (const item of await readdir(path, { withFileTypes: true })) {
@@ -12,15 +12,18 @@ async function walk(path) {
     if (item.isDirectory()) {
       await walk(current);
     } else if (item.isFile() && item.name.endsWith('.md')) {
-      const src = relative(root, current).replaceAll('\\\\', '/').replace(/\\.md$/, '');
-      const slug = src.replace(/\\/index$/, '');
-      const oldDir = slug === 'index' ? out : join(out, slug);
-      // The new documentation lives under /docs; old nested URLs keep working.
-      if (slug === 'index') continue; // Next.js already generated the root redirect.
+      const src = relative(root, current).replaceAll('\\', '/');
+      const name = src.slice(0, -3);
+      const slug = name.endsWith('/index') ? name.slice(0, -6) : name;
+      if (slug === 'index') continue;
+      const oldDir = join(out, slug);
       await mkdir(oldDir, { recursive: true });
-      const target = `${basePath}/docs/${slug}/`;
-      await writeFile(join(oldDir, 'index.html'),
-        `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${target}"><link rel="canonical" href="${target}"></head><body><a href="${target}">Перейти в документацию</a></body></html>\n`);
+      const target = basePath + '/docs/' + slug + '/';
+      const html = '<!doctype html><html lang="ru"><head><meta charset="utf-8">' +
+        '<meta http-equiv="refresh" content="0;url=' + target + '">' +
+        '<link rel="canonical" href="' + target + '"></head><body>' +
+        '<a href="' + target + '">Перейти в документацию</a></body></html>\n';
+      await writeFile(join(oldDir, 'index.html'), html);
     }
   }
 }
