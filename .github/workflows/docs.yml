@@ -1,14 +1,16 @@
-name: Documentation
+name: Documentation (Fumadocs)
 
 on:
   pull_request:
     paths:
       - "docs/**"
+      - "docs-site/**"
       - ".github/workflows/docs.yml"
   push:
     branches: [main]
     paths:
       - "docs/**"
+      - "docs-site/**"
       - ".github/workflows/docs.yml"
 
 permissions:
@@ -25,22 +27,25 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: docs
+        working-directory: docs-site
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
-      - run: npm ci
-      - run: npm run docs:build
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check content links
+        run: npm run check:links
+      - name: Build static Fumadocs site
         env:
-          DOCS_BASE: /arachne/
+          DOCS_BASE_PATH: /arachne
+          NEXT_PUBLIC_DOCS_BASE_PATH: /arachne
+        run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/.vitepress/dist
+          path: docs-site/out
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
