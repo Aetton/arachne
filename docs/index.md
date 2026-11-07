@@ -1,23 +1,28 @@
----
-layout: home
+# Arachne documentation
 
-hero:
-  name: Arachne
-  text: Lightweight CI/CD orchestration
-  tagline: Compose workflows, infrastructure automation, live logs, and artifacts behind one portal.
-  actions:
-    - theme: brand
-      text: Get started
-      link: /getting-started/overview
-    - theme: alt
-      text: Scenario reference
-      link: /reference/scenario-syntax
+Practical guides and references for operating Arachne, configuring scenarios, and maintaining infrastructure. Choose a topic from the navigation on the left or start with one of the guides below.
 
-features:
-  - title: Scenarios as a product model
-    details: Versioned, database-backed workflows with forms, triggers, steps, and explicit access rules.
-  - title: Pluggable execution
-    details: Dispatch work to Forgejo, Ansible, OpenTofu, or another backend through driver plugins.
-  - title: Operator-friendly
-    details: Follow live logs and collect artifact links without exposing backend-specific machinery.
----
+## Start here
+
+- **[Overview](/getting-started/overview)**: how Arachne coordinates scenarios and execution backends.
+- **[Installation](/getting-started/installation)**: install the service.
+- **[First scenario](/getting-started/first-scenario)**: create and run a scenario.
+
+## Use Arachne
+
+- [Scenarios](/user-guide/scenarios)
+- [Components](/user-guide/components)
+- [Scenario syntax](/reference/scenario-syntax)
+- [Dynamic inputs](/reference/dynamic-inputs)
+
+## Deploy and maintain
+
+- [Deployment](/operations/deployment)
+- [Troubleshooting](/operations/troubleshooting)
+- [Configuration](/reference/configuration)
+- [Architecture](/architecture/overview)
+- [Local development](/development/local-setup)
+
+## Russian documentation
+
+The [Russian guide](/ru/) contains additional material about administration, Golden Images, Proxmox, spiders, and API access.
