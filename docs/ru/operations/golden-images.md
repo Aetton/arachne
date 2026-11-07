@@ -1,6 +1,6 @@
 # Golden Images
 
-Golden Image — это человеческий профиль, который связывает сценарии Arachne с конкретным Proxmox QEMU template.
+Golden Image — профиль образа VM с привязкой к backend и, при необходимости, инфраструктурному подключению. Текущая реализация поддерживает **Proxmox и oVirt**. Ниже подробно разобран Proxmox; настройка oVirt описана в [пакетах пауков и подключениях](/ru/operations/optional-spiders).
 
 Главное правило слоя:
 
@@ -37,13 +37,18 @@ Node, CPU, RAM и диск являются read-only данными. Они н�
 
 ## Что хранится в PostgreSQL
 
-Профиль Golden Image хранит только соответствие между пользовательским именем и Proxmox template:
+В модели `GoldenImageProfile` хранятся имя, семейство ОС, backend и ссылки на шаблон/подключение. Поля `slug`, `label`, `os`, `backend`, `vm_id`, `template_id`, `connection`, `credentials_ref`, `enabled` подтверждены исходниками. Числовой `vm_id` используется для legacy Proxmox; для oVirt `template_id` содержит UUID. Ресурсы VM считываются через API, а не дублируются в базе.
+
+Пример профиля Proxmox:
 
 ```text
 slug
 label
 os
-template_vm_id
+vm_id
+backend
+connection
+credentials_ref
 enabled
 ```
 
@@ -53,13 +58,13 @@ enabled
 label:          RedOS 8
 slug:           redos8
 os:             redos8
-template_vm_id: 9002
+vm_id:         9002
 enabled:        true
 ```
 
 Это не копия конфигурации VM. PostgreSQL не является источником истины для node, storage, CPU, RAM или диска.
 
-## Создание первого профиля
+## Создание первого профиля Proxmox
 
 Перед началом убедитесь, что `.env` содержит рабочее подключение к Proxmox:
 
@@ -116,7 +121,7 @@ with:
 
 `os` продолжает определять семейство гостя и тип подключения, а `image` выбирает конкретный Golden Image профиль.
 
-## Что происходит при provision
+## Что происходит при provision в Proxmox
 
 Spider не берёт node или disk metadata из env. Перед `tofu apply` он делает discovery:
 
