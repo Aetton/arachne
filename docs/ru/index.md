@@ -1,36 +1,43 @@
----
-layout: home
+# Документация Arachne
 
-hero:
-  name: Arachne
-  text: Пульт управления сборками и инфраструктурой
-  tagline: Один портал для сценариев, Forgejo Actions, Ansible, OpenTofu, временных стендов, живых логов и артефактов.
-  actions:
-    - theme: brand
-      text: Начать работу
-      link: /ru/getting-started/overview
-    - theme: alt
-      text: Справочник сценариев
-      link: /ru/reference/scenario-syntax
-    - theme: alt
-      text: Golden Images
-      link: /ru/operations/golden-images
+Руководства для пользователей и администраторов, справочник сценариев и инструкции по эксплуатации. Выберите раздел слева или начните с нужной задачи ниже. Внутри статей справа находится оглавление, а сверху доступен поиск.
 
-features:
-  - title: Запуск из одной формы
-    details: Выберите сценарий, заполните параметры и запустите. Логи, состояние шагов, артефакты и инфраструктурные результаты остаются рядом с run.
-  - title: Временные стенды как ресурс
-    details: Arachne создаёт VM из Golden Images, хранит IP и VM metadata, поддерживает TTL и автоматически удаляет просроченные машины.
-  - title: Инфраструктура без протекания кишок
-    details: Сценарий описывает намерение. Spider сам получает node, storage и конфигурацию template из Proxmox API.
-  - title: Процесс описан явно
-    details: Параметры, шаги, триггеры и правила доступа лежат в версионируемом описании сценария.
-  - title: Исполнители сменные
-    details: Forgejo, Ansible и OpenTofu подключены через пауков. Ядро задаёт порядок, внешние системы выполняют работу.
----
+## Быстрый старт
 
-Документация описывает текущее состояние Arachne с PostgreSQL lifecycle для временных машин, Golden Image profiles и live discovery Proxmox templates.
+- **[Что такое Arachne](/ru/getting-started/overview)**: сценарии, пауки, запуски, артефакты.
+- **[Установка](/ru/getting-started/installation)**: первый запуск сервиса.
+- **[Первый сценарий](/ru/getting-started/first-scenario)**: создаём и запускаем.
 
-Для инфраструктурного provisioning начинайте с [Golden Images](/ru/operations/golden-images), затем переходите к [Proxmox и OpenTofu](/ru/operations/proxmox-opentofu).
+## Для пользователя
 
-Если старый пример расходится с русским справочником или исходниками, ориентируйтесь на актуальный русский справочник и код. Callback-примеры для Forgejo оставлены только для совместимости.
+- [Запуск сценариев и работа оператора](/ru/user-guide/operator)
+- [Работа со сценариями и группами](/ru/user-guide/scenarios)
+- [Компоненты](/ru/user-guide/components)
+- [Роли и доступ](/ru/user-guide/access)
+
+## Для администратора
+
+- [Администрирование](/ru/user-guide/administration)
+- [Развёртывание](/ru/operations/deployment)
+- [Golden Images](/ru/operations/golden-images)
+- [Proxmox и OpenTofu](/ru/operations/proxmox-opentofu)
+- [Резервное копирование и миграция](/ru/operations/backup-and-migration)
+- [Диагностика проблем](/ru/operations/troubleshooting)
+
+## Справочник
+
+- [Синтаксис сценариев](/ru/reference/scenario-syntax)
+- [Пауки](/ru/reference/spiders)
+- [Триггеры](/ru/reference/triggers)
+- [HTTP API](/ru/reference/api)
+- [Конфигурация](/ru/reference/configuration)
+- [Ограничения](/ru/reference/limitations)
+
+## Для разработчика
+
+- [Архитектура](/ru/architecture/overview)
+- [Локальный запуск](/ru/development/local-setup)
+- [Расширение Arachne](/ru/development/extending)
+- [Интеграция с Forgejo](/ru/integrations/forgejo)
+
+> Документация должна соответствовать работающему коду. Если описание расходится с текущей реализацией, проверьте исходники и сообщите о расхождении.
