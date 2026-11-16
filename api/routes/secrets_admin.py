@@ -1,4 +1,5 @@
 """Administrator UI for secret providers, credentials and service bindings."""
+
 from __future__ import annotations
 
 import os
@@ -9,11 +10,12 @@ from connection_tests import provider as probe_provider, service as probe_servic
 _logger = logging.getLogger(__name__)
 from urllib.parse import quote
 
+from fastapi import APIRouter
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from auth.deps import require_administrator
-from main import app, render
+from web import render
 from service_credentials import list_bindings, save_bindings
 from secrets_store import (
     CREDENTIAL_KINDS,
@@ -72,7 +74,10 @@ def _writable_providers() -> list[dict]:
     for row in list_providers():
         if not row.get("enabled"):
             continue
-        if row.get("kind") == "vault" and (row.get("config") or {}).get("mode") == "read-only":
+        if (
+            row.get("kind") == "vault"
+            and (row.get("config") or {}).get("mode") == "read-only"
+        ):
             continue
         result.append(row)
     return result
@@ -81,18 +86,22 @@ def _writable_providers() -> list[dict]:
 def _dotenv_candidates() -> list[dict]:
     result = []
     for service, spec in _DOTENV_IMPORTS.items():
-        present = [name for name in spec["variables"] if _DOTENV_SNAPSHOT.get(name, "").strip()]
+        present = [
+            name for name in spec["variables"] if _DOTENV_SNAPSHOT.get(name, "").strip()
+        ]
         missing = [name for name in spec["variables"] if name not in present]
-        result.append({
-            "service": service,
-            "label": spec["label"],
-            "slug": spec["slug"],
-            "kind": spec["kind"],
-            "variables": list(spec["variables"]),
-            "present": present,
-            "missing": missing,
-            "ready": not missing,
-        })
+        result.append(
+            {
+                "service": service,
+                "label": spec["label"],
+                "slug": spec["slug"],
+                "kind": spec["kind"],
+                "variables": list(spec["variables"]),
+                "present": present,
+                "missing": missing,
+                "ready": not missing,
+            }
+        )
     return result
 
 
@@ -124,7 +133,10 @@ def _import_dotenv_service(service: str, provider_slug: str, existing: set[str])
     return slug
 
 
-@app.get("/admin/secrets", response_class=HTMLResponse)
+router = APIRouter()
+
+
+@router.get("/admin/secrets", response_class=HTMLResponse)
 async def admin_secrets(request: Request, user=Depends(require_administrator)):
     return render(
         request,
@@ -142,7 +154,7 @@ async def admin_secrets(request: Request, user=Depends(require_administrator)):
     )
 
 
-@app.get("/admin/secrets/import", response_class=HTMLResponse)
+@router.get("/admin/secrets/import", response_class=HTMLResponse)
 async def admin_secrets_import(request: Request, user=Depends(require_administrator)):
     return render(
         request,
@@ -155,8 +167,10 @@ async def admin_secrets_import(request: Request, user=Depends(require_administra
     )
 
 
-@app.post("/admin/secrets/import")
-async def admin_secrets_import_apply(request: Request, user=Depends(require_administrator)):
+@router.post("/admin/secrets/import")
+async def admin_secrets_import_apply(
+    request: Request, user=Depends(require_administrator)
+):
     form = await request.form()
     provider_slug = str(form.get("provider") or "").strip().lower()
     selected = [str(value).strip().lower() for value in form.getlist("service")]
@@ -188,8 +202,10 @@ async def admin_secrets_import_apply(request: Request, user=Depends(require_admi
     )
 
 
-@app.post("/admin/secrets/providers/save")
-async def admin_secret_provider_save(request: Request, user=Depends(require_administrator)):
+@router.post("/admin/secrets/providers/save")
+async def admin_secret_provider_save(
+    request: Request, user=Depends(require_administrator)
+):
     form = await request.form()
     kind = str(form.get("kind") or "vault").strip().lower()
     config = {}
@@ -206,7 +222,9 @@ async def admin_secret_provider_save(request: Request, user=Depends(require_admi
             "token_ref": str(form.get("token_ref") or "VAULT_TOKEN").strip(),
             "role_id": str(form.get("role_id") or "").strip(),
             "secret_id_source": str(form.get("secret_id_source") or "env").strip(),
-            "secret_id_ref": str(form.get("secret_id_ref") or "VAULT_SECRET_ID").strip(),
+            "secret_id_ref": str(
+                form.get("secret_id_ref") or "VAULT_SECRET_ID"
+            ).strip(),
         }
     elif kind == "database":
         config = {}
@@ -221,20 +239,26 @@ async def admin_secret_provider_save(request: Request, user=Depends(require_admi
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    return RedirectResponse(f"/admin/secrets?saved={quote('provider:' + result['slug'])}", status_code=303)
+    return RedirectResponse(
+        f"/admin/secrets?saved={quote('provider:' + result['slug'])}", status_code=303
+    )
 
 
-@app.post("/admin/secrets/providers/{slug}/test")
+@router.post("/admin/secrets/providers/{slug}/test")
 def admin_secret_provider_test(slug: str, user=Depends(require_administrator)):
     try:
         result = test_provider(slug)
     except (ValueError, RuntimeError) as exc:
-        return RedirectResponse(f"/admin/secrets?error={quote(str(exc))}", status_code=303)
+        return RedirectResponse(
+            f"/admin/secrets?error={quote(str(exc))}", status_code=303
+        )
     detail = str(result.get("detail") or "provider is healthy")
-    return RedirectResponse(f"/admin/secrets?test=ok&detail={quote(detail)}", status_code=303)
+    return RedirectResponse(
+        f"/admin/secrets?test=ok&detail={quote(detail)}", status_code=303
+    )
 
 
-@app.post("/admin/secrets/credentials/save")
+@router.post("/admin/secrets/credentials/save")
 async def admin_credential_save(request: Request, user=Depends(require_administrator)):
     form = await request.form()
     secret_updates = {
@@ -261,10 +285,12 @@ async def admin_credential_save(request: Request, user=Depends(require_administr
         )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
-    return RedirectResponse(f"/admin/secrets?saved={quote('credential:' + result['slug'])}", status_code=303)
+    return RedirectResponse(
+        f"/admin/secrets?saved={quote('credential:' + result['slug'])}", status_code=303
+    )
 
 
-@app.post("/admin/secrets/credentials/{slug}/delete")
+@router.post("/admin/secrets/credentials/{slug}/delete")
 def admin_credential_delete(slug: str, user=Depends(require_administrator)):
     try:
         result = delete_credential(slug)
@@ -285,23 +311,29 @@ def admin_credential_delete(slug: str, user=Depends(require_administrator)):
     )
 
 
-@app.post("/admin/secrets/bindings/save")
-async def admin_secret_bindings_save(request: Request, user=Depends(require_administrator)):
+@router.post("/admin/secrets/bindings/save")
+async def admin_secret_bindings_save(
+    request: Request, user=Depends(require_administrator)
+):
     form = await request.form()
     try:
-        save_bindings({
-            "forgejo": str(form.get("forgejo") or ""),
-            "gitlab": str(form.get("gitlab") or ""),
-            "proxmox": str(form.get("proxmox") or ""),
-            "nexus": str(form.get("nexus") or ""),
-        })
+        save_bindings(
+            {
+                "forgejo": str(form.get("forgejo") or ""),
+                "gitlab": str(form.get("gitlab") or ""),
+                "proxmox": str(form.get("proxmox") or ""),
+                "nexus": str(form.get("nexus") or ""),
+            }
+        )
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return RedirectResponse("/admin/secrets?saved=bindings", status_code=303)
 
 
-@app.post("/api/admin/secrets/provider/test")
-async def admin_draft_provider_test(request: Request, user=Depends(require_administrator)):
+@router.post("/api/admin/secrets/provider/test")
+async def admin_draft_provider_test(
+    request: Request, user=Depends(require_administrator)
+):
     f = await request.form()
     kind = str(f.get("kind") or "")
     config = {
@@ -321,15 +353,27 @@ async def admin_draft_provider_test(request: Request, user=Depends(require_admin
         return await asyncio.to_thread(probe_provider, kind, config)
     except Exception as exc:
         _logger.exception("Draft secret provider test failed: kind=%s", kind)
-        return {"ok": False, "stage": "connection", "detail": f"Probe failed: {type(exc).__name__}; check API logs"}
+        return {
+            "ok": False,
+            "stage": "connection",
+            "detail": f"Probe failed: {type(exc).__name__}; check API logs",
+        }
 
 
-@app.post("/api/admin/secrets/service/test")
-async def admin_service_connection_test(request: Request, user=Depends(require_administrator)):
+@router.post("/api/admin/secrets/service/test")
+async def admin_service_connection_test(
+    request: Request, user=Depends(require_administrator)
+):
     f = await request.form()
     service = str(f.get("service") or "")
     try:
-        return await asyncio.to_thread(probe_service, service, str(f.get("credential_slug") or ""))
+        return await asyncio.to_thread(
+            probe_service, service, str(f.get("credential_slug") or "")
+        )
     except Exception as exc:
         _logger.exception("Service connection test failed: service=%s", service)
-        return {"ok": False, "stage": "connection", "detail": f"Probe failed: {type(exc).__name__}; check endpoint and API logs"}
+        return {
+            "ok": False,
+            "stage": "connection",
+            "detail": f"Probe failed: {type(exc).__name__}; check endpoint and API logs",
+        }

@@ -3,7 +3,9 @@
 The endpoint merges the live spider registry with editor-facing contracts. New
 spiders appear automatically even before a detailed contract is documented.
 """
+
 from __future__ import annotations
+from fastapi import APIRouter
 
 from copy import deepcopy
 
@@ -12,7 +14,6 @@ from fastapi import Depends
 from auth.deps import require_role
 from core.registry import all_spiders, all_triggers
 from golden_images import list_profiles
-from main import app
 
 
 DOCS_BASE = "/wiki/ru"
@@ -29,11 +30,24 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
         "inputs": {
             "repo": {"required": True, "description": "Имя репозитория Forgejo."},
-            "workflow": {"required": True, "description": "Файл workflow, например build.yaml."},
-            "owner": {"default": "FORGEJO_OWNER", "description": "Владелец/организация репозитория. Обычно можно не указывать."},
-            "ref": {"default": "main", "description": "Git ref или ветка, на которой запускается workflow."},
-            "branch": {"description": "Псевдоним для ref. Используйте только если так понятнее в конкретном сценарии."},
-            "component": {"description": "Логическое имя компонента для логов и метаданных."},
+            "workflow": {
+                "required": True,
+                "description": "Файл workflow, например build.yaml.",
+            },
+            "owner": {
+                "default": "FORGEJO_OWNER",
+                "description": "Владелец/организация репозитория. Обычно можно не указывать.",
+            },
+            "ref": {
+                "default": "main",
+                "description": "Git ref или ветка, на которой запускается workflow.",
+            },
+            "branch": {
+                "description": "Псевдоним для ref. Используйте только если так понятнее в конкретном сценарии."
+            },
+            "component": {
+                "description": "Логическое имя компонента для логов и метаданных."
+            },
             "version": {"description": "Версия, передаваемая workflow как input."},
         },
         "example": """- id: build-client\n  spider: forgejo\n  action: weave\n  with:\n    repo: redvrm-client\n    workflow: build.yaml\n    ref: \"${params.branch}\"\n    version: \"${params.version}\"""",
@@ -45,7 +59,10 @@ SPIDER_CONTRACTS: dict[str, dict] = {
             "weave": "Запустить GitLab pipeline как Weave-операцию.",
         },
         "inputs": {
-            "project": {"required": True, "description": "GitLab project path, например platform/backend."},
+            "project": {
+                "required": True,
+                "description": "GitLab project path, например platform/backend.",
+            },
             "repo": {"description": "Псевдоним для project."},
             "ref": {"default": "main", "description": "Ветка или ref для pipeline."},
             "branch": {"description": "Псевдоним для ref."},
@@ -60,13 +77,23 @@ SPIDER_CONTRACTS: dict[str, dict] = {
             "weave": "Запустить Koji build task и дождаться результата.",
         },
         "inputs": {
-            "source": {"required": True, "description": "SCM URL или другой source, принимаемый Koji build."},
+            "source": {
+                "required": True,
+                "description": "SCM URL или другой source, принимаемый Koji build.",
+            },
             "src": {"description": "Псевдоним для source."},
             "target": {"required": True, "description": "Koji build target."},
-            "profile": {"default": "KOJI_PROFILE", "description": "Имя стандартного Koji client profile."},
+            "profile": {
+                "default": "KOJI_PROFILE",
+                "description": "Имя стандартного Koji client profile.",
+            },
             "scratch": {"description": "Запустить scratch build."},
-            "skip_tag": {"description": "Не тегировать успешную сборку в destination tag."},
-            "fail_fast": {"description": "Остановить multi-arch build при первой ошибке."},
+            "skip_tag": {
+                "description": "Не тегировать успешную сборку в destination tag."
+            },
+            "fail_fast": {
+                "description": "Остановить multi-arch build при первой ошибке."
+            },
             "arches": {"description": "Ограничить архитектуры сборки."},
             "priority": {"description": "Koji task priority."},
             "channel": {"description": "Koji builder channel."},
@@ -80,10 +107,16 @@ SPIDER_CONTRACTS: dict[str, dict] = {
             "command": "Выполнить playbook над целевой машиной или окружением.",
         },
         "inputs": {
-            "playbook": {"description": "Путь к playbook. Если не указан, может быть выведен из component."},
+            "playbook": {
+                "description": "Путь к playbook. Если не указан, может быть выведен из component."
+            },
             "component": {"description": "Компонент, над которым выполняется команда."},
-            "target": {"description": "Рекомендуется передавать Brood artifact: ${stand.artifact}. Явный hostname/IP тоже поддерживается."},
-            "os": {"description": "ОС target. Обычно берётся из Brood artifact и вручную не нужна."},
+            "target": {
+                "description": "Рекомендуется передавать Brood artifact: ${stand.artifact}. Явный hostname/IP тоже поддерживается."
+            },
+            "os": {
+                "description": "ОС target. Обычно берётся из Brood artifact и вручную не нужна."
+            },
             "version": {"description": "Версия пакета/продукта для playbook."},
         },
         "example": """- id: deploy\n  spider: ansible-local\n  action: command\n  with:\n    target: \"${stand.artifact}\"\n    playbook: install-redvrm.yml\n    version: \"${params.version}\"""",
@@ -96,15 +129,24 @@ SPIDER_CONTRACTS: dict[str, dict] = {
             "destroy": "Уничтожить ранее созданную машину и её OpenTofu state.",
         },
         "inputs": {
-            "name": {"default": "test-stand", "description": "Уникальное имя стенда/VM."},
+            "name": {
+                "default": "test-stand",
+                "description": "Уникальное имя стенда/VM.",
+            },
             "os": {
                 "default": "redos8",
                 "options": ["redos7", "redos8", "windows"],
                 "description": "Семейство ОС. Если image не задан, одновременно используется как ключ Golden Image profile.",
             },
-            "image": {"description": "Golden Image profile. Нужен, если для одной ОС заведено несколько профилей."},
-            "lifetime": {"description": "Сколько жить стенду до автоматического cleanup: например 30m, 2h или 1d."},
-            "resources": {"description": "Необязательные overrides: cpu, memory_gb, disk_gb. Неуказанные значения наследуются от Golden Image."},
+            "image": {
+                "description": "Golden Image profile. Нужен, если для одной ОС заведено несколько профилей."
+            },
+            "lifetime": {
+                "description": "Сколько жить стенду до автоматического cleanup: например 30m, 2h или 1d."
+            },
+            "resources": {
+                "description": "Необязательные overrides: cpu, memory_gb, disk_gb. Неуказанные значения наследуются от Golden Image."
+            },
         },
         "example": """- id: stand\n  spider: tofu-proxmox\n  action: brood\n  with:\n    name: test-${params.version}\n    os: redos8\n    lifetime: 30m\n    resources:\n      cpu: 4\n      memory_gb: 8""",
     },
@@ -116,7 +158,11 @@ SPIDER_CONTRACTS: dict[str, dict] = {
         },
         "inputs": {
             "name": {"default": "test-stand", "description": "Имя создаваемой VM."},
-            "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"], "description": "Семейство гостевой ОС."},
+            "os": {
+                "default": "redos8",
+                "options": ["redos7", "redos8", "windows"],
+                "description": "Семейство гостевой ОС.",
+            },
         },
         "example": """- id: stand\n  spider: ansible-ovirt\n  action: brood\n  with:\n    name: test-001\n    os: redos8""",
     },
@@ -127,8 +173,13 @@ SPIDER_CONTRACTS: dict[str, dict] = {
             "command": "Запустить дочерний сценарий как оркестрационную команду.",
         },
         "inputs": {
-            "scenario": {"required": True, "description": "Slug опубликованного дочернего сценария."},
-            "params": {"description": "Mapping параметров, передаваемых дочернему сценарию."},
+            "scenario": {
+                "required": True,
+                "description": "Slug опубликованного дочернего сценария.",
+            },
+            "params": {
+                "description": "Mapping параметров, передаваемых дочернему сценарию."
+            },
         },
         "example": """- id: child\n  spider: scenario\n  action: command\n  with:\n    scenario: smoke-test\n    params:\n      target: \"${stand.artifact}\"""",
     },
@@ -136,19 +187,34 @@ SPIDER_CONTRACTS: dict[str, dict] = {
 
 
 SPIDER_CONTRACTS["tofu-ovirt"] = deepcopy(SPIDER_CONTRACTS["tofu-proxmox"])
-SPIDER_CONTRACTS["tofu-ovirt"]["description"] = "Создаёт и удаляет oVirt VM через OpenTofu."
+SPIDER_CONTRACTS["tofu-ovirt"]["description"] = (
+    "Создаёт и удаляет oVirt VM через OpenTofu."
+)
 SPIDER_CONTRACTS["tofu-ovirt"]["docs_url"] = f"{DOCS_BASE}/operations/optional-spiders"
-SPIDER_CONTRACTS["tofu-ovirt"]["example"] = SPIDER_CONTRACTS["tofu-proxmox"]["example"].replace("tofu-proxmox", "tofu-ovirt")
-SPIDER_CONTRACTS["tofu-ovirt"]["inputs"]["resources"] = {"description": "cpu, memory_gb; диски наследуются от template."}
+SPIDER_CONTRACTS["tofu-ovirt"]["example"] = SPIDER_CONTRACTS["tofu-proxmox"][
+    "example"
+].replace("tofu-proxmox", "tofu-ovirt")
+SPIDER_CONTRACTS["tofu-ovirt"]["inputs"]["resources"] = {
+    "description": "cpu, memory_gb; диски наследуются от template."
+}
 for backend in ("tofu-proxmox", "tofu-ovirt"):
-    SPIDER_CONTRACTS[backend]["inputs"]["connection"] = {"description": "Подключение к гипервизору; должно совпадать с Golden Image. При destroy используйте исходное подключение."}
-SPIDER_CONTRACTS["tofu-ovirt"]["inputs"].update({
-    "ip_interface": {"description": "Имя гостевого интерфейса для ожидания IPv4."},
-    "ip_cidr": {"description": "Подсеть IPv4 для ожидания адреса, например 10.81.0.0/16."},
-})
+    SPIDER_CONTRACTS[backend]["inputs"]["connection"] = {
+        "description": "Подключение к гипервизору; должно совпадать с Golden Image. При destroy используйте исходное подключение."
+    }
+SPIDER_CONTRACTS["tofu-ovirt"]["inputs"].update(
+    {
+        "ip_interface": {"description": "Имя гостевого интерфейса для ожидания IPv4."},
+        "ip_cidr": {
+            "description": "Подсеть IPv4 для ожидания адреса, например 10.81.0.0/16."
+        },
+    }
+)
 
 
-@app.get("/api/admin/scenario-dsl")
+router = APIRouter()
+
+
+@router.get("/api/admin/scenario-dsl")
 def scenario_dsl_metadata(user=Depends(require_role("admin"))):
     profiles = [row for row in list_profiles() if row.get("enabled")]
     spiders = []
@@ -156,21 +222,27 @@ def scenario_dsl_metadata(user=Depends(require_role("admin"))):
         contract = deepcopy(SPIDER_CONTRACTS.get(name, {}))
         if name in {"tofu-proxmox", "tofu-ovirt"} and profiles:
             contract.setdefault("inputs", {}).setdefault("image", {})["options"] = [
-                row["slug"] for row in profiles if row["backend"] == name.removeprefix("tofu-")
+                row["slug"]
+                for row in profiles
+                if row["backend"] == name.removeprefix("tofu-")
             ]
 
         family = getattr(spider, "FAMILY", "weave")
         actions = contract.get("actions") or {family: f"Run {family} operation."}
-        spiders.append({
-            "name": name,
-            "family": family,
-            "description": contract.get("description", "Установленный spider без расширенной справки."),
-            "docs_url": contract.get("docs_url", f"{DOCS_BASE}/reference/spiders"),
-            "actions": list(actions),
-            "action_help": actions,
-            "inputs": contract.get("inputs", {}),
-            "example": contract.get("example", ""),
-        })
+        spiders.append(
+            {
+                "name": name,
+                "family": family,
+                "description": contract.get(
+                    "description", "Установленный spider без расширенной справки."
+                ),
+                "docs_url": contract.get("docs_url", f"{DOCS_BASE}/reference/spiders"),
+                "actions": list(actions),
+                "action_help": actions,
+                "inputs": contract.get("inputs", {}),
+                "example": contract.get("example", ""),
+            }
+        )
 
     return {
         "spiders": spiders,
