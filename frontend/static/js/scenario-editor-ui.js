@@ -123,7 +123,7 @@
           var on = button.getAttribute('aria-pressed') !== 'true';
           button.setAttribute('aria-pressed', String(on)); editor.updateOptions({ wordWrap: on ? 'on' : 'off' });
         }
-        if (command === 'fullscreen') { document.querySelector('.scenario-editor-shell').classList.toggle('fullscreen'); editor.layout(); editor.focus(); }
+        if (command === 'fullscreen') { var shell = document.querySelector('.scenario-editor-shell'); var expanded = shell.classList.toggle('fullscreen'); editor.layout(); if (expanded) editor.focus(); else document.querySelector('.scenario-yaml-heading [data-editor-command=fullscreen]').focus(); }
         if (command === 'format') {
           try {
             var value = window.jsyaml.dump(window.jsyaml.load(model.getValue()), { indent: 2, lineWidth: -1, noRefs: true });
