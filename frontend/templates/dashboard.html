@@ -87,6 +87,12 @@
     var groups = Array.from(document.querySelectorAll('.scenario-group'));
     var scenarioCards = Array.from(document.querySelectorAll('.scenario-card'));
 
+    document.addEventListener('htmx:afterSwap', function (event) {
+      if (event.detail.target.id === 'workspace' && window.matchMedia('(max-width: 980px)').matches) {
+        event.detail.target.scrollIntoView({ block: 'start', behavior: 'instant' });
+      }
+    });
+
     var searchOpenState = null;
     var search = document.getElementById('scenario-search');
     groups.forEach(function (group) {
