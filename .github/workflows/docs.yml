@@ -42,6 +42,10 @@ jobs:
           DOCS_BASE_PATH: /arachne
           NEXT_PUBLIC_DOCS_BASE_PATH: /arachne
         run: npm run build
+      - name: Smoke test exported reference
+        env:
+          DOCS_BASE_PATH: /arachne
+        run: node scripts/check-export.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
