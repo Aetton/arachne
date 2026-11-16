@@ -155,3 +155,18 @@ Proxmox:       фактическая инфраструктура
 ```
 
 Если новый пользовательский параметр требует знать node, datastore, provider variable или формат API token, граница нарушена. Такие детали должны оставаться в spider/backend layer.
+
+## Граница ядра и интеграций
+
+`api/core/` содержит контракты исполнения, оркестратор и транспорт. Код запуска
+OpenTofu и работы с его state находится в `api/integrations/tofu.py` и
+`tofu_state.py`; Git-кеш playbook repository — в
+`api/integrations/playbook_repository.py`. Конкретные пауки используют эти helpers.
+Каталог справки DSL находится отдельно в `api/editor_metadata.py`.
+
+Подготовка credentials выполняется в `run_engine.init()` до загрузки пауков.
+Ядро нормализует Brood artifacts без чтения Golden Images; приложение передаёт
+lookup defaults через `brood_credentials_resolver`. Явно заданная ссылка имеет
+приоритет, готовый Brood target не перенормализуется.
+
+См. [решение о границах модулей](/ru/decisions/20261116-core-integrations).

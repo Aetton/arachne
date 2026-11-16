@@ -12,3 +12,5 @@
 - [Единая сборка документации](20261116-unified-documentation.md)
 
 - [Единый каталог контрактов редактора DSL](20261116-shared-editor-contracts.md)
+
+- [Границы ядра и интеграций](20261116-core-integrations.md)

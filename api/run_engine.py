@@ -18,6 +18,7 @@ import scenario_store
 import managed_machines
 
 from core.registry import load_plugins, all_triggers
+from integrations.brood_credentials import golden_credentials_ref
 from core import orchestrator, wire_codec
 from core.thread_client import cancel_step
 from core.types import Artifact, RunOutput, LogLine, RunStatus, StepSpec
@@ -77,6 +78,10 @@ def init():
     if _initialized:
         return
     _reconcile_orphaned_runs()
+    # Apply credentials before importing spiders that cache environment values.
+    from service_credentials import apply_bound_credentials
+
+    apply_bound_credentials()
     load_plugins("plugins")
     _wire_triggers()
     _initialized = True
@@ -302,6 +307,7 @@ async def _execute(run_id: str, scenario_key: str, scenario: dict, params: dict)
             ),
             output_sink=_output_sink,
             step_state_sink=_step_state_sink,
+            brood_credentials_resolver=golden_credentials_ref,
         )
     except asyncio.CancelledError:
         _append_runtime_error(run_id, "ARACHNE ERROR: engine task was cancelled")

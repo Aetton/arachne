@@ -1,7 +1,7 @@
 """Optional Proxmox Brood backend."""
 
 from __future__ import annotations
-from core.tofu import TofuSpider, CONN_BY_OS
+from integrations.tofu import TofuSpider, CONN_BY_OS
 from core.registry import register_spider
 from database import ManagedMachine, SessionLocal
 from golden_images import get_profile

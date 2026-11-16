@@ -48,11 +48,6 @@ def all_triggers() -> dict[str, type["BaseTrigger"]]:
 def load_plugins(package: str = "plugins"):
     """Load execution plugins; HTTP routes are registered by main."""
     if package == "plugins":
-        # Service credentials live in Vault/encrypted DB. Materialize the small
-        # compatibility env surface before spiders that cache env at import time.
-        from service_credentials import apply_bound_credentials
-
-        apply_bound_credentials()
         load_plugins("plugins.spiders")
         load_plugins("plugins.triggers")
         return

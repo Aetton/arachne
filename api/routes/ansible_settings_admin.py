@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from auth.deps import require_administrator
-from core.playbook_repository import PlaybookRepository, PlaybookRepositoryError
+from integrations.playbook_repository import PlaybookRepository, PlaybookRepositoryError
 from web import render
 from playbook_settings import get_settings, save_settings
 from secrets_store import list_credentials

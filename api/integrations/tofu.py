@@ -12,7 +12,7 @@ import uuid
 from pathlib import Path
 from typing import AsyncIterator
 from core.lifetime import normalize_lifetime
-from core.tofu_state import ensure_provisionable_state
+from integrations.tofu_state import ensure_provisionable_state
 from core.spider import ProvisionSpider
 from core.types import Artifact, LogLine, RunHandle, RunStatus, StepSpec
 

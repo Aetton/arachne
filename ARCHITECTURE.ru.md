@@ -38,6 +38,19 @@ flowchart TD
 `run_engine.init()` загружает только `plugins.spiders` и `plugins.triggers`,
 поэтому доступность HTTP-маршрутов не зависит от запуска движка.
 
+## Код интеграций и ядро
+
+- `api/core/` — общие типы, Brood-контракт, оркестратор, шина и адаптеры.
+- `api/integrations/` — OpenTofu runtime/state, Git playbook repository и
+  получение defaults credentials из Golden Images.
+- `api/plugins/spiders/` — конкретные исполнители, использующие эти helpers.
+- `api/editor_metadata.py` — каталог справки редактора; он не является частью
+  движка выполнения.
+
+`run_engine.init()` применяет связанные credentials до импорта пауков. Lookup
+credentials для старых Brood artifacts передаётся оркестратору явно: нормализация
+в core сама не обращается к БД или Golden Images.
+
 ## Контракт паука
 
 Паук наследует `BuildSpider` или `ProvisionSpider`, задаёт `NAME` и реализует:

@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 from auth.deps import get_current_user
-from core.editor_metadata import SPIDER_CONTRACTS, scenario_dsl_metadata
+from editor_metadata import SPIDER_CONTRACTS, scenario_dsl_metadata
 from routes.editor_metadata import router
 import main
 
@@ -39,9 +39,9 @@ class MetadataTests(unittest.TestCase):
             dict(slug="disabled", backend="proxmox", enabled=False),
         ]
         self.patchers = [
-            patch("core.editor_metadata.all_spiders", return_value=self.spiders),
+            patch("editor_metadata.all_spiders", return_value=self.spiders),
             patch(
-                "core.editor_metadata.all_triggers", return_value={"manual": object()}
+                "editor_metadata.all_triggers", return_value={"manual": object()}
             ),
         ]
         for p in self.patchers:
