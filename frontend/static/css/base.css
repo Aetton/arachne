@@ -34,3 +34,11 @@
     a.link:hover { filter: brightness(1.15); }
     @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
   
+
+/* Dialog controls must outrank Tailwind preflight, without resizing checkboxes. */
+dialog input:not([type=checkbox]):not([type=radio]):not([type=hidden]),
+dialog select, dialog textarea {
+  min-height: 2.5rem;
+  padding: .52rem .72rem;
+}
+dialog select:not([multiple]) { padding-right: 2.75rem; }
