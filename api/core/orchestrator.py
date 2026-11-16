@@ -75,7 +75,8 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
                        user_id: int | None = None,
                        artifact_sink: ArtifactSink | None = None,
                        output_sink: OutputSink | None = None,
-                       step_state_sink: StepStateSink | None = None) -> RunStatus:
+                       step_state_sink: StepStateSink | None = None,
+                       brood_credentials_resolver: Callable[[dict], str] | None = None) -> RunStatus:
     ctx = RunContext(params, user_id=user_id)
     steps = parse_steps(scenario)
 
@@ -118,7 +119,10 @@ async def run_scenario(run_id: str, scenario_key: str, scenario: dict,
 
         if family == "brood":
             artifacts = [
-                normalize_brood_artifact(artifact, spider_name=step.spider)
+                normalize_brood_artifact(
+                    artifact, spider_name=step.spider,
+                    credentials_resolver=brood_credentials_resolver,
+                )
                 for artifact in artifacts
             ]
             # Legacy Brood responders naturally return one artifact card. Replace

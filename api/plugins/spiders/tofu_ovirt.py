@@ -3,7 +3,7 @@
 from __future__ import annotations
 import asyncio
 import ipaddress
-from core.tofu import TofuSpider
+from integrations.tofu import TofuSpider
 from core.registry import register_spider
 from golden_images import get_profile
 from infrastructure_connections import get_connection

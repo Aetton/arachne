@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "api"))
-from core.tofu_state import ensure_provisionable_state
+from integrations.tofu_state import ensure_provisionable_state
 
 
 class StateTests(unittest.TestCase):

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends
 
 from auth.deps import require_role
-from core.editor_metadata import scenario_dsl_metadata as build_metadata
+from editor_metadata import scenario_dsl_metadata as build_metadata
 from golden_images import list_profiles
 
 router = APIRouter()

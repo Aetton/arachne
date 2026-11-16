@@ -54,7 +54,7 @@ from core import switchboard
 from pydantic import BaseModel, Field
 from typing import Literal
 from scenario_layout import apply_layout
-from core.editor_metadata import scenario_dsl_metadata
+from editor_metadata import scenario_dsl_metadata
 from golden_images import list_profiles
 from web import render
 from routes import (

@@ -21,7 +21,7 @@ from core.brood import (
     preferred_endpoint,
     validate_brood_target,
 )
-from core.playbook_repository import PlaybookRepository, ResolvedPlaybook
+from integrations.playbook_repository import PlaybookRepository, ResolvedPlaybook
 from core.spider import CommandSpider
 from core.registry import register_spider
 from core.types import RunHandle, LogLine, RunStatus, Artifact, RunOutput, StepSpec

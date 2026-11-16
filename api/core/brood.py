@@ -4,9 +4,10 @@ Brood spiders may provision through any backend, but downstream Command spiders
 must not need to know which backend created the target. They consume this
 structured metadata contract instead.
 """
+
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from core.types import Artifact, RunOutput
 
@@ -78,28 +79,17 @@ def is_brood_target(artifact: Artifact) -> bool:
     return artifact.metadata.get("contract") == BROOD_TARGET_CONTRACT
 
 
-def _golden_credentials_ref(metadata: dict[str, Any]) -> str:
-    """Resolve the default target credential from the Golden Image profile.
+def normalize_brood_artifact(
+    artifact: Artifact,
+    *,
+    spider_name: str = "",
+    credentials_resolver: Callable[[dict[str, Any]], str] | None = None,
+) -> Artifact:
+    """Upgrade a flat provision artifact without consulting application stores.
 
-    Legacy Brood spiders only expose the selected image key in flat metadata.
-    Keeping the lookup here means all of them can inherit the image credential
-    without knowing anything about the Secrets implementation.
+    An optional resolver supplies image defaults only when no explicit reference
+    exists. Already normalized targets retain their original credentials.
     """
-    image = str(metadata.get("image") or "").strip().lower()
-    if not image:
-        return ""
-    try:
-        from golden_images import get_profile
-        profile = get_profile(image)
-    except Exception:
-        return ""
-    if not profile:
-        return ""
-    return str(profile.get("credentials_ref") or "").strip().lower()
-
-
-def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Artifact:
-    """Upgrade an old flat provision artifact to Brood target v1 in-place."""
     if is_brood_target(artifact):
         return artifact
 
@@ -116,7 +106,8 @@ def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Ar
     backend_data = {
         key: value
         for key, value in md.items()
-        if key in {
+        if key
+        in {
             "connection",
             "image",
             "vm_id",
@@ -128,7 +119,9 @@ def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Ar
             "requested_resources",
         }
     }
-    credentials_ref = str(md.get("credentials_ref") or "").strip().lower() or _golden_credentials_ref(md)
+    credentials_ref = str(md.get("credentials_ref") or "").strip().lower() or (
+        credentials_resolver(md) if credentials_resolver else ""
+    )
     if credentials_ref:
         md["credentials_ref"] = credentials_ref
 
@@ -151,7 +144,9 @@ def normalize_brood_artifact(artifact: Artifact, *, spider_name: str = "") -> Ar
     return artifact
 
 
-def validate_brood_target(artifact: Artifact, *, require_address: bool = True) -> dict[str, Any]:
+def validate_brood_target(
+    artifact: Artifact, *, require_address: bool = True
+) -> dict[str, Any]:
     if not isinstance(artifact, Artifact):
         raise BroodContractError("Brood target must be an Artifact")
     md = artifact.metadata or {}
@@ -166,7 +161,11 @@ def validate_brood_target(artifact: Artifact, *, require_address: bool = True) -
 
     preferred = str(md["access"].get("preferred") or "")
     endpoints = md["access"].get("endpoints")
-    if not preferred or not isinstance(endpoints, dict) or not isinstance(endpoints.get(preferred), dict):
+    if (
+        not preferred
+        or not isinstance(endpoints, dict)
+        or not isinstance(endpoints.get(preferred), dict)
+    ):
         raise BroodContractError("Brood target has no preferred access endpoint")
 
     endpoint = endpoints[preferred]
@@ -177,7 +176,9 @@ def validate_brood_target(artifact: Artifact, *, require_address: bool = True) -
     return md
 
 
-def preferred_endpoint(artifact: Artifact, *, require_address: bool = True) -> dict[str, Any]:
+def preferred_endpoint(
+    artifact: Artifact, *, require_address: bool = True
+) -> dict[str, Any]:
     md = validate_brood_target(artifact, require_address=require_address)
     protocol = str(md["access"]["preferred"])
     endpoint = dict(md["access"]["endpoints"][protocol])
@@ -222,7 +223,9 @@ def brood_target_outputs(artifact: Artifact) -> list[RunOutput]:
     access_links = []
     host = str(endpoint.get("host") or "")
     if host and preferred == "ssh":
-        access_links.append({"label": "Open SSH", "href": f"ssh://{host}", "kind": "connect"})
+        access_links.append(
+            {"label": "Open SSH", "href": f"ssh://{host}", "kind": "connect"}
+        )
     access_output = RunOutput(
         kind="access",
         title="Access",
@@ -230,7 +233,9 @@ def brood_target_outputs(artifact: Artifact) -> list[RunOutput]:
             "host": host,
             "port": endpoint.get("port"),
             "connection": preferred,
-            "credentials_ref": credentials.get("ref") if isinstance(credentials, dict) else None,
+            "credentials_ref": credentials.get("ref")
+            if isinstance(credentials, dict)
+            else None,
         },
         links=access_links,
         metadata={"artifact_key": key},
@@ -238,21 +243,25 @@ def brood_target_outputs(artifact: Artifact) -> list[RunOutput]:
 
     outputs = [machine, access_output]
     if backend.get("spider") == "tofu-proxmox" and artifact.type == "vm":
-        outputs.append(RunOutput(
-            kind="console",
-            title="Console",
-            data={
-                "provider": "Proxmox",
-                "protocol": "noVNC",
-                "target_id": str(identity.get("id") or artifact.location),
-            },
-            links=[{
-                "label": "Open VNC ↗",
-                "href": "__arachne_vm_console__",
-                "kind": "console",
-            }],
-            metadata={"artifact_key": key},
-        ))
+        outputs.append(
+            RunOutput(
+                kind="console",
+                title="Console",
+                data={
+                    "provider": "Proxmox",
+                    "protocol": "noVNC",
+                    "target_id": str(identity.get("id") or artifact.location),
+                },
+                links=[
+                    {
+                        "label": "Open VNC ↗",
+                        "href": "__arachne_vm_console__",
+                        "kind": "console",
+                    }
+                ],
+                metadata={"artifact_key": key},
+            )
+        )
     return outputs
 
 

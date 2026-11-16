@@ -51,10 +51,8 @@ assert 'main' not in sys.modules
     def test_plugin_discovery_does_not_import_http(self):
         code = """
 import sys
-from unittest.mock import patch
 from core.registry import load_plugins, all_spiders
-with patch('service_credentials.apply_bound_credentials'):
-    load_plugins()
+load_plugins()
 assert 'forgejo' in all_spiders()
 assert 'main' not in sys.modules
 assert not any(name.startswith('routes.') for name in sys.modules)

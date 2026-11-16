@@ -20,7 +20,7 @@ os.environ["DATABASE_URL"] = "sqlite:///" + _tmp.name + "/test.db"
 from database import Base, engine, SessionLocal, ManagedMachine
 import infrastructure_connections as connections
 import golden_images
-from core.tofu import TofuSpider
+from integrations.tofu import TofuSpider
 from core.types import StepSpec, RunStatus, Artifact
 from core.optional_plugins import installed_bundles, module_enabled
 from plugins.spiders.tofu_proxmox import TofuProxmoxSpider
@@ -274,7 +274,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch.object(spider, "_run_cmd", side_effect=run),
-                patch("core.tofu.shutil.which", return_value="/tofu"),
+                patch("integrations.tofu.shutil.which", return_value="/tofu"),
                 patch.object(connections, "execution_env", return_value={}),
             ):
                 _ = [line async for line in spider.stream_logs(handle)]
@@ -311,7 +311,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
                                "instances": [{"attributes": {"id": "existing"}}]}],
             }))
             (d / "module/main.tf").write_text("original")
-            with patch("core.tofu.shutil.which", return_value="/tofu"):
+            with patch("integrations.tofu.shutil.which", return_value="/tofu"):
                 logs = [l.text async for l in spider.stream_logs(h)]
             self.assertEqual((d / "module/main.tf").read_text(), "original")
             self.assertEqual(spider.get_status(h), RunStatus.FAILED)
@@ -378,7 +378,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch.object(spider, "_run_cmd", side_effect=run),
-                patch("core.tofu.shutil.which", return_value="/tofu"),
+                patch("integrations.tofu.shutil.which", return_value="/tofu"),
                 patch.object(connections, "execution_env", return_value={}),
             ):
                 _ = [line async for line in spider.stream_logs(h)]
