@@ -3,7 +3,7 @@
 {% block content %}
 <link rel="stylesheet" href="/static/css/scenario-form.css?v=1">
 
-<link rel="stylesheet" href="/static/css/scenario-editor.css?v=1">
+<link rel="stylesheet" href="/static/css/scenario-editor.css?v=2">
 <form id="scenario-form" method="post" action="/admin/scenarios/save" class="space-y-6 scenario-editor-page">
   <input type="hidden" name="original_slug" value="{{ scenario.slug if scenario else '' }}">
   <div class="scenario-form-header flex items-center justify-between">
@@ -28,6 +28,7 @@
         {% endfor %}
       </p>
       <div class="scenario-editor-shell">
+        <div class="editor-fullscreen-bar"><span>Редактор сценария</span><button type="button" data-editor-command="fullscreen" aria-label="Свернуть редактор">Свернуть · Esc</button></div>
         <textarea id="scenario-definition" name="definition" required>{{ yaml_text }}</textarea>
         <div id="scenario-editor" aria-label="Редактор YAML сценария"></div>
       </div>
@@ -130,7 +131,7 @@
 
 {% block scripts %}
 <script src="/static/js/scenario-dsl-catalog.js?v=1"></script>
-<script src="/static/js/scenario-editor-ui.js?v=1"></script>
+<script src="/static/js/scenario-editor-ui.js?v=2"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/inconsolata@5.2.6/index.css">
 <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
 <script src="/static/js/monaco-environment.js?v=1"></script>
