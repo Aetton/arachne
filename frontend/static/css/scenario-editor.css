@@ -48,9 +48,11 @@
 .scenario-editor-page .dsl-reference h2{font-size:13px}
 .scenario-editor-page .dsl-reference input,.scenario-editor-page .dsl-reference select{font-size:11px;min-height:36px}
 .scenario-editor-page .dsl-reference .btn-ghost{font-size:11px;min-height:34px;padding:7px 10px}
-.scenario-editor-page .scenario-editor-shell.fullscreen{position:fixed;inset:16px;z-index:100;box-shadow:0 0 0 100vw #10111be6;border-radius:12px;display:flex}
+.scenario-editor-page .scenario-editor-shell.fullscreen{position:fixed;inset:16px;z-index:100;box-shadow:0 0 0 100vw #10111be6;border-radius:12px;display:flex;flex-direction:column}
 .scenario-editor-page .scenario-editor-shell.fullscreen #scenario-editor{height:auto;flex:1;min-height:0}
-.scenario-editor-page .scenario-editor-shell.fullscreen:after{content:'Esc — вернуться';position:absolute;right:28px;top:12px;font-size:10px;color:var(--muted);z-index:10;pointer-events:none}
+.editor-fullscreen-bar{display:none}
+.scenario-editor-shell.fullscreen .editor-fullscreen-bar{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;border-bottom:1px solid var(--border);color:var(--muted);font-size:12px}
+.editor-fullscreen-bar button{min-height:40px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--fg);cursor:pointer}
 .scenario-editor-page #scenario-diagnostic-list{display:grid;gap:5px;margin:0 0 16px;max-height:180px;overflow:auto}
 .scenario-editor-page #scenario-diagnostic-list button{font-size:11px;line-height:1.6;padding:9px 12px;border:1px solid var(--border);border-radius:6px;text-align:left;color:var(--fail-fg)}
 .scenario-editor-page #scenario-diagnostic-list button:hover{background:var(--surface2)}
