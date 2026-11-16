@@ -17,27 +17,30 @@ uvicorn main:app --reload
 
 SQLite удобен для короткой разработки, production default — PostgreSQL.
 
-Инструменты документации изолированы в каталоге `docs`:
+Инструменты документации изолированы в каталоге `docs-site`:
 
 ```bash
-cd docs
+cd docs-site
 npm ci
-npm run docs:dev
+npm run dev
 ```
 
-Production-сборка документации запускается командой `npm run docs:build`.
+Для контейнера задайте `DOCS_BASE_PATH=/wiki`, для GitHub Pages —
+`DOCS_BASE_PATH=/arachne`. Затем выполните `npm run build` и `npm run check:export`
+с тем же значением переменной. Без префикса сборка предназначена для корня сайта.
 
 ## Проверки перед коммитом
 
 ```bash
-cd docs
+cd docs-site
 npm ci
-npm run docs:build
+npm run build
+npm run check:export
 ```
 
-В репозитории сейчас нет полноценного набора автотестов. Поэтому дополнительно
-проверьте старт приложения, вход, открытие сценария, ручной run и конкретный backend,
-которого касается изменение.
+Основные проверки приложения: `python scripts/check.py` из корня репозитория
+после установки `requirements-dev.txt` и `npm ci`. Тесты внешних backend используют
+подмены и не подтверждают реальное выполнение инфраструктурных операций.
 
 ## Структура
 
@@ -45,7 +48,8 @@ npm run docs:build
 |---|---|
 | `api/` | FastAPI, БД, ядро, пауки и триггеры |
 | `frontend/` | Jinja2, CSS и JavaScript |
-| `docs/` | VitePress |
+| `docs/` | Markdown-контент документации |
+| `docs-site/` | Fumadocs, сборка статического справочника |
 | `config/` | seed сценариев и справка |
 | `playbooks/` | Ansible и исторические workflow examples |
 | `tofu/` | пример модуля OpenTofu |

@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
-import { resolve, join, dirname, relative, extname } from 'node:path';
+import { resolve, join, dirname, relative, extname, posix } from 'node:path';
 
 const here = resolve(import.meta.dirname, '..');
 const source = resolve(here, '..', 'docs');
@@ -41,10 +41,15 @@ function convert(raw, path) {
   const match = noFrontmatter.match(/^\s*#\s+(.+)$/m);
   const title = match?.[1]?.replace(/[\u0060*]/g, '') || path.split('/').at(-1).replace(/\.md$/, '');
   const withoutHeading = match ? noFrontmatter.replace(/^\s*#\s+.+\r?\n/m, '') : noFrontmatter;
-  const rewritten = withoutHeading.replace(/\]\(\/(?!\/)([^)]+)\)/g, (_, link) => {
+  const rewrittenAbsolute = withoutHeading.replace(/\]\(\/(?!\/)([^)]+)\)/g, (_, link) => {
     const [pathPart, hash] = link.split('#');
     const clean = pathPart.replace(/\.md$/, '').replace(/\/$/, '');
     return `](${prefix}/docs/${clean}${hash ? '#' + hash : ''})`;
+  });
+  const rewritten = rewrittenAbsolute.replace(/\]\(([^/:#][^:)]*\.md)(#[^)]*)?\)/g, (_, link, hash = '') => {
+    const resolved = posix.normalize(posix.join(posix.dirname(path), link));
+    const slug = resolved.replace(/\.md$/, '').replace(/(?:^|\/)index$/, '');
+    return `](${prefix}/docs/${slug}${hash})`;
   });
   return `---\ntitle: ${escape(title)}\n---\n\n${rewritten.trim()}\n`;
 }

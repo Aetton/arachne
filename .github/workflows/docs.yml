@@ -3,12 +3,16 @@ name: Documentation (Fumadocs)
 on:
   pull_request:
     paths:
+      - "Dockerfile"
+      - ".dockerignore"
       - "docs/**"
       - "docs-site/**"
       - ".github/workflows/docs.yml"
   push:
     branches: [main]
     paths:
+      - "Dockerfile"
+      - ".dockerignore"
       - "docs/**"
       - "docs-site/**"
       - ".github/workflows/docs.yml"
@@ -34,22 +38,39 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Check content links
         run: npm run check:links
       - name: Build static Fumadocs site
         env:
           DOCS_BASE_PATH: /arachne
-          NEXT_PUBLIC_DOCS_BASE_PATH: /arachne
         run: npm run build
       - name: Smoke test exported reference
         env:
           DOCS_BASE_PATH: /arachne
-        run: node scripts/check-export.mjs
+        run: npm run check:export
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs-site/out
+
+  container-docs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs-site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: Build and check container documentation prefix
+        env:
+          DOCS_BASE_PATH: /wiki
+        run: npm run build && npm run check:export
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -57,7 +78,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, container-docs]
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

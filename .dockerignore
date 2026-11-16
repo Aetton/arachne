@@ -1,8 +1,9 @@
-docs/node_modules/
-docs/.vitepress/cache/
-docs/.vitepress/dist/
-
-node_modules/
+**/node_modules/
+**/.next/
+**/out/
+docs-site/content/docs/
+docs-site/.source/
+**/*.tsbuildinfo
 .git/
 .venv/
 venv/

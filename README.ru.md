@@ -48,7 +48,7 @@ docker compose logs -f arachne
 - [Развёртывание и резервное копирование](docs/ru/operations/deployment.md)
 - [Что пока не работает или работает с оговорками](docs/ru/reference/limitations.md)
 
-Собранная VitePress-документация доступна внутри контейнера по адресу `/wiki/`.
+Собранная Fumadocs-документация доступна внутри контейнера по адресу `/wiki/`.
 
 ## Лицензия
 
