@@ -1,12 +1,13 @@
-FROM node:22-alpine AS docs-builder
+FROM node:22-bookworm-slim AS docs-builder
 
-WORKDIR /docs
-COPY docs/package*.json ./
-RUN npm ci
-COPY docs/ ./
-ENV DOCS_BASE=/wiki/ \
-    DOCS_LAST_UPDATED=false
-RUN npm run docs:build
+WORKDIR /app/docs-site
+COPY docs-site/package*.json ./
+RUN npm ci --no-audit --no-fund
+COPY docs-site/ ./
+COPY docs/ /app/docs/
+ENV DOCS_BASE_PATH=/wiki \
+    NEXT_TELEMETRY_DISABLED=1
+RUN npm run check:links && npm run build && npm run check:export
 
 FROM python:3.12-slim-bookworm
 
@@ -64,7 +65,7 @@ COPY playbooks/ ./playbooks/
 COPY tofu/ ./tofu/
 COPY hubs/ ./hubs/
 COPY scripts/ ./scripts/
-COPY --from=docs-builder /docs/.vitepress/dist /app/wiki/
+COPY --from=docs-builder /app/docs-site/out/ /app/wiki/
 
 RUN PYTHONPATH=api python scripts/select-plugin-bundles.py \
     && chmod +x api/runners/demo_play.sh \

@@ -21,7 +21,8 @@ async function walk(path) {
       const target = basePath + '/docs/' + slug + '/';
       const html = '<!doctype html><html lang="ru"><head><meta charset="utf-8">' +
         '<meta http-equiv="refresh" content="0;url=' + target + '">' +
-        '<link rel="canonical" href="' + target + '"></head><body>' +
+        '<link rel="canonical" href="' + target + '">' +
+        '<script>location.replace(' + JSON.stringify(target) + ' + location.search + location.hash)</script></head><body>' +
         '<a href="' + target + '">Перейти в документацию</a></body></html>\n';
       await writeFile(join(oldDir, 'index.html'), html);
     }

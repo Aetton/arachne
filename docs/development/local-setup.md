@@ -6,12 +6,14 @@ just up
 just logs
 ```
 
-Documentation is isolated in this directory:
+Markdown content lives in `docs/`; the Fumadocs builder lives in `docs-site/`:
 
 ```bash
-cd docs
+cd docs-site
 npm ci
-npm run docs:dev
+npm run dev
 ```
 
-Build the documentation with `npm run docs:build`.
+Build with `npm run build`, then run `npm run check:export`. Use the same
+`DOCS_BASE_PATH` for both commands: `/wiki` for the container or `/arachne`
+for GitHub Pages. Omit it when serving from the site root.

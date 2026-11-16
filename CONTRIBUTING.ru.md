@@ -29,12 +29,14 @@ just logs
 just update
 ```
 
-Документация находится в `docs/`. Перед отправкой изменений проверьте её так:
+Контент документации находится в `docs/`, сборщик Fumadocs — в `docs-site/`. Перед отправкой изменений проверьте её так:
 
 ```bash
-cd docs
+cd docs-site
 npm ci
-npm run docs:build
+npm run check:links
+DOCS_BASE_PATH=/wiki npm run build
+DOCS_BASE_PATH=/wiki npm run check:export
 ```
 
 ## Pull request
