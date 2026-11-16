@@ -361,6 +361,27 @@ async def run_cancel(
     return Response("", headers={"HX-Trigger": "runStarted"})
 
 
+@app.post("/runs/{run_id}/restart", response_class=HTMLResponse)
+async def run_restart(
+    run_id: str,
+    request: Request,
+    user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    previous = _require_run_access(db, user, run_id)
+    stored = db.query(Scenario).filter(Scenario.slug == previous.scenario).first()
+    if not stored or not access.can_access_scenario(db, user, stored, "run"):
+        raise HTTPException(403, "Scenario run is not allowed")
+    if not config_loader.get_scenario(previous.scenario):
+        raise HTTPException(404, "Unknown scenario")
+    new_id = await run_engine.start_run_async(
+        user.id, previous.scenario, dict(previous.params or {})
+    )
+    response = _render_run(request, user, new_id)
+    response.headers["HX-Trigger"] = "runStarted"
+    return response
+
+
 @app.get("/runs/history", response_class=HTMLResponse)
 def runs_history(
     request: Request, user=Depends(get_current_user), db: Session = Depends(get_db)
