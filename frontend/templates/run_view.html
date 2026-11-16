@@ -199,6 +199,11 @@
     {% endif %}
 
     <div class="run-actions">
+      <button class="btn-ghost" title="Повторить запуск с теми же параметрами"
+              hx-post="/runs/{{ run.id }}/restart" hx-target="#workspace"
+              hx-swap="innerHTML" hx-disabled-elt="this">
+        <i class="ti ti-refresh"></i> Restart
+      </button>
       {% if run.status == "running" %}
       <button class="btn-ghost" style="color:var(--fail-fg)"
               hx-post="/runs/{{ run.id }}/cancel" hx-swap="none">
