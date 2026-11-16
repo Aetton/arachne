@@ -1,45 +1,17 @@
 (function () {
-  var FALLBACK_METADATA = {
-    docs_url: '/wiki/ru/reference/scenario-syntax',
-    families: ['weave', 'brood', 'command'],
-    family_help: {
-      weave: 'Создание build artifacts.',
-      brood: 'Создание вычислительных окружений.',
-      command: 'Действия над существующими окружениями.'
-    },
-    spiders: [
-      {
-        name: 'ansible-local', family: 'command', actions: ['command'],
-        action_help: {command: 'Выполнить ansible-playbook над target.'},
-        inputs: {
-          playbook: {description: 'Playbook из настроенного Git repository.'},
-          playbook_ref: {description: 'Необязательный override Git ref для playbook repository.'},
-          target: {description: 'Brood artifact или явный hostname/IP.'}
-        },
-        description: 'Run ansible-playbook on a target or locally.',
-        docs_url: '/wiki/ru/reference/spiders#ansible-local',
-        example: '- id: deploy\n  spider: ansible-local\n  action: command\n  with:\n    target: "${stand.artifact}"\n    playbook: install.yml\n    playbook_ref: main'
-      },
-      {
-        name: 'forgejo', family: 'weave', actions: ['weave'],
-        action_help: {weave: 'Запустить Forgejo Actions workflow.'},
-        inputs: {repo: {description: 'Имя репозитория.'}, workflow: {description: 'Файл workflow.'}, ref: {description: 'Git ref/ветка.'}},
-        description: 'Dispatch a Forgejo Actions workflow.',
-        docs_url: '/wiki/ru/reference/spiders#forgejo',
-        example: '- id: build\n  spider: forgejo\n  action: weave\n  with:\n    repo: backend\n    workflow: build.yaml'
-      },
-      {
-        name: 'tofu-proxmox', family: 'brood', actions: ['brood', 'destroy'],
-        action_help: {brood: 'Создать стенд.', destroy: 'Уничтожить стенд.'},
-        inputs: {name: {description: 'Имя стенда.'}, os: {description: 'Семейство ОС.'}, image: {description: 'Golden Image profile.'}, lifetime: {description: 'TTL: 30m, 2h, 1d.'}, resources: {description: 'cpu, memory_gb, disk_gb.'}},
-        description: 'Create or destroy a Proxmox stand through OpenTofu.',
-        docs_url: '/wiki/ru/operations/proxmox-opentofu',
-        example: '- id: stand\n  spider: tofu-proxmox\n  action: brood\n  with:\n    name: test-001\n    os: redos8\n    lifetime: 30m'
-      }
-    ]
-  };
+  // Use the same server catalog as the API; retain it if refresh fails.
+  function initialMetadata() {
+    var node = document.getElementById('scenario-dsl-metadata');
+    if (!node) return {spiders: []};
+    try { return JSON.parse(node.textContent); }
+    catch (error) {
+      console.warn('[scenario-editor] invalid initial DSL metadata', error);
+      return {spiders: []};
+    }
+  }
 
-  var metadataCache = FALLBACK_METADATA;
+  var INITIAL_METADATA = initialMetadata();
+  var metadataCache = INITIAL_METADATA;
 
   function makeText(tag, text, className) {
     var node = document.createElement(tag);
@@ -134,7 +106,7 @@
           return {contents: [
             markdown('**Scenario reference**'),
             markdown('`${params.name}` берёт input сценария. `${step_id.field}` берёт поле результата предыдущего шага. `${step_id.artifact}` передаёт structured artifact целиком.'),
-            markdown('[Синтаксис ссылок](' + (metadataCache.docs_url || '/wiki/ru/reference/scenario-syntax') + ')')
+            markdown('[Синтаксис ссылок](' + (metadataCache.docs_url || '/wiki/docs/ru/reference/scenario-syntax') + ')')
           ]};
         }
 
@@ -493,7 +465,7 @@
   }
 
   function renderCatalog(metadata) {
-    metadataCache = metadata || FALLBACK_METADATA;
+    metadataCache = metadata || INITIAL_METADATA;
     registerHoverProvider();
 
     var reference = document.querySelector('.dsl-reference');
@@ -505,7 +477,7 @@
     heading.appendChild(makeText('h2', 'DSL helper', 'font-semibold'));
     var docs = document.createElement('a');
     docs.className = 'link text-xs';
-    docs.href = metadataCache.docs_url || '/wiki/ru/reference/scenario-syntax';
+    docs.href = metadataCache.docs_url || '/wiki/docs/ru/reference/scenario-syntax';
     docs.target = '_blank';
     docs.rel = 'noopener';
     docs.textContent = 'Полная документация ↗';
@@ -515,11 +487,11 @@
     var basics = document.createElement('div');
     basics.className = 'surface-2 rounded p-2 mt-3 text-xs';
     basics.appendChild(makeText('div', 'Шаг: id · spider · action · with · needs', 'muted'));
-    basics.appendChild(makeText('div', 'Семейства: weave · brood · command', 'muted mt-1'));
+    basics.appendChild(makeText('div', 'Семейства: ' + (metadataCache.families || []).join(' · '), 'muted mt-1'));
     basics.appendChild(makeText('div', 'Hover по action / with.* / ${…} покажет справку.', 'muted mt-1'));
     reference.appendChild(basics);
 
-    renderPlaybookPicker(reference);
+    if (spiderByName("ansible-local")) renderPlaybookPicker(reference);
 
     var title = makeText('h3', 'Installed spiders', 'text-sm font-semibold mt-4');
     reference.appendChild(title);
@@ -594,7 +566,7 @@
 
   function loadMetadata() {
     if (!document.querySelector('.dsl-reference')) return;
-    renderCatalog(FALLBACK_METADATA);
+    renderCatalog(INITIAL_METADATA);
     fetch('/api/admin/scenario-dsl', {credentials: 'same-origin', cache: 'no-store'})
       .then(function (response) {
         if (!response.ok) throw new Error('DSL metadata request failed: ' + response.status);
@@ -602,7 +574,7 @@
       })
       .then(renderCatalog)
       .catch(function (error) {
-        console.warn('[scenario-editor] live DSL metadata unavailable; fallback catalog retained', error);
+        console.warn('[scenario-editor] live DSL metadata unavailable; initial catalog retained', error);
       });
   }
 

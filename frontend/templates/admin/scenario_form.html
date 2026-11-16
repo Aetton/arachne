@@ -284,6 +284,7 @@
         <button type="button" data-editor-tab="outline" aria-selected="false">Структура</button>
         <button type="button" data-editor-tab="acl" aria-selected="false">Доступы</button>
       </nav>
+      <script type="application/json" id="scenario-dsl-metadata">{{ dsl_metadata|default({})|tojson }}</script>
       <div class="editor-side-body" id="editor-side-help">      <div class="dsl-reference">
         <h2 class="font-semibold">DSL quick reference</h2>
         <ul>

@@ -10,3 +10,5 @@
 - [Явное подключение HTTP-роутеров](20261116-explicit-http-routers.md)
 
 - [Единая сборка документации](20261116-unified-documentation.md)
+
+- [Единый каталог контрактов редактора DSL](20261116-shared-editor-contracts.md)
