@@ -28,8 +28,11 @@ class NatsBus(Bus):
     def __init__(self):
         self._nc = None
         self._subs = []
+        self._reply_tasks: set[asyncio.Task] = set()
+        self._stopping = False
 
     async def start(self) -> None:
+        self._stopping = False
         import nats  # imported lazily so the dep is optional
         url = os.getenv("NATS_URL", "nats://nats:4222")
         try:
@@ -48,9 +51,20 @@ class NatsBus(Bus):
             ) from exc
 
     async def stop(self) -> None:
-        if self._nc:
-            await self._nc.drain()
+        self._stopping = True
+        # Keep transport alive for adapter cancellation cleanup and final replies.
+        tasks = list(self._reply_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._reply_tasks.clear()
+        try:
+            if self._nc:
+                await self._nc.drain()
+        finally:
             self._nc = None
+            self._subs.clear()
 
     async def publish(self, subject: str, payload: dict) -> None:
         await self._nc.publish(subject, json.dumps(payload).encode())
@@ -86,12 +100,33 @@ class NatsBus(Bus):
             return {"error": str(exc), "subject": subject}
 
     async def reply(self, subject: str, handler: ReplyHandler):
+        async def _respond(msg):
+            try:
+                data = json.loads(msg.data.decode() or "{}")
+                res = handler(data)
+                if hasattr(res, "__await__"):
+                    res = await res
+                await msg.respond(json.dumps(res or {}).encode())
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                _logger.exception("NATS reply failed: subject=%s", subject)
+                try:
+                    await msg.respond(json.dumps({
+                        "error": "reply_handler_failed", "subject": subject,
+                    }).encode())
+                except Exception:  # noqa: BLE001
+                    _logger.exception("NATS error reply failed: subject=%s", subject)
+
         async def _cb(msg):
-            data = json.loads(msg.data.decode() or "{}")
-            res = handler(data)
-            if hasattr(res, "__await__"):
-                res = await res
-            await msg.respond(json.dumps(res or {}).encode())
+            # nats-py awaits callbacks serially per subscription. Only enqueue
+            # here: a run handler can remain active for the whole build.
+            if self._stopping:
+                return
+            task = asyncio.create_task(_respond(msg))
+            self._reply_tasks.add(task)
+            task.add_done_callback(self._reply_tasks.discard)
+
         sub = await self._nc.subscribe(subject, cb=_cb)
         self._subs.append(sub)
         return sub

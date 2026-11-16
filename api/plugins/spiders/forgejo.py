@@ -241,41 +241,6 @@ class ForgejoSpider(BuildSpider):
             return timed[0][1]
         return undated[0] if undated else None
 
-    def _discover_run(
-        self,
-        owner: str,
-        repo: str,
-        workflow: str,
-        ref: str,
-        started_after: float,
-    ) -> dict | None:
-        """Find the run when dispatch returned no directly usable metadata."""
-        url = self._api_path(owner, repo, f"actions/workflows/{workflow}/runs")
-        for _ in range(10):
-            try:
-                response = httpx.get(
-                    url,
-                    headers=self._headers(),
-                    params={
-                        "branch": ref,
-                        "event": "workflow_dispatch",
-                        "limit": 20,
-                    },
-                    timeout=10,
-                    verify=VERIFY_TLS,
-                )
-                response.raise_for_status()
-                rows = self._run_rows(response.json())
-                selected = self._select_dispatched_run(
-                    rows, ref, started_after
-                )
-                if selected:
-                    return selected
-            except Exception:
-                pass
-            time.sleep(0.5)
-        return None
-
     def dispatch(self, step: StepSpec, ctx) -> RunHandle:
         w = step.with_
         repo = w.get("repo")
@@ -334,17 +299,11 @@ class ForgejoSpider(BuildSpider):
 
         run_id = data.get("id") or data.get("run_id")
         if not run_id:
-            discovered = self._discover_run(
-                owner, repo, workflow, ref, started_after=started_at
-            )
-            if discovered:
-                data = discovered
-                run_id = data.get("id") or data.get("run_id")
-
-        if not run_id:
             raise RuntimeError(
                 "Forgejo accepted workflow dispatch but Arachne could not resolve "
-                "the resulting Actions run id"
+                "the resulting Actions run id from the dispatch response. "
+                "Forgejo must support return_run_info; discovering the latest run "
+                "is unsafe with concurrent dispatches. The workflow may still be running."
             )
 
         key = str(run_id)
