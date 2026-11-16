@@ -1,5 +1,7 @@
 """Admin UI for mapping human golden-image profiles to Proxmox templates."""
+
 from __future__ import annotations
+from fastapi import APIRouter
 
 import asyncio
 import logging
@@ -9,8 +11,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from auth.deps import get_db, require_role
-from golden_images import GoldenImageProfile, ensure_schema, validate_profile, list_os_tags, is_windows_os
-from main import app, render
+from golden_images import (
+    GoldenImageProfile,
+    ensure_schema,
+    validate_profile,
+    list_os_tags,
+    is_windows_os,
+)
+from web import render
 from infrastructure_connections import list_connections, get_connection
 from core.optional_plugins import installed_bundles
 
@@ -20,11 +28,15 @@ def _adapter(backend):
         raise ValueError(f"Install tofu-{backend} first")
     if backend == "proxmox":
         import proxmox_api
+
         return proxmox_api
     if backend == "ovirt":
         import ovirt_api
+
         return ovirt_api
     raise ValueError("Unknown backend")
+
+
 from secrets_store import list_credentials
 
 
@@ -34,16 +46,25 @@ ensure_schema()
 
 
 def _profiles(db: Session) -> list[GoldenImageProfile]:
-    return db.query(GoldenImageProfile).order_by(
-        GoldenImageProfile.enabled.desc(), GoldenImageProfile.label, GoldenImageProfile.slug,
-    ).all()
+    return (
+        db.query(GoldenImageProfile)
+        .order_by(
+            GoldenImageProfile.enabled.desc(),
+            GoldenImageProfile.label,
+            GoldenImageProfile.slug,
+        )
+        .all()
+    )
 
 
 def _target_credentials() -> list[dict]:
     return [row for row in list_credentials() if row.get("kind") in {"ssh", "winrm"}]
 
 
-@app.get("/admin/golden-images", response_class=HTMLResponse)
+router = APIRouter()
+
+
+@router.get("/admin/golden-images", response_class=HTMLResponse)
 async def admin_golden_images(
     request: Request,
     user=Depends(require_role("admin")),
@@ -51,19 +72,31 @@ async def admin_golden_images(
 ):
     errors = []
     templates = []
-    connections = [c for c in list_connections() if c["enabled"] and f"tofu-{c['backend']}" in installed_bundles()]
+    connections = [
+        c
+        for c in list_connections()
+        if c["enabled"] and f"tofu-{c['backend']}" in installed_bundles()
+    ]
     if "tofu-proxmox" in installed_bundles():
         import os
+
         if os.getenv("PROXMOX_VE_ENDPOINT"):
-            connections.insert(0, {"slug": "", "label": "Proxmox (legacy)", "backend": "proxmox"})
+            connections.insert(
+                0, {"slug": "", "label": "Proxmox (legacy)", "backend": "proxmox"}
+            )
     for c in connections:
         try:
-            items = await asyncio.to_thread(_adapter(c["backend"]).list_templates, c["slug"])
-            templates.extend({**t, "connection": c["slug"], "backend": c["backend"]} for t in items)
+            items = await asyncio.to_thread(
+                _adapter(c["backend"]).list_templates, c["slug"]
+            )
+            templates.extend(
+                {**t, "connection": c["slug"], "backend": c["backend"]} for t in items
+            )
         except Exception as exc:  # noqa: BLE001
             _logger.exception(
                 "Golden Image template discovery failed: backend=%s connection=%s",
-                c["backend"], c["slug"],
+                c["backend"],
+                c["slug"],
             )
             # Never echo internal URLs or credentials in the browser error.
             errors.append(
@@ -75,10 +108,21 @@ async def admin_golden_images(
     for row in _profiles(db):
         template_id = row.template_id or str(row.vm_id)
         live = template_by_id.get((row.connection or "", template_id))
-        cards.append({"id": row.id, "slug": row.slug, "label": row.label, "os": row.os,
-                      "vm_id": template_id, "connection": row.connection or "", "backend": row.backend,
-                      "credentials_ref": row.credentials_ref or "", "enabled": row.enabled,
-                      "live": live, "healthy": bool(live)})
+        cards.append(
+            {
+                "id": row.id,
+                "slug": row.slug,
+                "label": row.label,
+                "os": row.os,
+                "vm_id": template_id,
+                "connection": row.connection or "",
+                "backend": row.backend,
+                "credentials_ref": row.credentials_ref or "",
+                "enabled": row.enabled,
+                "live": live,
+                "healthy": bool(live),
+            }
+        )
 
     return render(
         request,
@@ -93,12 +137,12 @@ async def admin_golden_images(
     )
 
 
-@app.get("/api/admin/golden-images/credentials")
+@router.get("/api/admin/golden-images/credentials")
 def admin_golden_image_credentials(user=Depends(require_role("admin"))):
     return {"credentials": _target_credentials()}
 
 
-@app.post("/admin/golden-images/save")
+@router.post("/admin/golden-images/save")
 async def admin_golden_images_save(
     request: Request,
     user=Depends(require_role("admin")),
@@ -125,15 +169,19 @@ async def admin_golden_images_save(
     except (ValueError, RuntimeError) as exc:
         _logger.exception(
             "Golden Image template validation failed: backend=%s connection=%s",
-            backend, connection,
+            backend,
+            connection,
         )
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         _logger.exception(
             "Unexpected Golden Image template validation failure: backend=%s connection=%s",
-            backend, connection,
+            backend,
+            connection,
         )
-        raise HTTPException(502, "Hypervisor template lookup failed; see API logs") from exc
+        raise HTTPException(
+            502, "Hypervisor template lookup failed; see API logs"
+        ) from exc
 
     credentials_ref = str(form.get("credentials_ref") or "").strip().lower()
     credentials = {row["slug"]: row for row in _target_credentials()}
@@ -150,16 +198,27 @@ async def admin_golden_images_save(
 
     row = None
     if original_slug:
-        row = db.query(GoldenImageProfile).filter(GoldenImageProfile.slug == original_slug).first()
+        row = (
+            db.query(GoldenImageProfile)
+            .filter(GoldenImageProfile.slug == original_slug)
+            .first()
+        )
         if not row:
             raise HTTPException(404, "Golden image profile not found")
 
-    conflict = db.query(GoldenImageProfile).filter(GoldenImageProfile.slug == slug).first()
+    conflict = (
+        db.query(GoldenImageProfile).filter(GoldenImageProfile.slug == slug).first()
+    )
     if conflict and (row is None or conflict.id != row.id):
         raise HTTPException(409, f"Profile '{slug}' already exists")
 
     if row is None:
-        row = GoldenImageProfile(slug=slug, label=label, os=os_name, vm_id=vm_id if backend == "proxmox" else 0)
+        row = GoldenImageProfile(
+            slug=slug,
+            label=label,
+            os=os_name,
+            vm_id=vm_id if backend == "proxmox" else 0,
+        )
         db.add(row)
     else:
         row.slug = slug
@@ -176,7 +235,7 @@ async def admin_golden_images_save(
     return RedirectResponse("/admin/golden-images", status_code=303)
 
 
-@app.post("/admin/golden-images/{slug}/delete")
+@router.post("/admin/golden-images/{slug}/delete")
 def admin_golden_images_delete(
     slug: str,
     user=Depends(require_role("admin")),

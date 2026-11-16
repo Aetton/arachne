@@ -31,6 +31,13 @@ flowchart TD
 - **Паук** — Forgejo, Ansible, OpenTofu или дочерний сценарий.
 - **Шина** — `publish/subscribe` и `request/reply`.
 
+## Подключение HTTP и исполнителей
+
+`api/main.py` явно подключает `APIRouter` из `api/routes/`. Общий рендеринг
+шаблонов находится в `api/web.py`; роутеры не импортируют `main`.
+`run_engine.init()` загружает только `plugins.spiders` и `plugins.triggers`,
+поэтому доступность HTTP-маршрутов не зависит от запуска движка.
+
 ## Контракт паука
 
 Паук наследует `BuildSpider` или `ProvisionSpider`, задаёт `NAME` и реализует:

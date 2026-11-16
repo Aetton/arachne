@@ -1,5 +1,6 @@
 """Admin-only connection editor. Secrets remain in Control -> Secrets."""
 
+from fastapi import APIRouter
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 import asyncio
@@ -8,13 +9,16 @@ from connection_tests import hypervisor
 
 _logger = logging.getLogger(__name__)
 from auth.deps import require_role
-from main import app, render
+from web import render
 from core.optional_plugins import installed_bundles
 from infrastructure_connections import list_connections, save_connection
 from secrets_store import list_credentials
 
 
-@app.get("/admin/infrastructure")
+router = APIRouter()
+
+
+@router.get("/admin/infrastructure")
 def infrastructure(request: Request, user=Depends(require_role("admin"))):
     backends = sorted(
         n.removeprefix("tofu-") for n in installed_bundles() if n.startswith("tofu-")
@@ -29,7 +33,7 @@ def infrastructure(request: Request, user=Depends(require_role("admin"))):
     )
 
 
-@app.post("/admin/infrastructure/save")
+@router.post("/admin/infrastructure/save")
 async def infrastructure_save(request: Request, user=Depends(require_role("admin"))):
     f = await request.form()
     backend = str(f.get("backend") or "")
@@ -52,7 +56,7 @@ async def infrastructure_save(request: Request, user=Depends(require_role("admin
     return RedirectResponse("/admin/infrastructure", status_code=303)
 
 
-@app.post("/api/admin/infrastructure/test")
+@router.post("/api/admin/infrastructure/test")
 async def infrastructure_test(request: Request, user=Depends(require_role("admin"))):
     form = await request.form()
     try:
@@ -68,8 +72,18 @@ async def infrastructure_test(request: Request, user=Depends(require_role("admin
         )
         return result
     except (ValueError, RuntimeError) as exc:
-        _logger.exception("Hypervisor connection test failed: backend=%s", form.get("backend"))
-        return {"ok": False, "stage": "config", "detail": f"{type(exc).__name__}: verify endpoint and credential"}
+        _logger.exception(
+            "Hypervisor connection test failed: backend=%s", form.get("backend")
+        )
+        return {
+            "ok": False,
+            "stage": "config",
+            "detail": f"{type(exc).__name__}: verify endpoint and credential",
+        }
     except Exception as exc:
         _logger.exception("Unexpected hypervisor connection test failure")
-        return {"ok": False, "stage": "internal", "detail": f"Probe failed: {type(exc).__name__}; check API logs"}
+        return {
+            "ok": False,
+            "stage": "internal",
+            "detail": f"Probe failed: {type(exc).__name__}; check API logs",
+        }

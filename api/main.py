@@ -18,7 +18,6 @@ from fastapi.responses import (
     Response,
 )
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, load_only
 
 import database
@@ -55,13 +54,20 @@ from core import switchboard
 from pydantic import BaseModel, Field
 from typing import Literal
 from scenario_layout import apply_layout
+from web import render
+from routes import (
+    ansible_settings_admin,
+    editor_metadata,
+    golden_images_admin,
+    infrastructure_admin,
+    secrets_admin,
+    settings_admin,
+    vm_console,
+)
 
 BASE_DIR = os.path.dirname(__file__)
-TEMPLATES_DIR = os.path.join(BASE_DIR, "..", "frontend", "templates")
 STATIC_DIR = os.path.join(BASE_DIR, "..", "frontend", "static")
 WIKI_DIR = os.path.join(BASE_DIR, "..", "wiki")
-
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 @asynccontextmanager
@@ -150,10 +156,6 @@ async def thread_status(build_id: str, final: FinalSignal, request: Request):
     if not ok:
         raise HTTPException(status_code=403, detail="thread token mismatch")
     return {"accepted": True}
-
-
-def render(request, name, **ctx):
-    return templates.TemplateResponse(request, name, ctx)
 
 
 def _fmt_when(dt) -> str:
@@ -949,3 +951,16 @@ async def admin_team_save(
 
 # Full journal is separate from the compact dashboard history fragment.
 app.include_router(create_journal_router(render, _require_run_access))
+
+
+# Register HTTP independently of runtime plugin discovery and startup.
+for router in (
+    ansible_settings_admin.router,
+    editor_metadata.router,
+    golden_images_admin.router,
+    infrastructure_admin.router,
+    secrets_admin.router,
+    settings_admin.router,
+    vm_console.router,
+):
+    app.include_router(router)

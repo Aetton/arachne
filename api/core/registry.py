@@ -1,5 +1,6 @@
 """Plugin registries. Plugins self-register on import; the loader imports every
 module under plugins/<kind>/ so dropping a file in is enough to enable it."""
+
 from __future__ import annotations
 
 import importlib
@@ -45,12 +46,16 @@ def all_triggers() -> dict[str, type["BaseTrigger"]]:
 
 
 def load_plugins(package: str = "plugins"):
-    """Import every submodule under plugins/* so registrations fire."""
+    """Load execution plugins; HTTP routes are registered by main."""
     if package == "plugins":
         # Service credentials live in Vault/encrypted DB. Materialize the small
         # compatibility env surface before spiders that cache env at import time.
         from service_credentials import apply_bound_credentials
+
         apply_bound_credentials()
+        load_plugins("plugins.spiders")
+        load_plugins("plugins.triggers")
+        return
 
     pkg = importlib.import_module(package)
     for _, modname, ispkg in pkgutil.iter_modules(pkg.__path__):
@@ -59,5 +64,6 @@ def load_plugins(package: str = "plugins"):
             load_plugins(sub)
         else:
             from core.optional_plugins import module_enabled
+
             if module_enabled(sub):
                 importlib.import_module(sub)

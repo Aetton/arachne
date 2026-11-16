@@ -1,12 +1,13 @@
 """Authenticated VM console redirects for runtime Brood artifacts."""
+
 from __future__ import annotations
 
+from fastapi import APIRouter
 from fastapi import Depends, HTTPException
 from fastapi.responses import RedirectResponse
 
 from auth.deps import get_current_user
 from database import Run, SessionLocal
-from main import app
 from proxmox_api import novnc_console_url
 
 
@@ -48,7 +49,10 @@ def _vm_console_target(artifact: dict) -> tuple[str, int, str]:
     return node, vm_id, str(artifact.get("name") or f"vm-{vm_id}")
 
 
-@app.get("/runs/{run_id}/artifacts/{artifact_index}/console")
+router = APIRouter()
+
+
+@router.get("/runs/{run_id}/artifacts/{artifact_index}/console")
 def open_vm_console(
     run_id: str,
     artifact_index: int,
@@ -61,7 +65,15 @@ def open_vm_console(
 
     node, vm_id, name = _vm_console_target(artifacts[artifact_index])
     return RedirectResponse(
-        novnc_console_url(node, vm_id, name, connection=str((artifacts[artifact_index].get("metadata") or {}).get("connection") or "")),
+        novnc_console_url(
+            node,
+            vm_id,
+            name,
+            connection=str(
+                (artifacts[artifact_index].get("metadata") or {}).get("connection")
+                or ""
+            ),
+        ),
         status_code=302,
         headers={"Cache-Control": "no-store"},
     )
