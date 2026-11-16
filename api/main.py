@@ -54,6 +54,8 @@ from core import switchboard
 from pydantic import BaseModel, Field
 from typing import Literal
 from scenario_layout import apply_layout
+from core.editor_metadata import scenario_dsl_metadata
+from golden_images import list_profiles
 from web import render
 from routes import (
     ansible_settings_admin,
@@ -648,6 +650,7 @@ def admin_scenario_new(
     return render(
         request,
         "admin/scenario_form.html",
+        dsl_metadata=scenario_dsl_metadata(list_profiles()),
         user=user,
         scenario=None,
         yaml_text=f"label: New scenario\ncomponent: {default_component}\ntriggers:\n  - type: manual\nsteps:\n  - id: build\n    spider: forgejo\n    action: build\n    with: {{}}\n",
@@ -676,6 +679,7 @@ def admin_scenario_edit(
     return render(
         request,
         "admin/scenario_form.html",
+        dsl_metadata=scenario_dsl_metadata(list_profiles()),
         user=user,
         scenario=scenario,
         yaml_text=yaml.safe_dump(definition, allow_unicode=True, sort_keys=False),

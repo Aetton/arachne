@@ -1,90 +1,253 @@
-"""Editor-facing metadata for installed Arachne plugins.
+"""Single editor contract catalog, independent of HTTP and persistence.
 
-The contracts are shared by the server-rendered DSL reference and the optional
-JSON endpoint used by editor completion. Keeping them outside an HTTP plugin
-avoids making the UI depend on plugin import timing.
+Only installed spiders and triggers are exposed. Callers supply runtime image
+choices; returned structures never share mutable contract state.
 """
+
 from __future__ import annotations
+
+from copy import deepcopy
 
 from core.registry import all_spiders, all_triggers
 
 
+DOCS_BASE = "/wiki/docs/ru"
+
+# Editor-facing contracts live on the backend so the browser never needs to
+# know which plugins are installed. This is also the single source of truth for
+# hover help, examples and completion documentation in the scenario editor.
 SPIDER_CONTRACTS: dict[str, dict] = {
     "forgejo": {
-        "description": "Dispatch a Forgejo Actions workflow and collect telemetry/artifacts.",
-        "actions": ["build", "run"],
-        "inputs": {
-            "repo": {"required": True, "description": "Forgejo repository name"},
-            "workflow": {"required": True, "description": "Workflow file name"},
-            "owner": {"default": "FORGEJO_OWNER"},
-            "ref": {"default": "main"},
-            "branch": {"description": "Alias for ref"},
-            "component": {},
-            "version": {},
+        "description": "Запускает Forgejo Actions workflow и возвращает логи и артефакты сборки.",
+        "docs_url": f"{DOCS_BASE}/reference/spiders#forgejo",
+        "actions": {
+            "weave": "Запустить сборку и собрать произведённые артефакты.",
         },
+        "inputs": {
+            "repo": {"required": True, "description": "Имя репозитория Forgejo."},
+            "workflow": {
+                "required": True,
+                "description": "Файл workflow, например build.yaml.",
+            },
+            "owner": {
+                "default": "FORGEJO_OWNER",
+                "description": "Владелец/организация репозитория. Обычно можно не указывать.",
+            },
+            "ref": {
+                "default": "main",
+                "description": "Git ref или ветка, на которой запускается workflow.",
+            },
+            "branch": {
+                "description": "Псевдоним для ref. Используйте только если так понятнее в конкретном сценарии."
+            },
+            "component": {
+                "description": "Логическое имя компонента для логов и метаданных."
+            },
+            "version": {"description": "Версия, передаваемая workflow как input."},
+        },
+        "example": """- id: build-client\n  spider: forgejo\n  action: weave\n  with:\n    repo: redvrm-client\n    workflow: build.yaml\n    ref: \"${params.branch}\"\n    version: \"${params.version}\"""",
+    },
+    "gitlab": {
+        "description": "Запускает GitLab CI pipeline и собирает job logs и artifacts.",
+        "docs_url": f"{DOCS_BASE}/reference/spiders#gitlab",
+        "actions": {
+            "weave": "Запустить GitLab pipeline как Weave-операцию.",
+        },
+        "inputs": {
+            "project": {
+                "required": True,
+                "description": "GitLab project path, например platform/backend.",
+            },
+            "repo": {"description": "Псевдоним для project."},
+            "ref": {"default": "main", "description": "Ветка или ref для pipeline."},
+            "branch": {"description": "Псевдоним для ref."},
+            "component": {"description": "Логическое имя компонента."},
+        },
+        "example": """- id: build-backend\n  spider: gitlab\n  action: weave\n  with:\n    project: platform/backend\n    ref: main\n    version: \"${params.version}\"""",
+    },
+    "koji": {
+        "description": "Отправляет RPM-сборку в Koji и возвращает task logs и RPM artifacts.",
+        "docs_url": f"{DOCS_BASE}/reference/spiders#koji",
+        "actions": {
+            "weave": "Запустить Koji build task и дождаться результата.",
+        },
+        "inputs": {
+            "source": {
+                "required": True,
+                "description": "SCM URL или другой source, принимаемый Koji build.",
+            },
+            "src": {"description": "Псевдоним для source."},
+            "target": {"required": True, "description": "Koji build target."},
+            "profile": {
+                "default": "KOJI_PROFILE",
+                "description": "Имя стандартного Koji client profile.",
+            },
+            "scratch": {"description": "Запустить scratch build."},
+            "skip_tag": {
+                "description": "Не тегировать успешную сборку в destination tag."
+            },
+            "fail_fast": {
+                "description": "Остановить multi-arch build при первой ошибке."
+            },
+            "arches": {"description": "Ограничить архитектуры сборки."},
+            "priority": {"description": "Koji task priority."},
+            "channel": {"description": "Koji builder channel."},
+        },
+        "example": """- id: build-rpm\n  spider: koji\n  action: weave\n  with:\n    source: "git+https://git.example.internal/rpms/backend?#${params.commit}"\n    target: redos8\n    profile: redsoft-koji""",
     },
     "ansible-local": {
-        "description": "Run ansible-playbook on the Arachne host.",
-        "actions": ["build", "deploy", "run"],
-        "inputs": {
-            "playbook": {"description": "Playbook path; inferred from component when omitted"},
-            "component": {},
-            "target": {},
-            "os": {},
-            "version": {},
+        "description": "Выполняет ansible-playbook локально. Может принимать Brood artifact целиком как target.",
+        "docs_url": f"{DOCS_BASE}/reference/spiders#ansible-local",
+        "actions": {
+            "command": "Выполнить playbook над целевой машиной или окружением.",
         },
+        "inputs": {
+            "playbook_ref": {
+                "description": "Необязательный override Git ref для playbook repository."
+            },
+            "playbook": {
+                "description": "Путь к playbook. Если не указан, может быть выведен из component."
+            },
+            "component": {"description": "Компонент, над которым выполняется команда."},
+            "target": {
+                "description": "Рекомендуется передавать Brood artifact: ${stand.artifact}. Явный hostname/IP тоже поддерживается."
+            },
+            "os": {
+                "description": "ОС target. Обычно берётся из Brood artifact и вручную не нужна."
+            },
+            "version": {"description": "Версия пакета/продукта для playbook."},
+        },
+        "example": """- id: deploy\n  spider: ansible-local\n  action: command\n  with:\n    target: \"${stand.artifact}\"\n    playbook: install-redvrm.yml\n    version: \"${params.version}\"""",
     },
     "tofu-proxmox": {
-        "description": "Provision a Proxmox VM through OpenTofu.",
-        "actions": ["provision"],
-        "inputs": {
-            "name": {"default": "test-stand"},
-            "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"]},
-            "vcpus": {"default": 4},
-            "ram_mb": {"default": 8192},
-            "disk_gb": {"default": 40},
+        "description": "Создаёт эфемерный стенд из Golden Image или уничтожает ранее созданный стенд.",
+        "docs_url": f"{DOCS_BASE}/operations/proxmox-opentofu",
+        "actions": {
+            "brood": "Создать виртуальную машину и вернуть стандартный Brood Target artifact.",
+            "destroy": "Уничтожить ранее созданную машину и её OpenTofu state.",
         },
+        "inputs": {
+            "name": {
+                "default": "test-stand",
+                "description": "Уникальное имя стенда/VM.",
+            },
+            "os": {
+                "default": "redos8",
+                "options": ["redos7", "redos8", "windows"],
+                "description": "Семейство ОС. Если image не задан, одновременно используется как ключ Golden Image profile.",
+            },
+            "image": {
+                "description": "Golden Image profile. Нужен, если для одной ОС заведено несколько профилей."
+            },
+            "lifetime": {
+                "description": "Сколько жить стенду до автоматического cleanup: например 30m, 2h или 1d."
+            },
+            "resources": {
+                "description": "Необязательные overrides: cpu, memory_gb, disk_gb. Неуказанные значения наследуются от Golden Image."
+            },
+        },
+        "example": """- id: stand\n  spider: tofu-proxmox\n  action: brood\n  with:\n    name: test-${params.version}\n    os: redos8\n    lifetime: 30m\n    resources:\n      cpu: 4\n      memory_gb: 8""",
     },
     "ansible-ovirt": {
-        "description": "Provision an oVirt VM through the ovirt.ovirt Ansible collection.",
-        "actions": ["provision"],
-        "inputs": {
-            "name": {"default": "test-stand"},
-            "os": {"default": "redos8", "options": ["redos7", "redos8", "windows"]},
+        "description": "Создаёт oVirt VM через коллекцию ovirt.ovirt и возвращает Brood Target.",
+        "docs_url": f"{DOCS_BASE}/reference/spiders#ansible-ovirt",
+        "actions": {
+            "brood": "Создать виртуальную машину в oVirt.",
         },
+        "inputs": {
+            "name": {"default": "test-stand", "description": "Имя создаваемой VM."},
+            "os": {
+                "default": "redos8",
+                "options": ["redos7", "redos8", "windows"],
+                "description": "Семейство гостевой ОС.",
+            },
+        },
+        "example": """- id: stand\n  spider: ansible-ovirt\n  action: brood\n  with:\n    name: test-001\n    os: redos8""",
     },
     "scenario": {
-        "description": "Run another Arachne scenario as a child step.",
-        "actions": ["run"],
-        "inputs": {
-            "scenario": {"required": True, "description": "Child scenario slug"},
-            "params": {"description": "Parameters passed to the child scenario"},
+        "description": "Запускает другой сценарий Arachne как дочерний шаг и ждёт его завершения.",
+        "docs_url": f"{DOCS_BASE}/reference/scenario-syntax#запуск-другого-сценария",
+        "actions": {
+            "command": "Запустить дочерний сценарий как оркестрационную команду.",
         },
+        "inputs": {
+            "scenario": {
+                "required": True,
+                "description": "Slug опубликованного дочернего сценария.",
+            },
+            "params": {
+                "description": "Mapping параметров, передаваемых дочернему сценарию."
+            },
+        },
+        "example": """- id: child\n  spider: scenario\n  action: command\n  with:\n    scenario: smoke-test\n    params:\n      target: \"${stand.artifact}\"""",
     },
 }
 
+
+SPIDER_CONTRACTS["tofu-ovirt"] = deepcopy(SPIDER_CONTRACTS["tofu-proxmox"])
+SPIDER_CONTRACTS["tofu-ovirt"]["description"] = (
+    "Создаёт и удаляет oVirt VM через OpenTofu."
+)
+SPIDER_CONTRACTS["tofu-ovirt"]["docs_url"] = f"{DOCS_BASE}/operations/optional-spiders"
+SPIDER_CONTRACTS["tofu-ovirt"]["example"] = SPIDER_CONTRACTS["tofu-proxmox"][
+    "example"
+].replace("tofu-proxmox", "tofu-ovirt")
+SPIDER_CONTRACTS["tofu-ovirt"]["inputs"]["resources"] = {
+    "description": "cpu, memory_gb; диски наследуются от template."
+}
 for backend in ("tofu-proxmox", "tofu-ovirt"):
-    SPIDER_CONTRACTS[backend] = {
-        "description": f"Provision or destroy through {backend}.",
-        "actions": ["brood", "provision", "destroy"],
-        "inputs": {"name": {"required": True}, "connection": {}, "image": {}, "os": {}, "lifetime": {}, "resources": {}},
+    SPIDER_CONTRACTS[backend]["inputs"]["connection"] = {
+        "description": "Подключение к гипервизору; должно совпадать с Golden Image. При destroy используйте исходное подключение."
     }
-SPIDER_CONTRACTS["tofu-ovirt"]["inputs"].update({"ip_interface": {}, "ip_cidr": {}})
+SPIDER_CONTRACTS["tofu-ovirt"]["inputs"].update(
+    {
+        "ip_interface": {"description": "Имя гостевого интерфейса для ожидания IPv4."},
+        "ip_cidr": {
+            "description": "Подсеть IPv4 для ожидания адреса, например 10.81.0.0/16."
+        },
+    }
+)
 
 
-def scenario_dsl_metadata() -> dict:
+def scenario_dsl_metadata(profiles=()) -> dict:
+    profiles = [row for row in profiles if row.get("enabled")]
     spiders = []
     for name, spider in sorted(all_spiders().items()):
-        contract = SPIDER_CONTRACTS.get(name, {})
-        spiders.append({
-            "name": name,
-            "kind": spider.KIND,
-            "description": contract.get("description", "Installed Arachne spider"),
-            "actions": contract.get("actions", ["run"]),
-            "inputs": contract.get("inputs", {}),
-        })
+        contract = deepcopy(SPIDER_CONTRACTS.get(name, {}))
+        if name in {"tofu-proxmox", "tofu-ovirt"} and profiles:
+            contract.setdefault("inputs", {}).setdefault("image", {})["options"] = [
+                row["slug"]
+                for row in profiles
+                if row["backend"] == name.removeprefix("tofu-")
+            ]
+
+        family = getattr(spider, "FAMILY", "weave")
+        actions = contract.get("actions") or {family: f"Run {family} operation."}
+        spiders.append(
+            {
+                "name": name,
+                "family": family,
+                "kind": spider.KIND,
+                "description": contract.get(
+                    "description", "Установленный spider без расширенной справки."
+                ),
+                "docs_url": contract.get("docs_url", f"{DOCS_BASE}/reference/spiders"),
+                "actions": list(actions),
+                "action_help": actions,
+                "inputs": contract.get("inputs", {}),
+                "example": contract.get("example", ""),
+            }
+        )
+
     return {
         "spiders": spiders,
+        "families": ["weave", "brood", "command"],
+        "family_help": {
+            "weave": "Создание build artifacts: пакетов, инсталляторов, архивов и других результатов сборки.",
+            "brood": "Создание вычислительных окружений и машин.",
+            "command": "Действия над уже существующими окружениями или запуск оркестрационных операций.",
+        },
+        "docs_url": f"{DOCS_BASE}/reference/scenario-syntax",
         "triggers": sorted(all_triggers()),
         "param_types": ["string", "choice", "boolean"],
     }
