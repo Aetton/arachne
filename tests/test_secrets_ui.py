@@ -11,6 +11,7 @@ class SecretsTemplateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = TEMPLATE.read_text(encoding="utf-8")
+        cls.script = (TEMPLATE.parents[2] / "static/js/secrets.js").read_text(encoding="utf-8")
 
     def test_template_parses(self):
         Environment().parse(self.source)
@@ -24,7 +25,7 @@ class SecretsTemplateTests(unittest.TestCase):
             "/api/admin/secrets/service/test",
             "/api/admin/secrets/provider/test",
         ):
-            self.assertIn(route, self.source)
+            self.assertIn(route, self.script if route.startswith("/api/") else self.source)
 
     def test_credential_steps_and_fields(self):
         for field in (

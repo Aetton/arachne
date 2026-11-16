@@ -18,43 +18,7 @@
   <link rel="stylesheet" href="/static/css/log-viewer.css?v=2">
   <link rel="stylesheet" href="/static/css/branch-picker.css?v=2">
   <link rel="stylesheet" href="/static/css/select-controls.css?v=2">
-  <style>
-    body { background: var(--bg); color: var(--fg); }
-    .surface { background: var(--surface); border: 1px solid var(--border); }
-    .surface-2 { background: var(--surface2); }
-    .accent { color: var(--accent); }
-    .muted { color: var(--muted); }
-    .btn { background: var(--accent); color: var(--bg-on-accent); border-radius: .5rem; padding: .5rem 1rem; font-weight: 600; transition: filter .15s, transform .15s; }
-    .btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
-    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--fg); border-radius: .5rem; padding: .5rem 1rem; }
-    .btn-ghost:hover { background: var(--surface2); }
-    .pill { border-radius: .375rem; padding: .2rem .5rem; font-size: .72rem; font-weight: 500; }
-    .pill-ok { background: var(--ok-bg); color: var(--ok-fg); }
-    .pill-fail { background: var(--fail-bg); color: var(--fail-fg); }
-    .pill-run { background: var(--run-bg); color: var(--run-fg); }
-    .pill-pending { background: var(--surface2); color: var(--muted); }
-    input, select, textarea { background: color-mix(in srgb, var(--surface2) 84%, transparent); border: 1px solid var(--border); color: var(--fg); border-radius: .5rem; padding: .52rem .72rem; width: 100%; font-size: .82rem; }
-    input:not([type]), input:is([type="text"], [type="search"], [type="email"], [type="url"], [type="tel"], [type="password"], [type="number"]) { text-indent: 4px; }
-    select { text-indent: 4px; }
-    input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); outline-offset: 0; border-color: color-mix(in srgb, var(--accent) 70%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent); }
-    .form-card { padding: 1.5rem; }
-    .form-stack { display: grid; gap: 1rem; }
-    .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-    .form-section { display: grid; gap: .5rem; }
-    .form-section-title { color: var(--muted); font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
-    .check-control { display: flex; align-items: center; gap: .7rem; min-height: 2rem; padding: .3rem .45rem; margin: 0 -.45rem; border-radius: .45rem; color: var(--fg); cursor: pointer; }
-    .check-control:hover { background: var(--surface2); }
-    .check-control input { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
-    .check-control-box { display: grid; flex: 0 0 1.15rem; width: 1.15rem; height: 1.15rem; place-items: center; border: 1px solid color-mix(in srgb, var(--muted) 75%, transparent); border-radius: .3rem; background: var(--surface2); color: transparent; }
-    .check-control-box::after { content: ""; width: .55rem; height: .3rem; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-.06rem) rotate(-45deg); }
-    .check-control input:checked + .check-control-box { border-color: var(--accent); background: var(--accent); color: var(--bg); }
-    .record-list { display: grid; gap: .5rem; }
-    .record-card { padding: .75rem; border-radius: .5rem; background: var(--surface2); }
-    .log { font-family: var(--font-mono); font-size: .8rem; line-height: 1.55; }
-    a.link { color: var(--accent); }
-    a.link:hover { filter: brightness(1.15); }
-    @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
-  </style>
+  <link rel="stylesheet" href="/static/css/base.css?v=1">
   <link rel="stylesheet" href="/static/css/ui-polish.css?v=1">
   <link rel="stylesheet" href="/static/css/design-refresh.css?v=1">
 </head>
@@ -93,16 +57,12 @@
   </nav>
   {% endif %}
   <main class="app-main">{% block content %}{% endblock %}</main>
-  <script>
-    function normalizeTheme(name) { return name === 'light' ? 'white' : name; }
-    function setTheme(name) { name = normalizeTheme(name); document.documentElement.setAttribute('data-theme', name); try { localStorage.setItem('arachne-theme', name); } catch (e) {} }
-    (function () { let t = 'dracula'; try { t = normalizeTheme(localStorage.getItem('arachne-theme') || 'dracula'); } catch (e) {} document.documentElement.setAttribute('data-theme', t); var sel = document.getElementById('theme-select'); if (sel) sel.value = t; })();
-  </script>
+  <script src="/static/js/theme.js?v=1"></script>
   {% block scripts %}{% endblock %}
   <script src="/static/js/live-log-viewer.js?v=4"></script>
   <script src="/static/js/log-copy.js?v=1"></script>
   <script src="/static/js/log-group-hydrator.js?v=2"></script>
-  <script src="/static/js/scenario-dsl-metadata.js?v=4"></script>
+  <script src="/static/js/scenario-dsl-metadata.js?v=5"></script>
   <script src="/static/js/branch-picker.js?v=2"></script>
   <script src="/static/js/advanced-params.js?v=1"></script>
 </body>

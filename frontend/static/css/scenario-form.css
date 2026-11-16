@@ -1,0 +1,233 @@
+  .scenario-editor-shell {
+    margin-top: .25rem;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    background: var(--surface2);
+  }
+  .scenario-editor-shell:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
+  #scenario-editor {
+    height: min(68vh, 760px);
+    min-height: 34rem;
+  }
+  #scenario-definition {
+    display: none;
+  }
+  .scenario-editor-help {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .75rem;
+    margin-top: .5rem;
+    font-size: .75rem;
+    color: var(--muted);
+  }
+  .scenario-editor-help kbd {
+    padding: .1rem .35rem;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: .25rem;
+    background: var(--surface2);
+    color: var(--fg);
+    font-family: inherit;
+  }
+  .scenario-editor-status {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-top: .6rem;
+    min-height: 1.4rem;
+    font-size: .78rem;
+    color: var(--muted);
+  }
+  .scenario-editor-status.is-ok { color: var(--ok-fg); }
+  .scenario-editor-status.is-error { color: var(--fail-fg); }
+  .scenario-editor-status .dot {
+    width: .5rem;
+    height: .5rem;
+    border-radius: 999px;
+    background: currentColor;
+  }
+  .scenario-save-status {
+    display: none;
+    margin-top: .75rem;
+    padding: .65rem .8rem;
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    white-space: pre-wrap;
+    font-size: .8rem;
+  }
+  .scenario-save-status.is-error {
+    display: block;
+    background: var(--fail-bg);
+    color: var(--fail-fg);
+  }
+  .scenario-form-header {
+    gap: 1.5rem;
+    padding: .5rem 0 .25rem;
+  }
+  .scenario-form-grid {
+    gap: 1.5rem;
+    align-items: start;
+  }
+  .scenario-form-panel {
+    padding: 1.5rem;
+  }
+  .scenario-field-label {
+    display: block;
+    margin-bottom: .5rem;
+  }
+  .scenario-field-label:not(:first-child) {
+    margin-top: 1.25rem;
+  }
+  input[name="slug"],
+  select[name="match_mode"] {
+    text-indent: 8px;
+  }
+  .scenario-acl {
+    display: grid;
+    gap: 1.5rem;
+    padding: 1.5rem;
+  }
+  .scenario-acl-header {
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .scenario-acl-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.5rem;
+  }
+  .scenario-acl-header p {
+    margin-top: .35rem;
+  }
+  .scenario-acl-action {
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: .65rem;
+    background: color-mix(in srgb, var(--surface2) 55%, transparent);
+  }
+  .scenario-acl-action h3 {
+    letter-spacing: .08em;
+  }
+  @media (max-width: 1100px) {
+    .scenario-acl-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 680px) {
+    .scenario-acl-actions {
+      grid-template-columns: 1fr;
+    }
+  }
+  .scenario-acl-group {
+    display: grid;
+    gap: .35rem;
+    margin-top: 1rem;
+  }
+  .scenario-acl-group-title {
+    margin-bottom: .15rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .scenario-check {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    min-height: 2rem;
+    padding: .3rem .45rem;
+    margin: 0 -.45rem;
+    border-radius: .45rem;
+    color: var(--fg);
+    cursor: pointer;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .scenario-check:hover {
+    background: var(--surface);
+  }
+  .scenario-check input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .scenario-check-box {
+    display: grid;
+    flex: 0 0 1.15rem;
+    width: 1.15rem;
+    height: 1.15rem;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--muted) 75%, transparent);
+    border-radius: .3rem;
+    background: var(--surface2);
+    color: transparent;
+    transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+  }
+  .scenario-check-box::after {
+    content: "";
+    width: .55rem;
+    height: .3rem;
+    border-left: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-.06rem) rotate(-45deg);
+  }
+  .scenario-check input:checked + .scenario-check-box {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--bg);
+  }
+  .scenario-check input:focus-visible + .scenario-check-box {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+  .scenario-versions {
+    padding: 1rem;
+  }
+  .scenario-version-list {
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: .55rem;
+  }
+  .scenario-version-row {
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    min-height: 2.75rem;
+    padding: .5rem .7rem;
+    background: var(--surface2);
+  }
+  .scenario-version-row + .scenario-version-row {
+    border-top: 1px solid var(--border);
+  }
+  .scenario-version-number {
+    flex: 0 0 2rem;
+  }
+  .scenario-version-comment {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .scenario-version-restore {
+    flex: 0 0 auto;
+    padding: .35rem .55rem;
+    white-space: nowrap;
+  }
+  .dsl-reference {
+    padding-bottom: .25rem;
+  }
+  .dsl-reference code {
+    color: var(--accent);
+    font-size: .78rem;
+  }
+  .dsl-reference li {
+    margin-top: .35rem;
+    font-size: .78rem;
+    color: var(--muted);
+  }

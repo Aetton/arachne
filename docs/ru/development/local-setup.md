@@ -56,3 +56,15 @@ npm run check:export
 | `actions/`, `hubs/` | legacy callback actions для Forgejo |
 | `migrations/` | Alembic |
 | `scripts/` | bootstrap и перенос SQLite |
+
+## Frontend без сборщика
+
+Jinja-шаблоны находятся в `frontend/templates/`, поведение — в
+`frontend/static/js/`, стили — в `frontend/static/css/`. Для формы сценария
+используются `scenario-editor.js` (Monaco, completion, lint, save),
+`scenario-editor-ui.js` (панели) и `scenario-dsl-catalog.js` (общие метаданные).
+Справка обновляет тот же live-каталог через `scenario-dsl-metadata.js`.
+
+Страница Secrets использует `secrets.js` и `secrets.css`. Общие базовые стили
+находятся в `base.css`, переключение темы — в `theme.js`. Сохраняйте порядок
+ресурсов в шаблонах: он определяет каскад CSS и порядок загрузки Monaco.

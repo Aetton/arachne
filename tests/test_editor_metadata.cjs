@@ -15,6 +15,7 @@ async function editor(refresh) {
   });
   dom.window.document.getElementById('scenario-dsl-metadata').textContent = JSON.stringify(catalog('installed-custom'));
   dom.window.fetch = url => url === '/api/admin/scenario-dsl' ? refresh() : Promise.reject(new Error('no repository'));
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../frontend/static/js/scenario-dsl-catalog.js'), 'utf8'));
   dom.window.eval(source);
   await new Promise(resolve => dom.window.addEventListener('load', resolve, {once: true}));
   await new Promise(resolve => setTimeout(resolve, 0));

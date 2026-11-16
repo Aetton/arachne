@@ -1,16 +1,6 @@
 (function () {
-  // Use the same server catalog as the API; retain it if refresh fails.
-  function initialMetadata() {
-    var node = document.getElementById('scenario-dsl-metadata');
-    if (!node) return {spiders: []};
-    try { return JSON.parse(node.textContent); }
-    catch (error) {
-      console.warn('[scenario-editor] invalid initial DSL metadata', error);
-      return {spiders: []};
-    }
-  }
-
-  var INITIAL_METADATA = initialMetadata();
+  var catalog = window.arachneDslCatalog;
+  var INITIAL_METADATA = catalog ? catalog.get() : {spiders: []};
   var metadataCache = INITIAL_METADATA;
 
   function makeText(tag, text, className) {
@@ -466,6 +456,7 @@
 
   function renderCatalog(metadata) {
     metadataCache = metadata || INITIAL_METADATA;
+    if (catalog) catalog.set(metadataCache);
     registerHoverProvider();
 
     var reference = document.querySelector('.dsl-reference');
