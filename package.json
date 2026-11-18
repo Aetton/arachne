@@ -3,10 +3,18 @@
   "private": true,
   "scripts": {
     "test": "node --test tests/*.cjs",
-    "format:manager": "prettier --write frontend/static/js/scenario-manager.js frontend/static/css/scenario-manager.css"
+    "format:manager": "prettier --write frontend/static/js/scenario-manager.js frontend/static/css/scenario-manager.css",
+    "build:frontend": "node scripts/build-frontend.cjs"
   },
   "devDependencies": {
+    "@fontsource/inconsolata": "5.2.6",
+    "@tabler/icons-webfont": "3.7.0",
+    "codemirror": "5.65.16",
+    "htmx.org": "1.9.12",
+    "js-yaml": "4.1.0",
     "jsdom": "26.1.0",
-    "prettier": "3.5.3"
+    "monaco-editor": "0.52.2",
+    "prettier": "3.5.3",
+    "tailwindcss": "3.4.17"
   }
 }

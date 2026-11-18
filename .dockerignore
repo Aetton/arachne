@@ -7,3 +7,5 @@ docs-site/.source/
 .git/
 .venv/
 venv/
+
+frontend/static/vendor/

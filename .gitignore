@@ -41,3 +41,5 @@ docs/.vitepress/dist/
 
 # Frontend tooling
 node_modules/
+
+/frontend/static/vendor/

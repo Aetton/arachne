@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;500;600;700&display=swap');
+@import url('/static/vendor/inconsolata/400.css');
+@import url('/static/vendor/inconsolata/500.css');
+@import url('/static/vendor/inconsolata/600.css');
+@import url('/static/vendor/inconsolata/700.css');
 
 :root {
   --font-mono: "Inconsolata", ui-monospace, SFMono-Regular, Menlo, Monaco,
