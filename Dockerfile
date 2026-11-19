@@ -1,17 +1,34 @@
-FROM node:22-bookworm-slim AS docs-builder
+ARG NODE_IMAGE=node:22-bookworm-slim
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+
+FROM ${NODE_IMAGE} AS frontend-builder
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --registry="$NPM_REGISTRY" --no-audit --no-fund
+COPY frontend/ ./frontend/
+COPY scripts/build-frontend.cjs ./scripts/
+RUN npm run build:frontend
+
+FROM ${NODE_IMAGE} AS docs-builder
+ARG NPM_REGISTRY=https://registry.npmjs.org/
 
 WORKDIR /app/docs-site
 COPY docs-site/package*.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --registry="$NPM_REGISTRY" --no-audit --no-fund
 COPY docs-site/ ./
 COPY docs/ /app/docs/
 ENV DOCS_BASE_PATH=/wiki \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run check:links && npm run build && npm run check:export
 
-FROM python:3.12-slim-bookworm
+FROM ${PYTHON_IMAGE}
 
 ARG TOFU_VERSION=1.12.6
+ARG TOFU_RELEASE_BASE_URL=https://github.com/opentofu/opentofu/releases/download
+ARG DEBIAN_MIRROR=https://mirror.yandex.ru/debian
+ARG DEBIAN_SECURITY_MIRROR=https://mirror.yandex.ru/debian-security
+ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG ARACHNE_PLUGINS=""
 ENV ARACHNE_PLUGINS=${ARACHNE_PLUGINS}
 
@@ -26,8 +43,8 @@ RUN python /tmp/arachne-optional-plugins.py > /tmp/arachne-selected-plugins
 # Pin the Debian release and use the reachable mirror instead of deb.debian.org.
 RUN ARACHNE_PLUGINS="$(cat /tmp/arachne-selected-plugins)" \
     && sed -i \
-        -e 's|http://deb.debian.org/debian|https://mirror.yandex.ru/debian|g' \
-        -e 's|http://deb.debian.org/debian-security|https://mirror.yandex.ru/debian-security|g' \
+        -e "s#https\?://deb\.debian\.org/debian\([[:space:]]\|$\)#$DEBIAN_MIRROR\1#g" \
+        -e "s#https\?://deb\.debian\.org/debian-security#$DEBIAN_SECURITY_MIRROR#g" \
         /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -42,7 +59,7 @@ RUN ARACHNE_PLUGINS="$(cat /tmp/arachne-selected-plugins)" \
          *) echo "unsupported architecture for OpenTofu: $arch" >&2; exit 1 ;; \
        esac \
     && curl -fsSLo /tmp/tofu.deb \
-        "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_${tofu_arch}.deb" \
+        "${TOFU_RELEASE_BASE_URL%/}/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_${tofu_arch}.deb" \
     && apt-get install -y --no-install-recommends /tmp/tofu.deb \
     && tofu version \
     && rm -f /tmp/tofu.deb; fi \
@@ -60,6 +77,7 @@ COPY api/ ./api/
 COPY alembic.ini ./alembic.ini
 COPY migrations/ ./migrations/
 COPY frontend/ ./frontend/
+COPY --from=frontend-builder /app/frontend/static/vendor/ ./frontend/static/vendor/
 COPY config/ ./config/
 COPY playbooks/ ./playbooks/
 COPY tofu/ ./tofu/

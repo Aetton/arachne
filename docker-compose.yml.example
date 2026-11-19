@@ -11,6 +11,13 @@ services:
       context: .
       args:
         ARACHNE_PLUGINS: "${ARACHNE_PLUGINS:-}"
+        NODE_IMAGE: "${NODE_IMAGE:-node:22-bookworm-slim}"
+        PYTHON_IMAGE: "${PYTHON_IMAGE:-python:3.12-slim-bookworm}"
+        NPM_REGISTRY: "${NPM_REGISTRY:-https://registry.npmjs.org/}"
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}"
+        DEBIAN_MIRROR: "${DEBIAN_MIRROR:-https://mirror.yandex.ru/debian}"
+        DEBIAN_SECURITY_MIRROR: "${DEBIAN_SECURITY_MIRROR:-https://mirror.yandex.ru/debian-security}"
+        TOFU_RELEASE_BASE_URL: "${TOFU_RELEASE_BASE_URL:-https://github.com/opentofu/opentofu/releases/download}"
     container_name: arachne
     restart: unless-stopped
     ports:

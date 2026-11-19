@@ -15,7 +15,7 @@
     }
     var lintTimer = null;
 
-    require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs" } });
+    require.config({ paths: { vs: "/static/vendor/monaco/vs" } });
     require(["vs/editor/editor.main"], function () {
       monaco.languages.register({ id: "yaml" });
       monaco.languages.setMonarchTokensProvider("yaml", {

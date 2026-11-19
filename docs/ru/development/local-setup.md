@@ -7,6 +7,13 @@ docker compose up -d --build
 docker compose logs -f arachne
 ```
 
+Для запуска без контейнера сначала соберите ресурсы интерфейса из корня репозитория:
+
+```bash
+npm ci
+npm run build:frontend
+```
+
 Для запуска API без контейнера нужны Python 3.12, зависимости из
 `api/requirements.txt` и доступная база. Из каталога `api`:
 

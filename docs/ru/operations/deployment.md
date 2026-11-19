@@ -41,6 +41,28 @@ docker compose exec arachne tofu version
 
 Если команда отсутствует, production provisioning нельзя считать готовым.
 
+## Сборка в закрытой сети
+
+Перенесите блок `services.arachne.build.args` из актуального
+`docker-compose.yml.example` в локальный Compose. Задайте адреса зеркал в `.env`:
+
+| Параметры | Что должно быть на зеркале |
+| --- | --- |
+| `NODE_IMAGE`, `PYTHON_IMAGE` | Полные ссылки на базовые образы во внутреннем registry |
+| `NPM_REGISTRY` | npm-пакеты из обоих lock-файлов, включая зависимости документации |
+| `PIP_INDEX_URL` | Python-пакеты из requirements выбранного набора плагинов |
+| `DEBIAN_MIRROR`, `DEBIAN_SECURITY_MIRROR` | Репозитории Debian Bookworm и Bookworm Security |
+| `TOFU_RELEASE_BASE_URL` | Релизы в структуре `v<VERSION>/tofu_<VERSION>_<ARCH>.deb`, если включён OpenTofu |
+
+Для полностью закрытого контура отдельно укажите внутренние образы остальных
+сервисов Compose, включая PostgreSQL и NATS. Установка провайдеров при
+`tofu init` — отдельный путь загрузки, для него требуется зеркало провайдеров.
+
+Проверьте холодную сборку командой `docker compose build --pull --no-cache arachne`
+при закрытом публичном egress. После запуска откройте главную, живые логи,
+редактор сценария и `/wiki/` с отключённым браузерным кэшем и проверьте в Network,
+что ресурсы интерфейса, включая воркеры Monaco, загружаются с адреса Арахны.
+
 ## Автоматическое обновление из GitHub
 
 Workflow `Update Arachne build` запускается **после каждого push в `main`** на self-hosted runner и вызывает `just update` в каталоге развёртывания.
